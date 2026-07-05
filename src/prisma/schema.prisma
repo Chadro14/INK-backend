@@ -1,0 +1,419 @@
+generator client {
+  provider = "prisma-client-js"
+}
+
+datasource db {
+  provider = "postgresql"
+  url      = env("DATABASE_URL")
+}
+
+// ============================================
+// UTILISATEURS
+// ============================================
+model User {
+  id              String        @id @default(uuid())
+  email           String        @unique
+  username        String        @unique
+  passwordHash    String?
+  avatarUrl       String?
+  avatarColor     String?       // Couleur de fond pour avatar généré
+  bio             String?       @db.Text
+  role            Role          @default(READER)
+  isCertified     Boolean       @default(false)
+  certifiedAt     DateTime?
+  mobileNumber    String?
+  mobileVerified  Boolean       @default(false)
+  
+  // Premium
+  premiumActive   Boolean       @default(false)
+  premiumExpires  DateTime?
+  premiumPlan     PremiumPlan?
+
+  // Relations
+  mangas          Manga[]
+  comments        Comment[]
+  likes           Like[]
+  subscriptions   Subscription[]
+  payments        Payment[]
+  earnings        CreatorEarning[]
+  payouts         Payout[]
+  notifications   Notification[]
+  watchHistory    InkStreamWatchHistory[]
+
+  createdAt       DateTime      @default(now())
+  updatedAt       DateTime      @updatedAt
+
+  @@index([username])
+  @@index([email])
+  @@index([role])
+}
+
+enum Role {
+  READER
+  CREATOR
+  ADMIN
+}
+
+enum PremiumPlan {
+  MONTHLY
+  YEARLY
+}
+
+// ============================================
+// MANGAS
+// ============================================
+model Manga {
+  id                String        @id @default(uuid())
+  title             String
+  description       String?       @db.Text
+  coverUrl          String?       // URL de la couverture sur R2
+  authorId          String
+  author            User          @relation(fields: [authorId], references: [id], onDelete: CASCADE)
+  status            Status        @default(ONGOING)
+  genre             String[]      @default([])
+  tags              String[]      @default([])
+  viewsCount        Int           @default(0)
+  likesCount        Int           @default(0)
+  subscribersCount  Int           @default(0)
+  commentsCount     Int           @default(0)
+  isPremium         Boolean       @default(false)
+
+  // Relations
+  chapters          Chapter[]
+  likes             Like[]
+  comments          Comment[]
+  subscriptions     Subscription[]
+
+  createdAt         DateTime      @default(now())
+  updatedAt         DateTime      @updatedAt
+
+  @@index([authorId])
+  @@index([status, createdAt])
+  @@index([viewsCount, likesCount])
+  @@index([title])  // Pour la recherche
+}
+
+enum Status {
+  ONGOING
+  COMPLETED
+  HIATUS
+}
+
+// ============================================
+// CHAPITRES
+// ============================================
+model Chapter {
+  id              String        @id @default(uuid())
+  mangaId         String
+  manga           Manga         @relation(fields: [mangaId], references: [id], onDelete: CASCADE)
+  number          Int
+  title           String?
+  pdfKey          String        // Clé du fichier sur R2
+  pdfSize         Int?          // Taille en octets
+  pageCount       Int           @default(0)
+  isFree          Boolean       @default(false)  // 1-9 = true, 10+ = false
+  isDraft         Boolean       @default(true)
+  price           Float?        // Prix en USD si payant
+  viewsCount      Int           @default(0)
+  coverUrl        String?       // Couverture du chapitre (première page)
+  publishedAt     DateTime?
+  createdAt       DateTime      @default(now())
+  updatedAt       DateTime      @updatedAt
+
+  // Relations
+  comments        Comment[]
+
+  @@unique([mangaId, number])
+  @@index([mangaId, publishedAt])
+  @@index([isFree, publishedAt])
+}
+
+// ============================================
+// COMMENTAIRES
+// ============================================
+model Comment {
+  id              String        @id @default(uuid())
+  userId          String
+  user            User          @relation(fields: [userId], references: [id], onDelete: CASCADE)
+  mangaId         String
+  manga           Manga         @relation(fields: [mangaId], references: [id], onDelete: CASCADE)
+  chapterId       String?       // Si commentaire sur un chapitre spécifique
+  chapter         Chapter?      @relation(fields: [chapterId], references: [id], onDelete: CASCADE)
+  pageNumber      Int?          // Si commentaire sur une page spécifique
+  parentId        String?       // Pour les réponses
+  parent          Comment?      @relation("Replies", fields: [parentId], references: [id], onDelete: CASCADE)
+  replies         Comment[]     @relation("Replies")
+  content         String        @db.Text
+  likesCount      Int           @default(0)
+  isPinned        Boolean       @default(false)
+  isReported      Boolean       @default(false)
+  status          CommentStatus @default(ACTIVE)
+  createdAt       DateTime      @default(now())
+  updatedAt       DateTime      @updatedAt
+
+  // Relations
+  commentLikes    CommentLike[]
+
+  @@index([mangaId, parentId, createdAt])
+  @@index([chapterId, createdAt])
+  @@index([status, createdAt])
+}
+
+enum CommentStatus {
+  ACTIVE
+  HIDDEN
+  DELETED
+}
+
+// ============================================
+// LIKES SUR COMMENTAIRES
+// ============================================
+model CommentLike {
+  id          String   @id @default(uuid())
+  userId      String
+  commentId   String
+  comment     Comment  @relation(fields: [commentId], references: [id], onDelete: CASCADE)
+  createdAt   DateTime @default(now())
+
+  @@unique([userId, commentId])
+  @@index([commentId, userId])
+}
+
+// ============================================
+// LIKES SUR MANGAS / CHAPITRES
+// ============================================
+model Like {
+  id          String    @id @default(uuid())
+  userId      String
+  user        User      @relation(fields: [userId], references: [id], onDelete: CASCADE)
+  mangaId     String
+  manga       Manga     @relation(fields: [mangaId], references: [id], onDelete: CASCADE)
+  chapterId   String?   // Si like sur un chapitre spécifique
+  createdAt   DateTime  @default(now())
+
+  @@unique([userId, mangaId, chapterId])
+  @@index([userId, mangaId])
+}
+
+// ============================================
+// ABONNEMENTS (SUIVI)
+// ============================================
+model Subscription {
+  id          String    @id @default(uuid())
+  followerId  String
+  follower    User      @relation(fields: [followerId], references: [id], onDelete: CASCADE)
+  mangaId     String
+  manga       Manga     @relation(fields: [mangaId], references: [id], onDelete: CASCADE)
+  createdAt   DateTime  @default(now())
+
+  @@unique([followerId, mangaId])
+  @@index([mangaId, createdAt])
+}
+
+// ============================================
+// PAIEMENTS (PAWAPAY)
+// ============================================
+model Payment {
+  id                String        @id @default(uuid())
+  userId            String
+  user              User          @relation(fields: [userId], references: [id], onDelete: CASCADE)
+  transactionId     String?       @unique  // ID retourné par PawaPay
+  amount            Float
+  currency          String        @default("XOF")
+  type              PaymentType
+  status            PaymentStatus @default(PENDING)
+  plan              PremiumPlan?  // Pour les abonnements Premium
+  mangaId           String?       // Pour l'achat de chapitre
+  chapterNumber     Int?          // Pour l'achat de chapitre
+  mobileNumber      String?       // Numéro du payeur
+  metadata          Json?         // Données supplémentaires
+  completedAt       DateTime?
+  createdAt         DateTime      @default(now())
+
+  // Relations
+  earnings          CreatorEarning[]
+
+  @@index([userId, status])
+  @@index([transactionId])
+  @@index([status, createdAt])
+}
+
+enum PaymentType {
+  PREMIUM
+  CHAPTER
+  TIP
+}
+
+enum PaymentStatus {
+  PENDING
+  SUCCESS
+  FAILED
+  CANCELLED
+}
+
+// ============================================
+// REVENUS DES CRÉATEURS
+// ============================================
+model CreatorEarning {
+  id                String        @id @default(uuid())
+  creatorId         String
+  creator           User          @relation(fields: [creatorId], references: [id], onDelete: CASCADE)
+  source            EarningSource
+  amount            Float
+  currency          String        @default("XOF")
+  paymentId         String?       // Référence au paiement
+  payment           Payment?      @relation(fields: [paymentId], references: [id])
+  status            EarningStatus @default(PENDING)
+  metadata          Json?
+  createdAt         DateTime      @default(now())
+  paidAt            DateTime?
+
+  @@index([creatorId, status])
+  @@index([source, createdAt])
+}
+
+enum EarningSource {
+  SUBSCRIPTION
+  CHAPTER_SALE
+  TIP
+  AD
+}
+
+enum EarningStatus {
+  PENDING
+  PAID
+  FAILED
+}
+
+// ============================================
+// PAYOUTS (Paiements aux créateurs)
+// ============================================
+model Payout {
+  id                String        @id @default(uuid())
+  creatorId         String
+  creator           User          @relation(fields: [creatorId], references: [id], onDelete: CASCADE)
+  amount            Float
+  currency          String        @default("XOF")
+  mobileNumber      String        // Numéro Mobile Money
+  status            PayoutStatus  @default(PENDING)
+  transactionId     String?       // ID de la transaction PawaPay
+  metadata          Json?
+  requestedAt       DateTime      @default(now())
+  completedAt       DateTime?
+
+  @@index([creatorId, status])
+}
+
+enum PayoutStatus {
+  PENDING
+  PROCESSING
+  COMPLETED
+  FAILED
+}
+
+// ============================================
+// INKSTREAM — ANIMES
+// ============================================
+model InkStreamAnime {
+  id                String    @id @default(uuid())
+  title             String
+  description       String?   @db.Text
+  coverImage        String
+  genre             String[]  @default([])
+  source            String    // 'netflix', 'movie-box', etc.
+  externalId        String
+  externalUrl       String
+  rating            Float?
+  releaseYear       Int?
+  episodesCount     Int       @default(0)
+  isActive          Boolean   @default(true)
+  lastSyncAt        DateTime
+  createdAt         DateTime  @default(now())
+  updatedAt         DateTime  @updatedAt
+
+  // Relations
+  episodes          InkStreamEpisode[]
+  watchHistory      InkStreamWatchHistory[]
+
+  @@unique([source, externalId])
+  @@index([title, source])
+}
+
+model InkStreamEpisode {
+  id                String    @id @default(uuid())
+  animeId           String
+  anime             InkStreamAnime @relation(fields: [animeId], references: [id], onDelete: CASCADE)
+  episodeNumber     Int
+  title             String?
+  videoUrl          String    // URL proxy
+  thumbnail         String?
+  duration          Int?      // En secondes
+  isAvailable       Boolean   @default(true)
+  createdAt         DateTime  @default(now())
+
+  // Relations
+  watchHistory      InkStreamWatchHistory[]
+
+  @@unique([animeId, episodeNumber])
+}
+
+model InkStreamWatchHistory {
+  id                String    @id @default(uuid())
+  userId            String
+  user              User      @relation(fields: [userId], references: [id], onDelete: CASCADE)
+  animeId           String
+  anime             InkStreamAnime @relation(fields: [animeId], references: [id], onDelete: CASCADE)
+  episodeId         String
+  episode           InkStreamEpisode @relation(fields: [episodeId], references: [id], onDelete: CASCADE)
+  progress          Int       @default(0)  // Pourcentage visionné
+  lastWatchedAt     DateTime  @default(now())
+
+  @@unique([userId, episodeId])
+  @@index([userId, animeId])
+}
+
+// ============================================
+// NOTIFICATIONS
+// ============================================
+model Notification {
+  id                String    @id @default(uuid())
+  userId            String
+  user              User      @relation(fields: [userId], references: [id], onDelete: CASCADE)
+  type              NotificationType
+  title             String
+  body              String?
+  link              String?
+  isRead            Boolean   @default(false)
+  metadata          Json?
+  createdAt         DateTime  @default(now())
+
+  @@index([userId, isRead, createdAt])
+}
+
+enum NotificationType {
+  NEW_CHAPTER
+  NEW_COMMENT
+  NEW_SUBSCRIBER
+  EARNING
+  CERTIFICATION
+  PREMIUM_EXPIRY
+  SYSTEM
+}
+
+// ============================================
+// AUDIT (Certification, Modération)
+// ============================================
+model AuditLog {
+  id                String    @id @default(uuid())
+  userId            String?
+  action            String
+  targetId          String?
+  targetType        String?
+  details           Json?
+  ipAddress         String?
+  userAgent         String?
+  createdAt         DateTime  @default(now())
+
+  @@index([userId, action])
+  @@index([createdAt])
+}
