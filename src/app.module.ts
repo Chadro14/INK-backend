@@ -22,7 +22,7 @@ import { PrismaModule } from './prisma/prisma.module';
     MangasModule,
     SocialModule,
     PaymentsModule,
-    InkstreamModule,
+    InkstreamModule,   // ← InkStream est maintenant inclus
     AdminModule,
     DashboardModule,
   ],
