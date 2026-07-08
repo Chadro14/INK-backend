@@ -11,18 +11,5 @@
       "src": "/(.*)",
       "dest": "dist/main.js"
     }
-  ],
-  "env": {
-    "DATABASE_URL": "@database_url",
-    "JWT_SECRET": "@jwt_secret",
-    "API_URL": "@api_url",
-    "PINTEREST_PROXY_URL": "@pinterest_proxy_url",
-    "ORANGE_CLIENT_ID": "@orange_client_id",
-    "ORANGE_CLIENT_SECRET": "@orange_client_secret",
-    "ORANGE_API_URL": "@orange_api_url",
-    "MPESA_CONSUMER_KEY": "@mpesa_consumer_key",
-    "MPESA_CONSUMER_SECRET": "@mpesa_consumer_secret",
-    "MPESA_SHORTCODE": "@mpesa_shortcode",
-    "MPESA_API_URL": "@mpesa_api_url"
-  }
+  ]
 }
