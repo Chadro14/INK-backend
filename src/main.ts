@@ -16,7 +16,7 @@ export async function bootstrap() {
   return app;
 }
 
-// Pour le développement local
+// Pour le dev local seulement
 if (process.env.NODE_ENV !== 'production' && process.env.VERCEL !== '1') {
   bootstrap().then(async (app) => {
     const port = process.env.PORT || 3000;
