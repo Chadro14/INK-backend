@@ -1,21 +1,28 @@
 import { NestFactory } from '@nestjs/core';
 import { AppModule } from './app.module';
-import { ValidationPipe } from '@nestjs/common';
 
-async function bootstrap() {
+export async function bootstrap() {
   const app = await NestFactory.create(AppModule);
-  
+
+  // CORS - IMPORTANT pour Vercel
   app.enableCors({
-    origin: '*',
+    origin: true,
     credentials: true,
+    methods: ['GET', 'POST', 'PUT', 'PATCH', 'DELETE', 'OPTIONS'],
+    allowedHeaders: ['Content-Type', 'Authorization', 'Accept'],
   });
-  
-  app.useGlobalPipes(new ValidationPipe({
-    whitelist: true,
-    transform: true,
-  }));
-  
-  const port = process.env.PORT || 3000;
-  await app.listen(port);
+
+  // Préfixe global /api
+  app.setGlobalPrefix('api');
+
+  return app;
 }
-bootstrap();
+
+// Pour le développement local seulement
+if (process.env.NODE_ENV !== 'production' && process.env.VERCEL !== '1') {
+  bootstrap().then(async (app) => {
+    const port = process.env.PORT || 3000;
+    await app.listen(port);
+    console.log(`🚀 INKDROP API running on http://localhost:${port}/api`);
+  });
+}
