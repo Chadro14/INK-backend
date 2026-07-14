@@ -2,18 +2,14 @@
   "version": 2,
   "builds": [
     {
-      "src": "api/index.js",
-      "use": "@vercel/node",
-      "config": {
-        "includeFiles": ["dist/**", "prisma/**"]
-      }
+      "src": "api/index.ts",
+      "use": "@vercel/node"
     }
   ],
   "routes": [
     {
       "src": "/(.*)",
-      "dest": "api/index.js",
-      "methods": ["GET", "POST", "PUT", "PATCH", "DELETE", "OPTIONS"]
+      "dest": "api/index.ts"
     }
   ]
 }
