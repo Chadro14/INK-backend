@@ -18,7 +18,6 @@ export class CommentsService {
   // AJOUTER UN COMMENTAIRE
   // ============================================
   async create(userId: string, mangaId: string, dto: CreateCommentDto) {
-    // Vérifier que le manga existe
     const manga = await this.prisma.manga.findUnique({
       where: { id: mangaId },
     });
@@ -26,7 +25,6 @@ export class CommentsService {
       throw new NotFoundException('Manga non trouvé');
     }
 
-    // Si c'est une réponse, vérifier que le parent existe
     if (dto.parentId) {
       const parent = await this.prisma.comment.findUnique({
         where: { id: dto.parentId },
@@ -39,7 +37,6 @@ export class CommentsService {
       }
     }
 
-    // Créer le commentaire
     const comment = await this.prisma.comment.create({
       data: {
         userId,
@@ -63,7 +60,6 @@ export class CommentsService {
       },
     });
 
-    // Incrémenter le compteur de commentaires du manga
     await this.prisma.manga.update({
       where: { id: mangaId },
       data: { commentsCount: { increment: 1 } },
@@ -80,10 +76,9 @@ export class CommentsService {
     const skip = (page - 1) * limit;
 
     const orderBy = sort === 'popular'
-      ? { likesCount: 'desc' }
-      : { createdAt: 'desc' };
+      ? { likesCount: 'desc' as const }
+      : { createdAt: 'desc' as const };
 
-    // Récupérer les commentaires racines (pas de parent)
     const [comments, total] = await Promise.all([
       this.prisma.comment.findMany({
         where: {
@@ -122,7 +117,6 @@ export class CommentsService {
       }),
     ]);
 
-    // Récupérer les réponses pour chaque commentaire
     const commentIds = comments.map(c => c.id);
     const replies = await this.prisma.comment.findMany({
       where: {
@@ -143,7 +137,6 @@ export class CommentsService {
       orderBy: { createdAt: 'asc' },
     });
 
-    // Grouper les réponses par parent
     const repliesByParent = replies.reduce((acc, reply) => {
       const parentId = reply.parentId!;
       if (!acc[parentId]) acc[parentId] = [];
@@ -151,7 +144,6 @@ export class CommentsService {
       return acc;
     }, {} as Record<string, typeof replies>);
 
-    // Ajouter les réponses aux commentaires
     const commentsWithReplies = comments.map(comment => ({
       ...comment,
       replies: repliesByParent[comment.id] || [],
@@ -266,7 +258,6 @@ export class CommentsService {
       throw new NotFoundException('Commentaire non trouvé');
     }
 
-    // Vérifier que l'utilisateur est l'auteur ou admin
     const user = await this.prisma.user.findUnique({
       where: { id: userId },
     });
@@ -275,7 +266,6 @@ export class CommentsService {
       throw new ForbiddenException('Vous ne pouvez pas supprimer ce commentaire');
     }
 
-    // Supprimer le commentaire (soft delete)
     await this.prisma.comment.update({
       where: { id: commentId },
       data: {
@@ -284,7 +274,6 @@ export class CommentsService {
       },
     });
 
-    // Décrémenter le compteur
     await this.prisma.manga.update({
       where: { id: comment.mangaId },
       data: { commentsCount: { decrement: 1 } },
@@ -305,13 +294,11 @@ export class CommentsService {
       throw new NotFoundException('Commentaire non trouvé');
     }
 
-    // Vérifier si l'utilisateur a déjà liké ce commentaire
     const existingLike = await this.prisma.$queryRaw`
       SELECT * FROM "CommentLikes" WHERE "userId" = ${userId} AND "commentId" = ${commentId}
     `;
 
     if (existingLike) {
-      // Toggle : supprimer le like
       await this.prisma.$executeRaw`
         DELETE FROM "CommentLikes" WHERE "userId" = ${userId} AND "commentId" = ${commentId}
       `;
@@ -322,7 +309,6 @@ export class CommentsService {
       return { liked: false };
     }
 
-    // Ajouter le like
     await this.prisma.$executeRaw`
       INSERT INTO "CommentLikes" ("userId", "commentId", "createdAt") 
       VALUES (${userId}, ${commentId}, NOW())
