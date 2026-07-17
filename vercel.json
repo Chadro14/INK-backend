@@ -2,14 +2,21 @@
   "version": 2,
   "builds": [
     {
-      "src": "api/index.ts",
+      "src": "api/index.js",
       "use": "@vercel/node"
     }
   ],
   "routes": [
     {
       "src": "/(.*)",
-      "dest": "api/index.ts"
+      "dest": "api/index.js"
     }
-  ]
+  ],
+  "env": {
+    "SUPABASE_URL": "https://slbosebjvnotrifwhbrl.supabase.co",
+    "SUPABASE_SERVICE_ROLE_KEY": "eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJpc3MiOiJzdXBhYmFzZSIsInJlZiI6InNsYm9zZWJqdm5vdHJpZndoYnJsIiwicm9sZSI6InNlcnZpY2Vfcm9sZSIsImlhdCI6MTc4MzI2Mjk1NSwiZXhwIjoyMDk4ODM4OTU1fQ.wZxt0jNCKZ12ZrQxAn6DeSyMaknbGvQMU-h4scJUTfs",
+    "DATABASE_URL": "postgresql://postgres:Altesse252006@db.slbosebjvnotrifwhbrl.supabase.co:5432/postgres",
+    "JWT_SECRET": "InkDropSecretKey2026",
+    "API_URL": "https://ink-backend.vercel.app"
+  }
 }
