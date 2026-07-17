@@ -1,11 +1,16 @@
-import { IsInt, IsOptional, IsString, IsBoolean, IsNumber, Min, IsUUID } from 'class-validator';
+import {
+  IsString,
+  IsInt,
+  IsOptional,
+  IsBoolean,
+  IsNumber,
+  Min,
+} from 'class-validator';
+import { Type } from 'class-transformer';
 
 export class CreateChapterDto {
-  @IsUUID()
-  mangaId: string;
-
   @IsInt()
-  @Min(1)
+  @Type(() => Number)
   number: number;
 
   @IsOptional()
@@ -14,14 +19,17 @@ export class CreateChapterDto {
 
   @IsOptional()
   @IsBoolean()
+  @Type(() => Boolean)
   isFree?: boolean;
 
   @IsOptional()
   @IsBoolean()
+  @Type(() => Boolean)
   isDraft?: boolean;
 
   @IsOptional()
   @IsNumber()
   @Min(0)
+  @Type(() => Number)
   price?: number;
 }
