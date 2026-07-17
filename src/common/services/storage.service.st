@@ -13,13 +13,14 @@ export class StorageService {
     );
   }
 
-  // ============================================
-  // UPLOAD GÉNÉRIQUE (pour les PDF et couvertures)
-  // ============================================
-  async upload(key: string, buffer: Buffer, contentType: string): Promise<string> {
+  async upload(
+    key: string,
+    buffer: Buffer,
+    contentType: string,
+  ): Promise<string> {
     const { error } = await this.supabase.storage
       .from(this.bucket)
-      .upload(key, buffer, { contentType });
+      .upload(key, buffer, { contentType, upsert: true });
 
     if (error) {
       throw new Error(`Échec de l'upload: ${error.message}`);
@@ -28,24 +29,6 @@ export class StorageService {
     return key;
   }
 
-  // ============================================
-  // SUPPRESSION GÉNÉRIQUE
-  // ============================================
-  async delete(key: string): Promise<void> {
-    const { error } = await this.supabase.storage
-      .from(this.bucket)
-      .remove([key]);
-
-    if (error) {
-      throw new Error(`Échec de la suppression: ${error.message}`);
-    }
-
-    console.log(`🗑️ Fichier supprimé: ${key}`);
-  }
-
-  // ============================================
-  // URL SIGNÉE
-  // ============================================
   async getSignedUrl(key: string, expiresInSeconds = 3600): Promise<string> {
     const { data, error } = await this.supabase.storage
       .from(this.bucket)
@@ -56,5 +39,15 @@ export class StorageService {
     }
 
     return data.signedUrl;
+  }
+
+  async delete(key: string): Promise<void> {
+    const { error } = await this.supabase.storage
+      .from(this.bucket)
+      .remove([key]);
+
+    if (error) {
+      throw new Error(`Échec de la suppression: ${error.message}`);
+    }
   }
 }
