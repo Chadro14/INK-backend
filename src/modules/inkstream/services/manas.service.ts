@@ -34,12 +34,10 @@ export class ManasService {
       return { canWatch: false, reason: 'Utilisateur non trouvé' };
     }
 
-    // Les utilisateurs Premium ont un accès illimité
     if (user.premiumActive) {
       return { canWatch: true };
     }
 
-    // Vérifier si l'utilisateur a assez de MANAS
     if (user.manas > 0) {
       return { canWatch: true };
     }
@@ -60,7 +58,19 @@ export class ManasService {
       throw new NotFoundException('Utilisateur non trouvé');
     }
 
-    // Les utilisateurs Premium ne consomment pas de MANAS
+    const episode = await this.prisma.inkStreamEpisode.findUnique({
+      where: {
+        animeId_episodeNumber: {
+          animeId,
+          episodeNumber,
+        },
+      },
+    });
+
+    if (!episode) {
+      throw new NotFoundException('Épisode non trouvé');
+    }
+
     if (user.premiumActive) {
       return { success: true, remainingManas: user.manas };
     }
@@ -69,19 +79,26 @@ export class ManasService {
       throw new BadRequestException('MANAS insuffisants');
     }
 
-    // Consommer 1 MANA
     const updatedUser = await this.prisma.user.update({
       where: { id: userId },
       data: { manas: { decrement: 1 } },
     });
 
-    // Enregistrer l'historique de visionnage
-    await this.prisma.inkStreamWatchHistory.create({
-      data: {
+    await this.prisma.inkStreamWatchHistory.upsert({
+      where: {
+        userId_episodeId: {
+          userId,
+          episodeId: episode.id,
+        },
+      },
+      create: {
         userId,
         animeId,
-        episodeNumber,
+        episodeId: episode.id,
         progress: 0,
+      },
+      update: {
+        lastWatchedAt: new Date(),
       },
     });
 
@@ -100,7 +117,6 @@ export class ManasService {
       data: { manas: { increment: amount } },
     });
 
-    // Log de l'ajout
     await this.prisma.auditLog.create({
       data: {
         userId,
