@@ -13,22 +13,17 @@ export class StorageService {
     );
   }
 
-  async uploadPdf(
-    file: Express.Multer.File,
-    mangaId: string,
-    chapterNumber: number,
+  async upload(
+    key: string,
+    buffer: Buffer,
+    contentType: string,
   ): Promise<string> {
-    const key = `${mangaId}/chapter-${chapterNumber}-${Date.now()}.pdf`;
-
     const { error } = await this.supabase.storage
       .from(this.bucket)
-      .upload(key, file.buffer, {
-        contentType: 'application/pdf',
-        upsert: false,
-      });
+      .upload(key, buffer, { contentType, upsert: true });
 
     if (error) {
-      throw new Error(`Échec de l'upload PDF: ${error.message}`);
+      throw new Error(`Échec de l'upload: ${error.message}`);
     }
 
     return key;
@@ -46,7 +41,7 @@ export class StorageService {
     return data.signedUrl;
   }
 
-  async deletePdf(key: string): Promise<void> {
+  async delete(key: string): Promise<void> {
     const { error } = await this.supabase.storage
       .from(this.bucket)
       .remove([key]);
