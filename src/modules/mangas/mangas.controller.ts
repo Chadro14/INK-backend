@@ -34,7 +34,7 @@ export class MangasController {
   // ============================================
   @Post()
   @UseGuards(JwtAuthGuard)
-  async create(@Req() req, @Body() dto: CreateMangaDto) {
+  async create(@Req() req: any, @Body() dto: CreateMangaDto) {
     return this.mangasService.create(req.user.id, dto);
   }
 
@@ -75,7 +75,7 @@ export class MangasController {
   @UseGuards(JwtAuthGuard)
   async update(
     @Param('id') id: string,
-    @Req() req,
+    @Req() req: any,
     @Body() dto: UpdateMangaDto,
   ) {
     return this.mangasService.update(id, req.user.id, dto);
@@ -86,7 +86,7 @@ export class MangasController {
   // ============================================
   @Delete(':id')
   @UseGuards(JwtAuthGuard)
-  async delete(@Param('id') id: string, @Req() req) {
+  async delete(@Param('id') id: string, @Req() req: any) {
     return this.mangasService.delete(id, req.user.id);
   }
 
@@ -98,7 +98,7 @@ export class MangasController {
   @UseInterceptors(FileInterceptor('pdf'))
   async addChapter(
     @Param('id') mangaId: string,
-    @Req() req,
+    @Req() req: any,
     @Body() dto: CreateChapterDto,
     @UploadedFile() file: Express.Multer.File,
   ) {
@@ -110,11 +110,14 @@ export class MangasController {
       throw new BadRequestException('Le fichier doit être un PDF');
     }
 
-    if (file.size > 50 * 1024 * 1024) { // 50MB
+    if (file.size > 50 * 1024 * 1024) {
       throw new BadRequestException('Le PDF doit faire moins de 50MB');
     }
 
-    return this.chaptersService.create(mangaId, req.user.id, dto, file);
+    // Ajouter mangaId dans le DTO si ce n'est pas déjà fait
+    dto.mangaId = mangaId;
+
+    return this.chaptersService.create(dto, file, req.user.id);
   }
 
   // ============================================
