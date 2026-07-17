@@ -1,8 +1,9 @@
 import { Injectable, BadRequestException, NotFoundException } from '@nestjs/common';
+import { PaymentType } from '@prisma/client';
 import { PrismaService } from '../../../prisma/prisma.service';
 import { OrangeMoneyService } from './orange-money.service';
 import { MpesaService } from './mpesa.service';
-import { InitiatePaymentDto, PaymentOperator, PaymentType } from '../dto/initiate-payment.dto';
+import { InitiatePaymentDto, PaymentOperator } from '../dto/initiate-payment.dto';
 
 @Injectable()
 export class PaymentsService {
@@ -16,7 +17,6 @@ export class PaymentsService {
   // INITIER UN PAIEMENT
   // ============================================
   async initiatePayment(userId: string, dto: InitiatePaymentDto) {
-    // Vérifier que l'utilisateur existe
     const user = await this.prisma.user.findUnique({
       where: { id: userId },
     });
@@ -25,17 +25,15 @@ export class PaymentsService {
       throw new NotFoundException('Utilisateur non trouvé');
     }
 
-    // Générer un ID de transaction unique
     const transactionId = `INK-${Date.now()}-${Math.random().toString(36).slice(2, 7)}`;
 
-    // Créer la transaction en base
     const payment = await this.prisma.payment.create({
       data: {
         userId,
         transactionId,
         amount: dto.amount,
         currency: 'USD',
-        type: dto.type,
+        type: dto.type as unknown as PaymentType,
         status: 'PENDING',
         mangaId: dto.mangaId,
         chapterNumber: dto.chapterNumber,
@@ -47,7 +45,6 @@ export class PaymentsService {
       },
     });
 
-    // Sélectionner le bon service selon l'opérateur
     let result;
     try {
       if (dto.operator === PaymentOperator.ORANGE) {
@@ -70,13 +67,12 @@ export class PaymentsService {
         throw new BadRequestException('Opérateur non supporté');
       }
 
-      // Mettre à jour la transaction
       await this.prisma.payment.update({
         where: { id: payment.id },
         data: {
           transactionId: result.transactionId,
           metadata: {
-            ...payment.metadata,
+            ...(payment.metadata as Record<string, any> ?? {}),
             providerTransactionId: result.transactionId,
           },
         },
@@ -111,7 +107,6 @@ export class PaymentsService {
       throw new NotFoundException('Paiement non trouvé');
     }
 
-    // Activer le service selon le type
     switch (payment.type) {
       case PaymentType.PREMIUM:
         await this.activatePremium(payment.userId);
@@ -126,7 +121,6 @@ export class PaymentsService {
         break;
     }
 
-    // Mettre à jour le statut
     await this.prisma.payment.update({
       where: { id: payment.id },
       data: {
@@ -135,7 +129,6 @@ export class PaymentsService {
       },
     });
 
-    // Créer une notification
     await this.prisma.notification.create({
       data: {
         userId: payment.userId,
@@ -150,8 +143,68 @@ export class PaymentsService {
   }
 
   // ============================================
-  // ACTIVER LE PREMIUM
+  // CONFIRMER UN PAIEMENT MANUEL
   // ============================================
+  async confirmManualPayment(transactionId: string, userId: string) {
+    const payment = await this.prisma.payment.findFirst({
+      where: { transactionId, userId },
+    });
+
+    if (!payment) {
+      throw new NotFoundException('Paiement non trouvé');
+    }
+
+    if (payment.status === 'SUCCESS') {
+      return payment;
+    }
+
+    return this.processSuccessfulPayment(payment.id);
+  }
+
+  // ============================================
+  // LISTE DES PAIEMENTS D'UN UTILISATEUR
+  // ============================================
+  async getUserPayments(userId: string, page = 1, limit = 20) {
+    const skip = (page - 1) * limit;
+
+    const [payments, total] = await Promise.all([
+      this.prisma.payment.findMany({
+        where: { userId },
+        orderBy: { createdAt: 'desc' },
+        skip,
+        take: limit,
+      }),
+      this.prisma.payment.count({ where: { userId } }),
+    ]);
+
+    return {
+      payments,
+      total,
+      page,
+      totalPages: Math.ceil(total / limit),
+    };
+  }
+
+  // ============================================
+  // STATUT D'UN PAIEMENT
+  // ============================================
+  async getPaymentStatus(transactionId: string, userId: string) {
+    const payment = await this.prisma.payment.findFirst({
+      where: { transactionId, userId },
+    });
+
+    if (!payment) {
+      throw new NotFoundException('Paiement non trouvé');
+    }
+
+    return {
+      transactionId: payment.transactionId,
+      status: payment.status,
+      amount: payment.amount,
+      completedAt: payment.completedAt,
+    };
+  }
+
   private async activatePremium(userId: string) {
     await this.prisma.user.update({
       where: { id: userId },
@@ -163,16 +216,10 @@ export class PaymentsService {
     });
   }
 
-  // ============================================
-  // DÉBLOQUER UN CHAPITRE
-  // ============================================
   private async unlockChapter(userId: string, mangaId: string, chapterNumber: number) {
     console.log(`📚 Chapitre ${chapterNumber} du manga ${mangaId} débloqué pour ${userId}`);
   }
 
-  // ============================================
-  // PROCESSUS TIP
-  // ============================================
   private async processTip(payment: any) {
     const manga = await this.prisma.manga.findUnique({
       where: { id: payment.mangaId },
