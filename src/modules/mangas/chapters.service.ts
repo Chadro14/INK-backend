@@ -8,7 +8,7 @@ import { PrismaService } from '../../prisma/prisma.service';
 import { StorageService } from '../../common/services/storage.service';
 import { CreateChapterDto } from './dto/create-chapter.dto';
 import { UpdateChapterDto } from './dto/update-chapter.dto';
-import sharp from 'sharp';   // ✅ Attention : import par défaut
+import sharp from 'sharp';
 
 @Injectable()
 export class ChaptersService {
