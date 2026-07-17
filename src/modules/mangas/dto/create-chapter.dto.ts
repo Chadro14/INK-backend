@@ -9,9 +9,6 @@ import {
 import { Type } from 'class-transformer';
 
 export class CreateChapterDto {
-  @IsString()
-  mangaId: string;
-
   @IsInt()
   @Type(() => Number)
   number: number;
