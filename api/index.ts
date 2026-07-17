@@ -13,20 +13,12 @@ async function bootstrapServer(): Promise<express.Express> {
       AppModule,
       new ExpressAdapter(expressApp),
     );
-
-    app.enableCors({
-      origin: '*',
-      credentials: true,
-    });
-
-    app.useGlobalPipes(
-      new ValidationPipe({
-        whitelist: true,
-        transform: true,
-        forbidNonWhitelisted: true,
-      }),
-    );
-
+    app.enableCors({ origin: '*', credentials: true });
+    app.useGlobalPipes(new ValidationPipe({
+      whitelist: true,
+      transform: true,
+      forbidNonWhitelisted: true,
+    }));
     await app.init();
     cachedApp = expressApp;
   }
