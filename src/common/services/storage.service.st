@@ -39,6 +39,8 @@ export class StorageService {
     if (error) {
       throw new Error(`Échec de la suppression: ${error.message}`);
     }
+
+    console.log(`🗑️ Fichier supprimé: ${key}`);
   }
 
   // ============================================
