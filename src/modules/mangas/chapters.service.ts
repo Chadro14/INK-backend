@@ -2,12 +2,13 @@ import {
   Injectable,
   NotFoundException,
   BadRequestException,
+  ForbiddenException,
 } from '@nestjs/common';
 import { PrismaService } from '../../prisma/prisma.service';
 import { StorageService } from '../../common/services/storage.service';
 import { CreateChapterDto } from './dto/create-chapter.dto';
 import { UpdateChapterDto } from './dto/update-chapter.dto';
-import * as sharp from 'sharp';
+import sharp from 'sharp';
 
 @Injectable()
 export class ChaptersService {
@@ -128,6 +129,28 @@ export class ChaptersService {
       where: { mangaId, isDraft: false },
       orderBy: { number: 'asc' },
     });
+  }
+
+  // ============================================
+  // RÉCUPÉRER UN CHAPITRE PAR NUMÉRO (dans un manga)
+  // ============================================
+  async findByNumber(mangaId: string, number: number) {
+    const chapter = await this.prisma.chapter.findUnique({
+      where: {
+        mangaId_number: {
+          mangaId,
+          number,
+        },
+      },
+    });
+
+    if (!chapter) {
+      throw new NotFoundException('Chapitre non trouvé');
+    }
+
+    const pdfUrl = await this.storage.getSignedUrl(chapter.pdfKey);
+
+    return { ...chapter, pdfUrl };
   }
 
   // ============================================
