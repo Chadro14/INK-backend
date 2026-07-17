@@ -21,22 +21,29 @@ export class ChaptersService {
   // CRÉER UN CHAPITRE (upload PDF + couverture optionnelle)
   // ============================================
   async create(
+    mangaId: string,
+    userId: string,
     dto: CreateChapterDto,
     file: Express.Multer.File,
     coverFile?: Express.Multer.File,
   ) {
     const manga = await this.prisma.manga.findUnique({
-      where: { id: dto.mangaId },
+      where: { id: mangaId },
     });
 
     if (!manga) {
       throw new NotFoundException('Manga non trouvé');
     }
 
+    const user = await this.prisma.user.findUnique({ where: { id: userId } });
+    if (manga.authorId !== userId && user?.role !== 'ADMIN') {
+      throw new ForbiddenException("Vous n'êtes pas l'auteur de ce manga");
+    }
+
     const existing = await this.prisma.chapter.findUnique({
       where: {
         mangaId_number: {
-          mangaId: dto.mangaId,
+          mangaId,
           number: dto.number,
         },
       },
@@ -46,7 +53,7 @@ export class ChaptersService {
       throw new BadRequestException('Ce numéro de chapitre existe déjà pour ce manga');
     }
 
-    const pdfKey = `${dto.mangaId}/chapter-${dto.number}-${Date.now()}.pdf`;
+    const pdfKey = `${mangaId}/chapter-${dto.number}-${Date.now()}.pdf`;
     await this.storage.upload(pdfKey, file.buffer, 'application/pdf');
 
     let coverUrl: string | undefined;
@@ -56,13 +63,13 @@ export class ChaptersService {
         .webp({ quality: 80 })
         .toBuffer();
 
-      const coverKey = `${dto.mangaId}/cover-chapter-${dto.number}-${Date.now()}.webp`;
+      const coverKey = `${mangaId}/cover-chapter-${dto.number}-${Date.now()}.webp`;
       coverUrl = await this.storage.upload(coverKey, coverBuffer, 'image/webp');
     }
 
     const chapter = await this.prisma.chapter.create({
       data: {
-        mangaId: dto.mangaId,
+        mangaId,
         number: dto.number,
         title: dto.title,
         pdfKey,
