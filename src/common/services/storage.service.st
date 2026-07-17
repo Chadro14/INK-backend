@@ -1,54 +1,58 @@
 import { Injectable } from '@nestjs/common';
-import { ConfigService } from '@nestjs/config';
-import { S3Client, PutObjectCommand, GetObjectCommand, DeleteObjectCommand } from '@aws-sdk/client-s3';
-import { getSignedUrl } from '@aws-sdk/s3-request-presigner';
+import { createClient, SupabaseClient } from '@supabase/supabase-js';
 
 @Injectable()
 export class StorageService {
-  private s3Client: S3Client;
-  private bucket: string;
+  private supabase: SupabaseClient;
+  private readonly bucket = 'chapters';
 
-  constructor(private config: ConfigService) {
-    this.bucket = this.config.get('R2_BUCKET_NAME');
-    this.s3Client = new S3Client({
-      region: 'auto',
-      endpoint: this.config.get('R2_ENDPOINT'),
-      credentials: {
-        accessKeyId: this.config.get('R2_ACCESS_KEY_ID'),
-        secretAccessKey: this.config.get('R2_SECRET_ACCESS_KEY'),
-      },
-    });
+  constructor() {
+    this.supabase = createClient(
+      process.env.SUPABASE_URL!,
+      process.env.SUPABASE_SERVICE_ROLE_KEY!,
+    );
   }
 
-  async upload(key: string, buffer: Buffer, contentType: string): Promise<string> {
-    const command = new PutObjectCommand({
-      Bucket: this.bucket,
-      Key: key,
-      Body: buffer,
-      ContentType: contentType,
-    });
+  async uploadPdf(
+    file: Express.Multer.File,
+    mangaId: string,
+    chapterNumber: number,
+  ): Promise<string> {
+    const key = `${mangaId}/chapter-${chapterNumber}-${Date.now()}.pdf`;
 
-    await this.s3Client.send(command);
+    const { error } = await this.supabase.storage
+      .from(this.bucket)
+      .upload(key, file.buffer, {
+        contentType: 'application/pdf',
+        upsert: false,
+      });
 
-    // Retourner l'URL publique
-    return `${this.config.get('R2_PUBLIC_URL')}/${key}`;
+    if (error) {
+      throw new Error(`Échec de l'upload PDF: ${error.message}`);
+    }
+
+    return key;
   }
 
-  async getSignedUrl(key: string, expiresIn: number = 3600): Promise<string> {
-    const command = new GetObjectCommand({
-      Bucket: this.bucket,
-      Key: key,
-    });
+  async getSignedUrl(key: string, expiresInSeconds = 3600): Promise<string> {
+    const { data, error } = await this.supabase.storage
+      .from(this.bucket)
+      .createSignedUrl(key, expiresInSeconds);
 
-    return getSignedUrl(this.s3Client, command, { expiresIn });
+    if (error || !data) {
+      throw new Error(`Impossible de générer l'URL signée: ${error?.message}`);
+    }
+
+    return data.signedUrl;
   }
 
-  async delete(key: string): Promise<void> {
-    const command = new DeleteObjectCommand({
-      Bucket: this.bucket,
-      Key: key,
-    });
+  async deletePdf(key: string): Promise<void> {
+    const { error } = await this.supabase.storage
+      .from(this.bucket)
+      .remove([key]);
 
-    await this.s3Client.send(command);
+    if (error) {
+      throw new Error(`Échec de la suppression: ${error.message}`);
+    }
   }
 }
