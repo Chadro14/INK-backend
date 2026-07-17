@@ -9,11 +9,13 @@ import {
   Query,
   UseGuards,
   Req,
+  NotFoundException,
 } from '@nestjs/common';
 import { JwtAuthGuard } from '../../common/guards/jwt-auth.guard';
 import { CommentsService } from './comments.service';
 import { LikesService } from './likes.service';
 import { SubscriptionsService } from './subscriptions.service';
+import { PrismaService } from '../../prisma/prisma.service';
 import { CreateCommentDto } from './dto/create-comment.dto';
 import { UpdateCommentDto } from './dto/update-comment.dto';
 import { CommentQueryDto } from './dto/comment-query.dto';
@@ -24,6 +26,7 @@ export class SocialController {
     private commentsService: CommentsService,
     private likesService: LikesService,
     private subscriptionsService: SubscriptionsService,
+    private prisma: PrismaService,
   ) {}
 
   // ============================================
@@ -39,8 +42,6 @@ export class SocialController {
   @Post('like/chapter/:chapterId')
   @UseGuards(JwtAuthGuard)
   async likeChapter(@Req() req, @Param('chapterId') chapterId: string) {
-    // Le paramètre chapterId est passé comme ID du chapitre
-    // Mais le like est toujours sur un manga
     const chapter = await this.prisma.chapter.findUnique({
       where: { id: chapterId },
       select: { mangaId: true },
