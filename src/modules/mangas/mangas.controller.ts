@@ -114,10 +114,7 @@ export class MangasController {
       throw new BadRequestException('Le PDF doit faire moins de 50MB');
     }
 
-    // Ajouter mangaId dans le DTO si ce n'est pas déjà fait
-    dto.mangaId = mangaId;
-
-    return this.chaptersService.create(dto, file, req.user.id);
+    return this.chaptersService.create(mangaId, req.user.id, dto, file);
   }
 
   // ============================================
