@@ -8,8 +8,8 @@
     "start:dev": "nest start --watch",
     "start:debug": "nest start --debug --watch",
     "start:prod": "node dist/main",
-    "postinstall": "prisma generate --schema=src/prisma/schema.prisma",
-    "vercel-build": "npx prisma generate --schema=src/prisma/schema.prisma && npx prisma db push --schema=src/prisma/schema.prisma && npm run build"
+    "postinstall": "prisma generate --schema=prisma/schema.prisma",
+    "vercel-build": "npx prisma generate --schema=prisma/schema.prisma && npx prisma db push --schema=prisma/schema.prisma && npm run build"
   },
   "dependencies": {
     "@nestjs/axios": "^3.0.0",
