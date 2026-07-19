@@ -29,7 +29,6 @@ model User {
   premiumExpires  DateTime?
   premiumPlan     PremiumPlan?
 
-  // Relations
   mangas          Manga[]
   comments        Comment[]
   likes           Like[]
@@ -69,7 +68,7 @@ model Manga {
   description       String?       @db.Text
   coverUrl          String?
   authorId          String
-  author            User          @relation(fields: [authorId], references: [id], onDelete: CASCADE)
+  author            User          @relation(fields: [authorId], references: [id], onDelete: Cascade)
   status            Status        @default(ONGOING)
   genre             String[]      @default([])
   tags              String[]      @default([])
@@ -79,7 +78,6 @@ model Manga {
   commentsCount     Int           @default(0)
   isPremium         Boolean       @default(false)
 
-  // Relations
   chapters          Chapter[]
   likes             Like[]
   comments          Comment[]
@@ -105,7 +103,7 @@ enum Status {
 model Chapter {
   id              String        @id @default(uuid())
   mangaId         String
-  manga           Manga         @relation(fields: [mangaId], references: [id], onDelete: CASCADE)
+  manga           Manga         @relation(fields: [mangaId], references: [id], onDelete: Cascade)
   number          Int
   title           String?
   pdfKey          String
@@ -120,7 +118,6 @@ model Chapter {
   createdAt       DateTime      @default(now())
   updatedAt       DateTime      @updatedAt
 
-  // Relations
   comments        Comment[]
 
   @@unique([mangaId, number])
@@ -134,14 +131,14 @@ model Chapter {
 model Comment {
   id              String        @id @default(uuid())
   userId          String
-  user            User          @relation(fields: [userId], references: [id], onDelete: CASCADE)
+  user            User          @relation(fields: [userId], references: [id], onDelete: Cascade)
   mangaId         String
-  manga           Manga         @relation(fields: [mangaId], references: [id], onDelete: CASCADE)
+  manga           Manga         @relation(fields: [mangaId], references: [id], onDelete: Cascade)
   chapterId       String?
-  chapter         Chapter?      @relation(fields: [chapterId], references: [id], onDelete: CASCADE)
+  chapter         Chapter?      @relation(fields: [chapterId], references: [id], onDelete: Cascade)
   pageNumber      Int?
   parentId        String?
-  parent          Comment?      @relation("Replies", fields: [parentId], references: [id], onDelete: CASCADE)
+  parent          Comment?      @relation("Replies", fields: [parentId], references: [id], onDelete: Cascade)
   replies         Comment[]     @relation("Replies")
   content         String        @db.Text
   likesCount      Int           @default(0)
@@ -151,7 +148,6 @@ model Comment {
   createdAt       DateTime      @default(now())
   updatedAt       DateTime      @updatedAt
 
-  // Relations
   commentLikes    CommentLike[]
 
   @@index([mangaId, parentId, createdAt])
@@ -172,7 +168,7 @@ model CommentLike {
   id          String   @id @default(uuid())
   userId      String
   commentId   String
-  comment     Comment  @relation(fields: [commentId], references: [id], onDelete: CASCADE)
+  comment     Comment  @relation(fields: [commentId], references: [id], onDelete: Cascade)
   createdAt   DateTime @default(now())
 
   @@unique([userId, commentId])
@@ -185,9 +181,9 @@ model CommentLike {
 model Like {
   id          String    @id @default(uuid())
   userId      String
-  user        User      @relation(fields: [userId], references: [id], onDelete: CASCADE)
+  user        User      @relation(fields: [userId], references: [id], onDelete: Cascade)
   mangaId     String
-  manga       Manga     @relation(fields: [mangaId], references: [id], onDelete: CASCADE)
+  manga       Manga     @relation(fields: [mangaId], references: [id], onDelete: Cascade)
   chapterId   String?
   createdAt   DateTime  @default(now())
 
@@ -201,9 +197,9 @@ model Like {
 model Subscription {
   id          String    @id @default(uuid())
   followerId  String
-  follower    User      @relation(fields: [followerId], references: [id], onDelete: CASCADE)
+  follower    User      @relation(fields: [followerId], references: [id], onDelete: Cascade)
   mangaId     String
-  manga       Manga     @relation(fields: [mangaId], references: [id], onDelete: CASCADE)
+  manga       Manga     @relation(fields: [mangaId], references: [id], onDelete: Cascade)
   createdAt   DateTime  @default(now())
 
   @@unique([followerId, mangaId])
@@ -216,7 +212,7 @@ model Subscription {
 model Payment {
   id                String        @id @default(uuid())
   userId            String
-  user              User          @relation(fields: [userId], references: [id], onDelete: CASCADE)
+  user              User          @relation(fields: [userId], references: [id], onDelete: Cascade)
   transactionId     String?       @unique
   amount            Float
   currency          String        @default("USD")
@@ -230,7 +226,6 @@ model Payment {
   completedAt       DateTime?
   createdAt         DateTime      @default(now())
 
-  // Relations
   earnings          CreatorEarning[]
 
   @@index([userId, status])
@@ -257,7 +252,7 @@ enum PaymentStatus {
 model CreatorEarning {
   id                String        @id @default(uuid())
   creatorId         String
-  creator           User          @relation(fields: [creatorId], references: [id], onDelete: CASCADE)
+  creator           User          @relation(fields: [creatorId], references: [id], onDelete: Cascade)
   source            EarningSource
   amount            Float
   currency          String        @default("USD")
@@ -291,7 +286,7 @@ enum EarningStatus {
 model Payout {
   id                String        @id @default(uuid())
   creatorId         String
-  creator           User          @relation(fields: [creatorId], references: [id], onDelete: CASCADE)
+  creator           User          @relation(fields: [creatorId], references: [id], onDelete: Cascade)
   amount            Float
   currency          String        @default("USD")
   mobileNumber      String
@@ -331,7 +326,6 @@ model InkStreamAnime {
   createdAt         DateTime  @default(now())
   updatedAt         DateTime  @updatedAt
 
-  // Relations
   episodes          InkStreamEpisode[]
   watchHistory      InkStreamWatchHistory[]
 
@@ -342,7 +336,7 @@ model InkStreamAnime {
 model InkStreamEpisode {
   id                String    @id @default(uuid())
   animeId           String
-  anime             InkStreamAnime @relation(fields: [animeId], references: [id], onDelete: CASCADE)
+  anime             InkStreamAnime @relation(fields: [animeId], references: [id], onDelete: Cascade)
   episodeNumber     Int
   title             String?
   videoUrl          String
@@ -351,7 +345,6 @@ model InkStreamEpisode {
   isAvailable       Boolean   @default(true)
   createdAt         DateTime  @default(now())
 
-  // Relations
   watchHistory      InkStreamWatchHistory[]
 
   @@unique([animeId, episodeNumber])
@@ -360,11 +353,11 @@ model InkStreamEpisode {
 model InkStreamWatchHistory {
   id                String    @id @default(uuid())
   userId            String
-  user              User      @relation(fields: [userId], references: [id], onDelete: CASCADE)
+  user              User      @relation(fields: [userId], references: [id], onDelete: Cascade)
   animeId           String
-  anime             InkStreamAnime @relation(fields: [animeId], references: [id], onDelete: CASCADE)
+  anime             InkStreamAnime @relation(fields: [animeId], references: [id], onDelete: Cascade)
   episodeId         String
-  episode           InkStreamEpisode @relation(fields: [episodeId], references: [id], onDelete: CASCADE)
+  episode           InkStreamEpisode @relation(fields: [episodeId], references: [id], onDelete: Cascade)
   progress          Int       @default(0)
   lastWatchedAt     DateTime  @default(now())
 
@@ -378,7 +371,7 @@ model InkStreamWatchHistory {
 model Notification {
   id                String    @id @default(uuid())
   userId            String
-  user              User      @relation(fields: [userId], references: [id], onDelete: CASCADE)
+  user              User      @relation(fields: [userId], references: [id], onDelete: Cascade)
   type              NotificationType
   title             String
   body              String?
