@@ -8,6 +8,7 @@ import { PaymentsModule } from './modules/payments/payments.module';
 import { InkstreamModule } from './modules/inkstream/inkstream.module';
 import { AdminModule } from './modules/admin/admin.module';
 import { DashboardModule } from './modules/dashboard/dashboard.module';
+import { FollowModule } from './modules/follow/follow.module';  // ← IMPORT AJOUTÉ
 import { PrismaModule } from './prisma/prisma.module';
 
 @Module({
@@ -22,9 +23,10 @@ import { PrismaModule } from './prisma/prisma.module';
     MangasModule,
     SocialModule,
     PaymentsModule,
-    InkstreamModule,   // ← InkStream est maintenant inclus
+    InkstreamModule,
     AdminModule,
     DashboardModule,
+    FollowModule,   // ← MODULE AJOUTÉ
   ],
 })
 export class AppModule {}
