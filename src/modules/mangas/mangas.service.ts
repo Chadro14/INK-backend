@@ -12,7 +12,6 @@ export class MangasService {
   // CRÉER UN MANGA
   // ============================================
   async create(userId: string, dto: CreateMangaDto) {
-    // Vérifier que l'utilisateur existe
     const user = await this.prisma.user.findUnique({
       where: { id: userId },
     });
@@ -20,7 +19,6 @@ export class MangasService {
       throw new NotFoundException('Utilisateur non trouvé');
     }
 
-    // Créer le manga
     const manga = await this.prisma.manga.create({
       data: {
         title: dto.title,
@@ -40,7 +38,9 @@ export class MangasService {
   // RÉCUPÉRER TOUS LES MANGAS (PAGINÉ)
   // ============================================
   async findAll(page: number = 1, limit: number = 20, filters?: any) {
-    const skip = (page - 1) * limit;
+    const safePage = Number.isFinite(page) && page > 0 ? page : 1;
+    const safeLimit = Number.isFinite(limit) && limit > 0 ? limit : 20;
+    const skip = (safePage - 1) * safeLimit;
 
     const where: any = {};
 
@@ -82,7 +82,7 @@ export class MangasService {
           },
         },
         skip,
-        take: limit,
+        take: safeLimit,
         orderBy: { createdAt: 'desc' },
       }),
       this.prisma.manga.count({ where }),
@@ -92,9 +92,9 @@ export class MangasService {
       data: mangas,
       meta: {
         total,
-        page,
-        limit,
-        totalPages: Math.ceil(total / limit),
+        page: safePage,
+        limit: safeLimit,
+        totalPages: Math.ceil(total / safeLimit),
       },
     };
   }
@@ -142,7 +142,6 @@ export class MangasService {
       throw new NotFoundException('Manga non trouvé');
     }
 
-    // Incrémenter les vues
     await this.prisma.manga.update({
       where: { id },
       data: { viewsCount: { increment: 1 } },
@@ -163,7 +162,6 @@ export class MangasService {
       throw new NotFoundException('Manga non trouvé');
     }
 
-    // Vérifier que l'utilisateur est l'auteur ou admin
     if (manga.authorId !== userId) {
       throw new ForbiddenException('Vous n\'êtes pas l\'auteur de ce manga');
     }
@@ -187,12 +185,10 @@ export class MangasService {
       throw new NotFoundException('Manga non trouvé');
     }
 
-    // Vérifier que l'utilisateur est l'auteur ou admin
     if (manga.authorId !== userId) {
       throw new ForbiddenException('Vous n\'êtes pas l\'auteur de ce manga');
     }
 
-    // Supprimer les chapitres (les fichiers R2 seront supprimés en background)
     return this.prisma.manga.delete({
       where: { id },
     });
@@ -202,10 +198,10 @@ export class MangasService {
   // TOP MANGA DU MOIS
   // ============================================
   async getTopMangas(limit: number = 10) {
+    const safeLimit = Number.isFinite(limit) && limit > 0 ? limit : 10;
     const thirtyDaysAgo = new Date();
     thirtyDaysAgo.setDate(thirtyDaysAgo.getDate() - 30);
 
-    // Récupérer les mangas avec leurs stats
     const mangas = await this.prisma.manga.findMany({
       where: {
         status: Status.ONGOING,
@@ -234,12 +230,11 @@ export class MangasService {
         { likesCount: 'desc' },
         { subscribersCount: 'desc' },
       ],
-      take: limit,
+      take: safeLimit,
     });
 
-    // Calculer un score pondéré
     return mangas.map((manga, index) => {
-      const score = 
+      const score =
         manga.viewsCount * 1 +
         manga._count.likes * 5 +
         manga._count.subscriptions * 10 +
