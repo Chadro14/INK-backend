@@ -43,21 +43,28 @@ export class MangasController {
   // ============================================
   @Get()
   async findAll(
-    @Query('page') page: number = 1,
-    @Query('limit') limit: number = 20,
+    @Query('page') page?: string,
+    @Query('limit') limit?: string,
     @Query('search') search?: string,
     @Query('genre') genre?: string,
     @Query('status') status?: string,
   ) {
-    return this.mangasService.findAll(page, limit, { search, genre, status });
+    const pageNumber = page ? parseInt(page, 10) : 1;
+    const limitNumber = limit ? parseInt(limit, 10) : 20;
+    return this.mangasService.findAll(
+      Number.isNaN(pageNumber) ? 1 : pageNumber,
+      Number.isNaN(limitNumber) ? 20 : limitNumber,
+      { search, genre, status },
+    );
   }
 
   // ============================================
   // TOP MANGA DU MOIS
   // ============================================
   @Get('top')
-  async getTop(@Query('limit') limit: number = 10) {
-    return this.mangasService.getTopMangas(limit);
+  async getTop(@Query('limit') limit?: string) {
+    const limitNumber = limit ? parseInt(limit, 10) : 10;
+    return this.mangasService.getTopMangas(Number.isNaN(limitNumber) ? 10 : limitNumber);
   }
 
   // ============================================
