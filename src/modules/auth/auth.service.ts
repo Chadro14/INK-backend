@@ -1,4 +1,4 @@
-import { Injectable, ConflictException, UnauthorizedException } from '@nestjs/common';
+import { Injectable, ConflictException, UnauthorizedException, NotFoundException } from '@nestjs/common';
 import { JwtService } from '@nestjs/jwt';
 import * as bcrypt from 'bcrypt';
 import { PrismaService } from '../../prisma/prisma.service';
@@ -12,7 +12,6 @@ export class AuthService {
   ) {}
 
   async register(dto: RegisterDto) {
-    // Vérifier si l'email existe déjà
     const existingUser = await this.prisma.user.findFirst({
       where: {
         OR: [{ email: dto.email }, { username: dto.username }],
@@ -23,10 +22,8 @@ export class AuthService {
       throw new ConflictException('Email ou nom d\'utilisateur déjà utilisé');
     }
 
-    // Hasher le mot de passe
     const passwordHash = await bcrypt.hash(dto.password, 10);
 
-    // Créer l'utilisateur
     const user = await this.prisma.user.create({
       data: {
         email: dto.email,
@@ -37,7 +34,6 @@ export class AuthService {
       },
     });
 
-    // Générer le token
     const token = this.jwt.sign({ sub: user.id, email: user.email });
 
     return {
@@ -53,7 +49,6 @@ export class AuthService {
   }
 
   async login(dto: LoginDto) {
-    // Trouver l'utilisateur
     const user = await this.prisma.user.findUnique({
       where: { email: dto.email },
     });
@@ -62,13 +57,11 @@ export class AuthService {
       throw new UnauthorizedException('Email ou mot de passe incorrect');
     }
 
-    // Vérifier le mot de passe
     const isPasswordValid = await bcrypt.compare(dto.password, user.passwordHash);
     if (!isPasswordValid) {
       throw new UnauthorizedException('Email ou mot de passe incorrect');
     }
 
-    // Générer le token
     const token = this.jwt.sign({ sub: user.id, email: user.email });
 
     return {
@@ -84,6 +77,31 @@ export class AuthService {
       },
       token,
     };
+  }
+
+  // ============================================
+  // RÉCUPÉRER UN UTILISATEUR PAR ID
+  // ============================================
+  async getUserById(id: string) {
+    const user = await this.prisma.user.findUnique({
+      where: { id },
+      include: {
+        mangas: true,
+        _count: {
+          select: {
+            mangas: true,
+            followers: true,
+            following: true,
+          },
+        },
+      },
+    });
+
+    if (!user) {
+      throw new NotFoundException('Utilisateur non trouvé');
+    }
+
+    return user;
   }
 
   private generateAvatarColor(username: string): string {
