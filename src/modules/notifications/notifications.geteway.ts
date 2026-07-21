@@ -8,60 +8,39 @@ import {
 import { Server, Socket } from 'socket.io';
 
 @WebSocketGateway({
-  cors: {
-    origin: '*',
-  },
+  cors: { origin: '*' },
 })
 export class NotificationsGateway implements OnGatewayConnection, OnGatewayDisconnect {
   @WebSocketServer()
   server: Server;
 
-  private userSockets: Map<string, Set<string>> = new Map();
+  private userSockets = new Map<string, string>();
 
-  // ============================================
-  // CONNEXION
-  // ============================================
   handleConnection(client: Socket) {
-    const userId = client.handshake.auth.userId;
+    const userId = client.handshake.query.userId as string;
     if (userId) {
-      if (!this.userSockets.has(userId)) {
-        this.userSockets.set(userId, new Set());
-      }
-      this.userSockets.get(userId).add(client.id);
+      this.userSockets.set(userId, client.id);
     }
   }
 
-  // ============================================
-  // DÉCONNEXION
-  // ============================================
   handleDisconnect(client: Socket) {
-    for (const [userId, sockets] of this.userSockets.entries()) {
-      if (sockets.has(client.id)) {
-        sockets.delete(client.id);
-        if (sockets.size === 0) {
-          this.userSockets.delete(userId);
-        }
+    for (const [userId, socketId] of this.userSockets.entries()) {
+      if (socketId === client.id) {
+        this.userSockets.delete(userId);
         break;
       }
     }
   }
 
-  // ============================================
-  // ENVOYER UNE NOTIFICATION À UN UTILISATEUR
-  // ============================================
-  sendNotification(userId: string, notification: any) {
-    const sockets = this.userSockets.get(userId);
-    if (sockets) {
-      for (const socketId of sockets) {
-        this.server.to(socketId).emit('notification', notification);
-      }
-    }
+  @SubscribeMessage('join')
+  handleJoin(client: Socket, userId: string) {
+    this.userSockets.set(userId, client.id);
   }
 
-  // ============================================
-  // ENVOYER UNE NOTIFICATION DE MASSE
-  // ============================================
-  broadcastNotification(notification: any) {
-    this.server.emit('notification', notification);
+  sendToUser(userId: string, event: string, payload: any) {
+    const socketId = this.userSockets.get(userId);
+    if (socketId) {
+      this.server.to(socketId).emit(event, payload);
+    }
   }
 }
