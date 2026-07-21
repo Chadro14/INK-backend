@@ -43,4 +43,8 @@ export class NotificationsGateway implements OnGatewayConnection, OnGatewayDisco
       this.server.to(socketId).emit(event, payload);
     }
   }
+
+  sendNotification(userId: string, notification: any) {
+    this.sendToUser(userId, 'notification', notification);
+  }
 }
