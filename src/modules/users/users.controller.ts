@@ -13,7 +13,6 @@ export class UsersController {
   @UseGuards(JwtAuthGuard)
   async getMe(@Req() req: any) {
     const user = await this.usersService.findById(req.user.id);
-    // Supprimer le mot de passe
     delete user.passwordHash;
     return user;
   }
