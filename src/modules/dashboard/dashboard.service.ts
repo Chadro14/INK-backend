@@ -40,7 +40,7 @@ export class DashboardService {
     const totalViews = user.mangas.reduce((sum, m) => sum + m.viewsCount, 0);
     const totalLikes = user.mangas.reduce((sum, m) => sum + m.likesCount, 0);
     const totalComments = user.mangas.reduce((sum, m) => sum + m.commentsCount, 0);
-    const totalSubscriptions = user.mangas.reduce((sum, m) => sum + m.subscriptionsCount, 0);
+    const totalSubscriptions = user.mangas.reduce((sum, m) => sum + m.subscribersCount, 0);
 
     const totalEarnings = user.earnings
       .filter((e) => e.status === 'PAID')
