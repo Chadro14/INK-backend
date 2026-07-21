@@ -9,6 +9,11 @@ import { InkstreamModule } from './modules/inkstream/inkstream.module';
 import { FollowModule } from './modules/follow/follow.module';
 import { CertificationModule } from './modules/certification/certification.module';
 import { DashboardModule } from './modules/dashboard/dashboard.module';
+import { ChatModule } from './modules/chat/chat.module';
+import { NotificationsModule } from './modules/notifications/notifications.module';
+import { SteamModule } from './modules/steam/steam.module';
+import { EventsModule } from './modules/events/events.module';
+import { AdminModule } from './modules/admin/admin.module';
 import { PrismaModule } from './prisma/prisma.module';
 
 @Module({
@@ -27,6 +32,11 @@ import { PrismaModule } from './prisma/prisma.module';
     FollowModule,
     CertificationModule,
     DashboardModule,
+    ChatModule,
+    NotificationsModule,
+    SteamModule,
+    EventsModule,
+    AdminModule,
   ],
 })
 export class AppModule {}
