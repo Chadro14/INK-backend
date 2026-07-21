@@ -44,6 +44,17 @@ model User {
   followingUsers  UserFollow[] @relation("Follower")
   followedByUsers UserFollow[] @relation("Following")
 
+  // STEAM (progression)
+  steamPoints     Int           @default(0)
+  steamLevel      Int           @default(1)
+
+  // MESSAGERIE
+  sentMessages     Message[] @relation("SentMessages")
+  receivedMessages Message[] @relation("ReceivedMessages")
+
+  // EVENTS
+  eventParticipations EventParticipation[]
+
   createdAt       DateTime      @default(now())
   updatedAt       DateTime      @updatedAt
 
@@ -56,6 +67,7 @@ enum Role {
   READER
   CREATOR
   ADMIN
+  SUSPENDED
 }
 
 enum PremiumPlan {
@@ -429,4 +441,60 @@ model UserFollow {
   @@unique([followerId, followingId])
   @@index([followerId])
   @@index([followingId])
+}
+
+// ============================================
+// MESSAGERIE (Chat / Inbox)
+// ============================================
+model Message {
+  id          String   @id @default(uuid())
+  senderId    String
+  sender      User     @relation("SentMessages", fields: [senderId], references: [id], onDelete: Cascade)
+  receiverId  String
+  receiver    User     @relation("ReceivedMessages", fields: [receiverId], references: [id], onDelete: Cascade)
+  content     String   @db.Text
+  isRead      Boolean  @default(false)
+  createdAt   DateTime @default(now())
+
+  @@index([senderId, receiverId])
+  @@index([receiverId, isRead])
+  @@index([createdAt])
+}
+
+// ============================================
+// ÉVÉNEMENTS THÉMATIQUES
+// ============================================
+model Event {
+  id            String    @id @default(uuid())
+  title         String
+  description   String?   @db.Text
+  theme         String?
+  coverUrl      String?
+  startDate     DateTime
+  endDate       DateTime
+  rewardManas   Int       @default(0)
+  rewardBadge   String?
+  isActive      Boolean   @default(true)
+  createdAt     DateTime  @default(now())
+  updatedAt     DateTime  @updatedAt
+
+  participations EventParticipation[]
+
+  @@index([isActive, startDate, endDate])
+}
+
+model EventParticipation {
+  id            String    @id @default(uuid())
+  userId        String
+  user          User      @relation(fields: [userId], references: [id], onDelete: Cascade)
+  eventId       String
+  event         Event     @relation(fields: [eventId], references: [id], onDelete: Cascade)
+  progress      Int       @default(0)
+  isCompleted   Boolean   @default(false)
+  rewardClaimed Boolean   @default(false)
+  joinedAt      DateTime  @default(now())
+  completedAt   DateTime?
+
+  @@unique([userId, eventId])
+  @@index([eventId])
 }
