@@ -1,3 +1,4 @@
+```prisma
 generator client {
   provider      = "prisma-client-js"
   binaryTargets = ["native", "rhel-openssl-3.0.x"]
@@ -28,6 +29,7 @@ model User {
   premiumActive   Boolean       @default(false)
   premiumExpires  DateTime?
   premiumPlan     PremiumPlan?
+  lastUsernameChange DateTime?  // ✅ AJOUTÉ POUR LA RÈGLE DES 30 JOURS
 
   mangas          Manga[]
   comments        Comment[]
