@@ -1,4 +1,4 @@
-import { Controller, Get, Param, UseGuards, Req } from '@nestjs/common';
+import { Controller, Get, UseGuards, Req } from '@nestjs/common';
 import { UsersService } from './users.service';
 import { JwtAuthGuard } from '../../common/guards/jwt-auth.guard';
 
@@ -6,9 +6,7 @@ import { JwtAuthGuard } from '../../common/guards/jwt-auth.guard';
 export class UsersController {
   constructor(private readonly usersService: UsersService) {}
 
-  // ============================================
-  // RÉCUPÉRER L'UTILISATEUR CONNECTÉ (PROFIL)
-  // ============================================
+  // ✅ AJOUTE CETTE MÉTHODE
   @Get('me')
   @UseGuards(JwtAuthGuard)
   async getMe(@Req() req: any) {
@@ -17,9 +15,6 @@ export class UsersController {
     return user;
   }
 
-  // ============================================
-  // RÉCUPÉRER UN UTILISATEUR PAR ID
-  // ============================================
   @Get(':id')
   async findOne(@Param('id') id: string) {
     return this.usersService.findById(id);
