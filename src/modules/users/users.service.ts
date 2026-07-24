@@ -27,55 +27,47 @@ export class UsersService {
     return user;
   }
 
-  // ✅ AJOUTE CETTE MÉTHODE AVEC LA VÉRIFICATION DES 30 JOURS
+  // ✅ AJOUTE CETTE MÉTHODE
   async update(id: string, data: { username?: string; email?: string; bio?: string }) {
-    // Vérifier si l'utilisateur existe
-    const existingUser = await this.prisma.user.findUnique({
+    const user = await this.prisma.user.findUnique({
       where: { id },
     });
 
-    if (!existingUser) {
+    if (!user) {
       throw new NotFoundException('Utilisateur non trouvé');
     }
 
-    // ✅ VÉRIFICATION : Le nom d'utilisateur change-t-il ?
-    if (data.username && data.username !== existingUser.username) {
-      // Vérifier si le nom est déjà pris
-      const usernameTaken = await this.prisma.user.findUnique({
+    // Vérifier si le nom d'utilisateur change
+    if (data.username && data.username !== user.username) {
+      const existing = await this.prisma.user.findUnique({
         where: { username: data.username },
       });
-
-      if (usernameTaken) {
+      if (existing) {
         throw new BadRequestException('Ce nom d\'utilisateur est déjà pris');
       }
 
-      // ✅ VÉRIFICATION : 30 jours depuis le dernier changement
-      if (existingUser.lastUsernameChange) {
+      // Vérification des 30 jours
+      if (user.lastUsernameChange) {
         const daysSinceLastChange = Math.floor(
-          (Date.now() - new Date(existingUser.lastUsernameChange).getTime()) / (1000 * 60 * 60 * 24)
+          (Date.now() - new Date(user.lastUsernameChange).getTime()) / (1000 * 60 * 60 * 24)
         );
-
         if (daysSinceLastChange < 30) {
           throw new BadRequestException(
-            `Vous ne pouvez changer votre nom d'utilisateur que tous les 30 jours. Prochain changement possible dans ${30 - daysSinceLastChange} jours.`
+            `Vous ne pouvez changer votre nom que tous les 30 jours. Prochain changement dans ${30 - daysSinceLastChange} jours.`
           );
         }
       }
     }
 
-    // Mise à jour
-    const updatedUser = await this.prisma.user.update({
+    return this.prisma.user.update({
       where: { id },
       data: {
         username: data.username,
         email: data.email,
         bio: data.bio,
-        // ✅ Enregistrer la date du dernier changement de nom
-        lastUsernameChange: data.username && data.username !== existingUser.username ? new Date() : existingUser.lastUsernameChange,
+        lastUsernameChange: data.username && data.username !== user.username ? new Date() : user.lastUsernameChange,
       },
     });
-
-    return updatedUser;
   }
 
   async findByEmail(email: string) {
