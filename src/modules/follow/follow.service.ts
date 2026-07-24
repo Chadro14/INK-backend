@@ -42,12 +42,12 @@ export class FollowService {
       data: { followerId, followingId },
     });
 
-    // Créer une notification
+    // ✅ Notification sans emojis
     await this.prisma.notification.create({
       data: {
         userId: followingId,
         type: 'NEW_SUBSCRIBER',
-        title: 'Nouvel abonné 🎉',
+        title: 'Nouvel abonné',
         body: `${followerId} a commencé à vous suivre`,
         metadata: { followerId },
       },
