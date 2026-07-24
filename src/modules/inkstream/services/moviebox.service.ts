@@ -1,37 +1,61 @@
 import { Injectable } from '@nestjs/common';
-import { Anilist } from '@consumet/extensions';
+import axios from 'axios';
 
 @Injectable()
 export class MovieboxService {
-  private anilist: any;
-
-  constructor() {
-    this.anilist = new Anilist();
-  }
+  private readonly ANILIST_URL = 'https://graphql.anilist.co';
 
   // ============================================
   // RECHERCHER DES ANIMES
   // ============================================
   async searchAnimes(query: string, limit: number = 20) {
+    const gqlQuery = `
+      query ($search: String, $perPage: Int) {
+        Page(perPage: $perPage) {
+          media(search: $search, type: ANIME) {
+            id
+            title {
+              romaji
+              english
+              native
+            }
+            coverImage {
+              large
+            }
+            description
+            episodes
+            genres
+            averageScore
+            status
+            bannerImage
+          }
+        }
+      }
+    `;
+
     try {
-      const results = await this.anilist.search(query, {
-        perPage: limit,
+      const response = await axios.post(this.ANILIST_URL, {
+        query: gqlQuery,
+        variables: { search: query, perPage: limit },
       });
 
-      return results.results.map((item: any) => ({
-        id: item.id,
+      const media = response.data?.data?.Page?.media || [];
+      
+      return media.map((item: any) => ({
+        id: String(item.id),
         title: item.title?.english || item.title?.romaji || item.title?.native || 'Sans titre',
         description: item.description || '',
-        coverImage: item.coverImage || item.image || '',
+        coverImage: item.coverImage?.large || '',
+        bannerImage: item.bannerImage || '',
         genre: item.genres || [],
-        rating: item.rating || item.averageScore / 10 || 0,
+        rating: item.averageScore ? item.averageScore / 10 : 0,
         source: 'anilist',
-        externalId: item.id,
-        episodesCount: item.episodes || item.totalEpisodes || 0,
+        externalId: String(item.id),
+        episodesCount: item.episodes || 0,
         status: item.status || 'UNKNOWN',
       }));
     } catch (error) {
-      console.error('❌ Consumet search error:', error.message);
+      console.error('❌ Anilist search error:', error.message);
       return [];
     }
   }
@@ -40,30 +64,62 @@ export class MovieboxService {
   // RÉCUPÉRER LES DÉTAILS D'UN ANIME
   // ============================================
   async getAnimeDetails(id: string) {
+    const gqlQuery = `
+      query ($id: Int) {
+        Media(id: $id, type: ANIME) {
+          id
+          title {
+            romaji
+            english
+            native
+          }
+          coverImage {
+            large
+          }
+          bannerImage
+          description
+          episodes
+          genres
+          averageScore
+          status
+          nextAiringEpisode {
+            episode
+            timeUntilAiring
+          }
+        }
+      }
+    `;
+
     try {
-      const details = await this.anilist.getAnime(id);
+      const response = await axios.post(this.ANILIST_URL, {
+        query: gqlQuery,
+        variables: { id: parseInt(id) },
+      });
+
+      const item = response.data?.data?.Media;
+      if (!item) {
+        throw new Error('Anime non trouvé');
+      }
 
       return {
-        id: details.id,
-        title: details.title?.english || details.title?.romaji || details.title?.native || 'Sans titre',
-        description: details.description || '',
-        coverImage: details.coverImage || '',
-        bannerImage: details.bannerImage || '',
-        genre: details.genres || [],
-        rating: details.averageScore / 10 || 0,
+        id: String(item.id),
+        title: item.title?.english || item.title?.romaji || item.title?.native || 'Sans titre',
+        description: item.description || '',
+        coverImage: item.coverImage?.large || '',
+        bannerImage: item.bannerImage || '',
+        genre: item.genres || [],
+        rating: item.averageScore ? item.averageScore / 10 : 0,
         source: 'anilist',
-        externalId: details.id,
-        episodesCount: details.episodes || 0,
-        status: details.status || 'UNKNOWN',
-        episodes: details.episodes?.map((ep: any) => ({
-          id: ep.id,
-          episodeNumber: ep.episodeNumber || ep.number,
-          title: ep.title || `Épisode ${ep.episodeNumber}`,
-          duration: ep.duration || 0,
-        })) || [],
+        externalId: String(item.id),
+        episodesCount: item.episodes || 0,
+        status: item.status || 'UNKNOWN',
+        nextEpisode: item.nextAiringEpisode ? {
+          episode: item.nextAiringEpisode.episode,
+          timeUntilAiring: item.nextAiringEpisode.timeUntilAiring,
+        } : null,
       };
     } catch (error) {
-      console.error('❌ Consumet details error:', error.message);
+      console.error('❌ Anilist details error:', error.message);
       throw new Error('Impossible de récupérer les détails de l\'anime');
     }
   }
@@ -72,37 +128,155 @@ export class MovieboxService {
   // RÉCUPÉRER LES ANIMES POPULAIRES
   // ============================================
   async getPopularAnimes(limit: number = 10) {
+    const gqlQuery = `
+      query ($perPage: Int) {
+        Page(perPage: $perPage) {
+          media(type: ANIME, sort: POPULARITY_DESC) {
+            id
+            title {
+              romaji
+              english
+            }
+            coverImage {
+              large
+            }
+            description
+            episodes
+            genres
+            averageScore
+            status
+          }
+        }
+      }
+    `;
+
     try {
-      const results = await this.anilist.getPopularAnimes({
-        perPage: limit,
+      const response = await axios.post(this.ANILIST_URL, {
+        query: gqlQuery,
+        variables: { perPage: limit },
       });
 
-      return results.results.map((item: any) => ({
-        id: item.id,
-        title: item.title?.english || item.title?.romaji || item.title?.native || 'Sans titre',
+      const media = response.data?.data?.Page?.media || [];
+      
+      return media.map((item: any) => ({
+        id: String(item.id),
+        title: item.title?.english || item.title?.romaji || 'Sans titre',
         description: item.description || '',
-        coverImage: item.coverImage || item.image || '',
+        coverImage: item.coverImage?.large || '',
         genre: item.genres || [],
-        rating: item.rating || item.averageScore / 10 || 0,
+        rating: item.averageScore ? item.averageScore / 10 : 0,
         source: 'anilist',
-        externalId: item.id,
-        episodesCount: item.episodes || item.totalEpisodes || 0,
+        externalId: String(item.id),
+        episodesCount: item.episodes || 0,
         status: item.status || 'UNKNOWN',
       }));
     } catch (error) {
-      console.error('❌ Consumet popular error:', error.message);
+      console.error('❌ Anilist popular error:', error.message);
       return [];
     }
   }
 
   // ============================================
-  // RÉCUPÉRER L'URL DE STREAMING (si disponible)
+  // RÉCUPÉRER LES ANIMES À L'AFFICHE (TRENDING)
   // ============================================
-  async getEpisodeStreamUrl(episodeId: string) {
-    return {
-      videoUrl: '',
-      subtitles: [],
-      sources: [],
-    };
+  async getTrendingAnimes(limit: number = 10) {
+    const gqlQuery = `
+      query ($perPage: Int) {
+        Page(perPage: $perPage) {
+          media(type: ANIME, sort: TRENDING_DESC) {
+            id
+            title {
+              romaji
+              english
+            }
+            coverImage {
+              large
+            }
+            description
+            episodes
+            genres
+            averageScore
+            status
+          }
+        }
+      }
+    `;
+
+    try {
+      const response = await axios.post(this.ANILIST_URL, {
+        query: gqlQuery,
+        variables: { perPage: limit },
+      });
+
+      const media = response.data?.data?.Page?.media || [];
+      
+      return media.map((item: any) => ({
+        id: String(item.id),
+        title: item.title?.english || item.title?.romaji || 'Sans titre',
+        description: item.description || '',
+        coverImage: item.coverImage?.large || '',
+        genre: item.genres || [],
+        rating: item.averageScore ? item.averageScore / 10 : 0,
+        source: 'anilist',
+        externalId: String(item.id),
+        episodesCount: item.episodes || 0,
+        status: item.status || 'UNKNOWN',
+      }));
+    } catch (error) {
+      console.error('❌ Anilist trending error:', error.message);
+      return [];
+    }
+  }
+
+  // ============================================
+  // RÉCUPÉRER LES ANIMES PAR GENRE
+  // ============================================
+  async getAnimesByGenre(genre: string, limit: number = 20) {
+    const gqlQuery = `
+      query ($genre: String, $perPage: Int) {
+        Page(perPage: $perPage) {
+          media(genre: $genre, type: ANIME) {
+            id
+            title {
+              romaji
+              english
+            }
+            coverImage {
+              large
+            }
+            description
+            episodes
+            genres
+            averageScore
+            status
+          }
+        }
+      }
+    `;
+
+    try {
+      const response = await axios.post(this.ANILIST_URL, {
+        query: gqlQuery,
+        variables: { genre, perPage: limit },
+      });
+
+      const media = response.data?.data?.Page?.media || [];
+      
+      return media.map((item: any) => ({
+        id: String(item.id),
+        title: item.title?.english || item.title?.romaji || 'Sans titre',
+        description: item.description || '',
+        coverImage: item.coverImage?.large || '',
+        genre: item.genres || [],
+        rating: item.averageScore ? item.averageScore / 10 : 0,
+        source: 'anilist',
+        externalId: String(item.id),
+        episodesCount: item.episodes || 0,
+        status: item.status || 'UNKNOWN',
+      }));
+    } catch (error) {
+      console.error('❌ Anilist genre error:', error.message);
+      return [];
+    }
   }
 }
