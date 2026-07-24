@@ -1,81 +1,120 @@
-import {
-  Controller,
-  Get,
-  Put,
-  Post,
-  Body,
-  Param,
-  UseGuards,
-  Req,
-  UseInterceptors,
-  UploadedFile,
-  BadRequestException,
-} from '@nestjs/common';
-import { FileInterceptor } from '@nestjs/platform-express';
-import { UsersService } from './users.service';
-import { JwtAuthGuard } from '../../common/guards/jwt-auth.guard';
+import { Injectable, NotFoundException, BadRequestException } from '@nestjs/common';
+import { PrismaService } from '../../prisma/prisma.service';
+import { StorageService } from '../../common/services/storage.service';
 
-@Controller('users')
-export class UsersController {
-  constructor(private readonly usersService: UsersService) {}
+@Injectable()
+export class UsersService {
+  constructor(
+    private prisma: PrismaService,
+    private storage: StorageService,
+  ) {}
 
   // ============================================
-  // RÉCUPÉRER LE PROFIL DE L'UTILISATEUR CONNECTÉ
+  // RÉCUPÉRER UN UTILISATEUR PAR ID
   // ============================================
-  @Get('me')
-  @UseGuards(JwtAuthGuard)
-  async getMe(@Req() req: any) {
-    const user = await this.usersService.findById(req.user.id);
-    delete user.passwordHash;
+  async findById(id: string) {
+    const user = await this.prisma.user.findUnique({
+      where: { id },
+      include: {
+        mangas: true,
+        _count: {
+          select: {
+            mangas: true,
+            followers: true,
+            following: true,
+          },
+        },
+      },
+    });
+
+    if (!user) {
+      throw new NotFoundException('Utilisateur non trouvé');
+    }
+
     return user;
   }
 
   // ============================================
-  // METTRE À JOUR LE PROFIL
+  // METTRE À JOUR UN UTILISATEUR
   // ============================================
-  @Put('me')
-  @UseGuards(JwtAuthGuard)
-  async updateMe(@Req() req: any, @Body() body: any) {
-    const { username, email, bio } = body;
-    const user = await this.usersService.update(req.user.id, {
-      username,
-      email,
-      bio,
+  async update(id: string, data: { username?: string; email?: string; bio?: string }) {
+    const user = await this.prisma.user.findUnique({
+      where: { id },
     });
-    delete user.passwordHash;
-    return user;
+
+    if (!user) {
+      throw new NotFoundException('Utilisateur non trouvé');
+    }
+
+    // Vérifier si le nom d'utilisateur change
+    if (data.username && data.username !== user.username) {
+      // Vérifier si le nom est déjà pris
+      const existing = await this.prisma.user.findUnique({
+        where: { username: data.username },
+      });
+      if (existing) {
+        throw new BadRequestException('Ce nom d\'utilisateur est déjà pris');
+      }
+
+      // ✅ Vérification des 30 jours
+      if (user.lastUsernameChange) {
+        const daysSinceLastChange = Math.floor(
+          (Date.now() - new Date(user.lastUsernameChange).getTime()) / (1000 * 60 * 60 * 24)
+        );
+        if (daysSinceLastChange < 30) {
+          throw new BadRequestException(
+            `Vous ne pouvez changer votre nom que tous les 30 jours. Prochain changement possible dans ${30 - daysSinceLastChange} jours.`
+          );
+        }
+      }
+    }
+
+    // Mise à jour
+    return this.prisma.user.update({
+      where: { id },
+      data: {
+        username: data.username,
+        email: data.email,
+        bio: data.bio,
+        lastUsernameChange: data.username && data.username !== user.username ? new Date() : user.lastUsernameChange,
+      },
+    });
   }
 
   // ============================================
   // UPLOADER UN AVATAR
   // ============================================
-  @Post('avatar')
-  @UseGuards(JwtAuthGuard)
-  @UseInterceptors(FileInterceptor('avatar'))
-  async uploadAvatar(@Req() req: any, @UploadedFile() file: Express.Multer.File) {
-    if (!file) {
-      throw new BadRequestException('Aucun fichier fourni');
+  async uploadAvatar(userId: string, file: Express.Multer.File) {
+    const user = await this.prisma.user.findUnique({
+      where: { id: userId },
+    });
+
+    if (!user) {
+      throw new NotFoundException('Utilisateur non trouvé');
     }
 
-    // Vérifier le type de fichier
-    if (!file.mimetype.startsWith('image/')) {
-      throw new BadRequestException('Le fichier doit être une image');
-    }
+    // Générer un nom de fichier unique
+    const ext = file.mimetype.split('/')[1] || 'jpg';
+    const key = `avatars/${userId}-${Date.now()}.${ext}`;
 
-    // Vérifier la taille (max 5MB)
-    if (file.size > 5 * 1024 * 1024) {
-      throw new BadRequestException('L\'image ne doit pas dépasser 5MB');
-    }
+    // Upload vers le stockage (Supabase Storage / S3 / R2)
+    const avatarUrl = await this.storage.upload(key, file.buffer, file.mimetype);
 
-    const avatarUrl = await this.usersService.uploadAvatar(req.user.id, file);
-    return { avatarUrl };
+    // Mettre à jour l'utilisateur
+    await this.prisma.user.update({
+      where: { id: userId },
+      data: { avatarUrl },
+    });
+
+    return avatarUrl;
   }
 
   // ============================================
-  // RÉCUPÉRER UN UTILISATEUR PAR ID
+  // RECHERCHER UN UTILISATEUR PAR EMAIL
   // ============================================
-  @Get(':id')
-  async findOne(@Param('id') id: string) {
-    return this.usersService.findById(id);
+  async findByEmail(email: string) {
+    return this.prisma.user.findUnique({
+      where: { email },
+    });
   }
 }
