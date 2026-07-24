@@ -1,84 +1,80 @@
 import { Injectable, NotFoundException, BadRequestException } from '@nestjs/common';
 import { PrismaService } from '../../../prisma/prisma.service';
+import { MovieboxService } from './moviebox.service';
 import { ScraperService } from './scraper.service';
-import { ManasService } from './manas.service';
-import { CreateAnimeDto } from '../dto/create-anime.dto';
 import { SearchAnimeDto } from '../dto/search-anime.dto';
 
 @Injectable()
 export class InkstreamService {
   constructor(
     private prisma: PrismaService,
+    private movieboxService: MovieboxService,
     private scraperService: ScraperService,
-    private manasService: ManasService,
   ) {}
 
   // ============================================
-  // 1. RECHERCHER DES ANIMES (API tierce)
+  // RECHERCHER DES ANIMES (MovieBox + Fallback)
   // ============================================
   async searchAnimes(dto: SearchAnimeDto) {
     const { q, page = 1, limit = 20 } = dto;
     const skip = (page - 1) * limit;
 
-    // Si un terme de recherche est fourni, on utilise l'API externe
-    if (q) {
-      const results = await this.scraperService.searchByKeyword(q, limit);
-      return {
-        data: results,
-        meta: {
-          total: results.length,
-          page,
-          limit,
-          source: 'external',
-        },
-      };
+    // 🔥 1. Essayer MovieBox
+    try {
+      const movieboxResults = await this.movieboxService.searchAnimes(q, limit);
+      if (movieboxResults.length > 0) {
+        return {
+          data: movieboxResults,
+          meta: {
+            total: movieboxResults.length,
+            page,
+            limit,
+            source: 'moviebox',
+          },
+        };
+      }
+    } catch (error) {
+      console.warn('⚠️ MovieBox API failed, falling back to Pinterest');
     }
 
-    // Sinon, on utilise la base de données
-    const [animes, total] = await Promise.all([
-      this.prisma.inkStreamAnime.findMany({
-        where: { isActive: true },
-        orderBy: { createdAt: 'desc' },
-        skip,
-        take: limit,
-      }),
-      this.prisma.inkStreamAnime.count({ where: { isActive: true } }),
-    ]);
-
+    // 🔥 2. Fallback : API Pinterest
+    const pinterestResults = await this.scraperService.searchByKeyword(q, limit);
     return {
-      data: animes,
+      data: pinterestResults,
       meta: {
-        total,
+        total: pinterestResults.length,
         page,
         limit,
-        totalPages: Math.ceil(total / limit),
-        source: 'database',
+        source: 'pinterest',
       },
     };
   }
 
   // ============================================
-  // 2. RÉCUPÉRER UN ANIME PAR ID
+  // RÉCUPÉRER UN ANIME PAR ID
   // ============================================
   async getAnime(id: string) {
+    // Essayer d'abord en base de données
     const anime = await this.prisma.inkStreamAnime.findUnique({
       where: { id },
-      include: {
-        episodes: {
-          orderBy: { episodeNumber: 'asc' },
-        },
-      },
+      include: { episodes: true },
     });
 
-    if (!anime) {
-      throw new NotFoundException('Anime non trouvé');
+    if (anime) {
+      return anime;
     }
 
-    return anime;
+    // Sinon, chercher via MovieBox
+    try {
+      const movieboxAnime = await this.movieboxService.getAnimeDetails(id);
+      return movieboxAnime;
+    } catch (error) {
+      throw new NotFoundException('Anime non trouvé');
+    }
   }
 
   // ============================================
-  // 3. RÉCUPÉRER LES ANIMES POPULAIRES
+  // RÉCUPÉRER LES ANIMES POPULAIRES
   // ============================================
   async getPopularAnimes() {
     // Essayer d'abord la base de données
@@ -92,131 +88,50 @@ export class InkstreamService {
       return dbAnimes;
     }
 
-    // Sinon, utiliser le scraper
-    const externalAnimes = await this.scraperService.getPopularAnimes();
-    return externalAnimes;
+    // Sinon, via MovieBox
+    try {
+      const movieboxAnimes = await this.movieboxService.getPopularAnimes(10);
+      return movieboxAnimes;
+    } catch (error) {
+      // Fallback : Pinterest
+      return this.scraperService.getPopularAnimes();
+    }
   }
 
   // ============================================
-  // 4. REGARDER UN ÉPISODE
+  // REGARDER UN ÉPISODE
   // ============================================
-  async watchEpisode(
-    userId: string,
-    animeId: string,
-    episodeNumber: number,
-  ) {
-    // Vérifier si l'utilisateur peut regarder
-    const canWatch = await this.manasService.canWatchEpisode(
-      userId,
-      animeId,
-      episodeNumber,
-    );
-
-    if (!canWatch.canWatch) {
-      throw new BadRequestException(canWatch.reason || 'Accès non autorisé');
+  async watchEpisode(userId: string, animeId: string, episodeNumber: number) {
+    // Récupérer l'anime
+    const anime = await this.getAnime(animeId);
+    if (!anime) {
+      throw new NotFoundException('Anime non trouvé');
     }
 
-    // Consommer un MANA si nécessaire
-    await this.manasService.consumeMana(userId, animeId, episodeNumber);
-
-    // Récupérer l'épisode
-    const episode = await this.prisma.inkStreamEpisode.findFirst({
-      where: {
-        animeId,
-        episodeNumber,
-        isAvailable: true,
-      },
-    });
+    // Trouver l'épisode
+    const episode = anime.episodes?.find(
+      (ep: any) => ep.episodeNumber === episodeNumber
+    );
 
     if (!episode) {
       throw new NotFoundException('Épisode non trouvé');
     }
 
-    // Mettre à jour l'historique
-    await this.prisma.inkStreamWatchHistory.upsert({
-      where: {
-        userId_episodeId: {
-          userId,
-          episodeId: episode.id,
-        },
-      },
-      update: {
-        lastWatchedAt: new Date(),
-      },
-      create: {
-        userId,
-        animeId,
-        episodeId: episode.id,
-        progress: 0,
-      },
-    });
+    // Récupérer l'URL de streaming
+    let streamUrl = episode.videoUrl;
+    if (!streamUrl) {
+      try {
+        const streamData = await this.movieboxService.getEpisodeStreamUrl(episode.id);
+        streamUrl = streamData.videoUrl;
+      } catch (error) {
+        throw new BadRequestException('Impossible de charger la vidéo');
+      }
+    }
 
     return {
       episode,
-      remainingManas: (await this.manasService.getBalance(userId)).manas,
+      streamUrl,
+      animeTitle: anime.title,
     };
-  }
-
-  // ============================================
-  // 5. SAUVEGARDER LA PROGRESSION
-  // ============================================
-  async saveProgress(
-    userId: string,
-    episodeId: string,
-    progress: number,
-  ) {
-    const watchHistory = await this.prisma.inkStreamWatchHistory.findUnique({
-      where: {
-        userId_episodeId: {
-          userId,
-          episodeId,
-        },
-      },
-    });
-
-    if (!watchHistory) {
-      throw new NotFoundException('Historique non trouvé');
-    }
-
-    await this.prisma.inkStreamWatchHistory.update({
-      where: { id: watchHistory.id },
-      data: { progress },
-    });
-
-    return { success: true };
-  }
-
-  // ============================================
-  // 6. ADMIN : CRÉER UN ANIME
-  // ============================================
-  async createAnime(dto: CreateAnimeDto) {
-    // Vérifier si l'anime existe déjà
-    const existing = await this.prisma.inkStreamAnime.findFirst({
-      where: {
-        source: dto.source,
-        externalId: dto.externalId,
-      },
-    });
-
-    if (existing) {
-      throw new BadRequestException('Cet anime existe déjà');
-    }
-
-    return this.prisma.inkStreamAnime.create({
-      data: {
-        title: dto.title,
-        description: dto.description,
-        coverImage: dto.coverImage,
-        genre: dto.genre || [],
-        source: dto.source,
-        externalId: dto.externalId,
-        externalUrl: dto.externalUrl,
-        rating: dto.rating,
-        releaseYear: dto.releaseYear,
-        episodesCount: dto.episodesCount || 0,
-        isActive: true,
-        lastSyncAt: new Date(),
-      },
-    });
   }
 }
