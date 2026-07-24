@@ -1,4 +1,4 @@
-import { Controller, Get, Param, UseGuards, Req } from '@nestjs/common';
+import { Controller, Get, Put, Body, Param, UseGuards, Req } from '@nestjs/common';
 import { UsersService } from './users.service';
 import { JwtAuthGuard } from '../../common/guards/jwt-auth.guard';
 
@@ -10,6 +10,20 @@ export class UsersController {
   @UseGuards(JwtAuthGuard)
   async getMe(@Req() req: any) {
     const user = await this.usersService.findById(req.user.id);
+    delete user.passwordHash;
+    return user;
+  }
+
+  // ✅ AJOUTE CETTE MÉTHODE POUR MODIFIER LE PROFIL
+  @Put('me')
+  @UseGuards(JwtAuthGuard)
+  async updateMe(@Req() req: any, @Body() body: any) {
+    const { username, email, bio } = body;
+    const user = await this.usersService.update(req.user.id, {
+      username,
+      email,
+      bio,
+    });
     delete user.passwordHash;
     return user;
   }
