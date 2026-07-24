@@ -1,5 +1,5 @@
 import { Injectable } from '@nestjs/common';
-import { ANILIST } from 'consumet.ts';
+import { ANILIST } from '@consumet/extensions';
 
 @Injectable()
 export class MovieboxService {
@@ -99,7 +99,6 @@ export class MovieboxService {
   // RÉCUPÉRER L'URL DE STREAMING (si disponible)
   // ============================================
   async getEpisodeStreamUrl(episodeId: string) {
-    // Consumet ne fournit pas de streaming, on retourne un placeholder
     return {
       videoUrl: '',
       subtitles: [],
