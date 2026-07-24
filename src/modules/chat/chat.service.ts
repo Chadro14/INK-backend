@@ -7,9 +7,6 @@ import { Cron, CronExpression } from '@nestjs/schedule';
 export class ChatService {
   constructor(private prisma: PrismaService) {}
 
-  // ============================================
-  // ENVOYER UN MESSAGE
-  // ============================================
   async sendMessage(senderId: string, dto: SendMessageDto) {
     const receiver = await this.prisma.user.findUnique({
       where: { id: dto.receiverId },
@@ -49,12 +46,12 @@ export class ChatService {
       },
     });
 
-    // Notification
+    // ✅ Notification sans emojis
     await this.prisma.notification.create({
       data: {
         userId: dto.receiverId,
         type: 'SYSTEM',
-        title: 'Nouveau message 📩',
+        title: 'Nouveau message',
         body: `${message.sender.username} vous a envoyé un message`,
         metadata: { messageId: message.id, senderId },
       },
@@ -63,9 +60,6 @@ export class ChatService {
     return message;
   }
 
-  // ============================================
-  // RÉCUPÉRER LES MESSAGES D'UNE CONVERSATION
-  // ============================================
   async getConversation(userId: string, otherUserId: string, page: number = 1, limit: number = 20) {
     const skip = (page - 1) * limit;
 
@@ -101,7 +95,6 @@ export class ChatService {
       }),
     ]);
 
-    // Marquer les messages comme lus
     await this.prisma.message.updateMany({
       where: {
         senderId: otherUserId,
@@ -122,9 +115,6 @@ export class ChatService {
     };
   }
 
-  // ============================================
-  // RÉCUPÉRER LA LISTE DES CONVERSATIONS
-  // ============================================
   async getConversations(userId: string) {
     const messages = await this.prisma.message.findMany({
       where: {
@@ -155,7 +145,6 @@ export class ChatService {
       distinct: ['senderId', 'receiverId'],
     });
 
-    // Grouper par conversation
     const conversations = new Map();
     for (const msg of messages) {
       const otherId = msg.senderId === userId ? msg.receiverId : msg.senderId;
@@ -175,9 +164,6 @@ export class ChatService {
     return Array.from(conversations.values());
   }
 
-  // ============================================
-  // SUPPRIMER LES ANCIENS MESSAGES (30 jours)
-  // ============================================
   @Cron(CronExpression.EVERY_DAY_AT_MIDNIGHT)
   async cleanOldMessages() {
     const thirtyDaysAgo = new Date();
