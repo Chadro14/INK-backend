@@ -36,6 +36,16 @@ export class AuthService {
 
     const token = this.jwt.sign({ sub: user.id, email: user.email });
 
+    // ✅ Notification sans emojis
+    await this.prisma.notification.create({
+      data: {
+        userId: user.id,
+        type: 'SYSTEM',
+        title: 'Bienvenue sur INKDROP',
+        body: 'Commencez à lire et publier dès maintenant.',
+      },
+    });
+
     return {
       user: {
         id: user.id,
@@ -79,9 +89,6 @@ export class AuthService {
     };
   }
 
-  // ============================================
-  // RÉCUPÉRER UN UTILISATEUR PAR ID
-  // ============================================
   async getUserById(id: string) {
     const user = await this.prisma.user.findUnique({
       where: { id },
