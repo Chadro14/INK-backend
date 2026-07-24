@@ -1,12 +1,12 @@
 import { Injectable } from '@nestjs/common';
-import { ANILIST } from '@consumet/extensions';
+import { Anilist } from '@consumet/extensions';
 
 @Injectable()
 export class MovieboxService {
   private anilist: any;
 
   constructor() {
-    this.anilist = new ANILIST();
+    this.anilist = new Anilist();
   }
 
   // ============================================
