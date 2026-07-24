@@ -4,7 +4,7 @@ import { createClient, SupabaseClient } from '@supabase/supabase-js';
 @Injectable()
 export class StorageService {
   private supabase: SupabaseClient;
-  private readonly bucket = 'chapters'; // ✅ Utiliser le bucket chapters
+  private readonly bucket = 'chapters'; // Utilisation du bucket chapters existant
 
   constructor() {
     const supabaseUrl = process.env.SUPABASE_URL;
@@ -17,6 +17,9 @@ export class StorageService {
     this.supabase = createClient(supabaseUrl, supabaseKey);
   }
 
+  // ============================================
+  // UPLOAD UN FICHIER
+  // ============================================
   async upload(key: string, buffer: Buffer, contentType: string): Promise<string> {
     const { error } = await this.supabase.storage
       .from(this.bucket)
@@ -34,6 +37,9 @@ export class StorageService {
     return data.publicUrl;
   }
 
+  // ============================================
+  // SUPPRIMER UN FICHIER
+  // ============================================
   async delete(key: string): Promise<void> {
     const { error } = await this.supabase.storage
       .from(this.bucket)
@@ -42,5 +48,20 @@ export class StorageService {
     if (error) {
       throw new Error(`Échec de la suppression: ${error.message}`);
     }
+  }
+
+  // ============================================
+  // OBTENIR UNE URL SIGNÉE
+  // ============================================
+  async getSignedUrl(key: string, expiresInSeconds = 3600): Promise<string> {
+    const { data, error } = await this.supabase.storage
+      .from(this.bucket)
+      .createSignedUrl(key, expiresInSeconds);
+
+    if (error || !data) {
+      throw new Error(`Impossible de générer l'URL signée: ${error?.message}`);
+    }
+
+    return data.signedUrl;
   }
 }
