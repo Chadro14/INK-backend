@@ -10,7 +10,7 @@ export class NotificationsService {
   ) {}
 
   // ============================================
-  // CRÉER UNE NOTIFICATION
+  // CRÉER UNE NOTIFICATION (sans emojis)
   // ============================================
   async createNotification(data: {
     userId: string;
@@ -20,12 +20,16 @@ export class NotificationsService {
     link?: string;
     metadata?: any;
   }) {
+    // ✅ Supprimer les emojis du titre et du body
+    const cleanTitle = data.title.replace(/[^\w\s.,!?]/g, '').trim();
+    const cleanBody = data.body ? data.body.replace(/[^\w\s.,!?]/g, '').trim() : undefined;
+
     const notification = await this.prisma.notification.create({
       data: {
         userId: data.userId,
         type: data.type as any,
-        title: data.title,
-        body: data.body,
+        title: cleanTitle,
+        body: cleanBody,
         link: data.link,
         metadata: data.metadata,
       },
@@ -38,7 +42,7 @@ export class NotificationsService {
   }
 
   // ============================================
-  // RÉCUPÉRER LES NOTIFICATIONS D'UN UTILISATEUR
+  // RÉCUPÉRER LES NOTIFICATIONS
   // ============================================
   async getUserNotifications(userId: string, page: number = 1, limit: number = 20) {
     const skip = (page - 1) * limit;
@@ -53,7 +57,6 @@ export class NotificationsService {
       this.prisma.notification.count({ where: { userId } }),
     ]);
 
-    // Marquer comme lues
     await this.prisma.notification.updateMany({
       where: {
         userId,
