@@ -1,13 +1,12 @@
 import { Injectable } from '@nestjs/common';
-import { MovieboxSession, search, getMovieDetails, getMovieStreamUrl } from 'moviebox-js-sdk';
+import { ANILIST } from 'consumet.ts';
 
 @Injectable()
 export class MovieboxService {
-  private session: any;
+  private anilist: any;
 
   constructor() {
-    // Initialiser la session MovieBox
-    this.session = new MovieboxSession();
+    this.anilist = new ANILIST();
   }
 
   // ============================================
@@ -15,26 +14,24 @@ export class MovieboxService {
   // ============================================
   async searchAnimes(query: string, limit: number = 20) {
     try {
-      const results = await search(query, {
-        limit,
-        type: 'movie', // ou 'tv' pour les séries
-        session: this.session,
+      const results = await this.anilist.search(query, {
+        perPage: limit,
       });
 
-      return results.map((item: any) => ({
+      return results.results.map((item: any) => ({
         id: item.id,
-        title: item.title,
-        description: item.overview || item.description || '',
-        coverImage: item.poster_path || item.coverImage || '',
+        title: item.title?.english || item.title?.romaji || item.title?.native || 'Sans titre',
+        description: item.description || '',
+        coverImage: item.coverImage || item.image || '',
         genre: item.genres || [],
-        rating: item.vote_average || item.rating || 0,
-        source: 'moviebox',
+        rating: item.rating || item.averageScore / 10 || 0,
+        source: 'anilist',
         externalId: item.id,
-        externalUrl: item.url || '',
-        episodesCount: item.episode_count || 0,
+        episodesCount: item.episodes || item.totalEpisodes || 0,
+        status: item.status || 'UNKNOWN',
       }));
     } catch (error) {
-      console.error('❌ MovieBox search error:', error.message);
+      console.error('❌ Consumet search error:', error.message);
       return [];
     }
   }
@@ -44,51 +41,30 @@ export class MovieboxService {
   // ============================================
   async getAnimeDetails(id: string) {
     try {
-      const details = await getMovieDetails(id, {
-        session: this.session,
-      });
+      const details = await this.anilist.getAnime(id);
 
       return {
         id: details.id,
-        title: details.title,
-        description: details.overview || details.description || '',
-        coverImage: details.poster_path || details.coverImage || '',
+        title: details.title?.english || details.title?.romaji || details.title?.native || 'Sans titre',
+        description: details.description || '',
+        coverImage: details.coverImage || '',
+        bannerImage: details.bannerImage || '',
         genre: details.genres || [],
-        rating: details.vote_average || details.rating || 0,
-        source: 'moviebox',
+        rating: details.averageScore / 10 || 0,
+        source: 'anilist',
         externalId: details.id,
-        externalUrl: details.url || '',
-        episodesCount: details.episode_count || 0,
+        episodesCount: details.episodes || 0,
+        status: details.status || 'UNKNOWN',
         episodes: details.episodes?.map((ep: any) => ({
           id: ep.id,
-          episodeNumber: ep.episode_number || ep.number,
-          title: ep.title || `Épisode ${ep.episode_number}`,
+          episodeNumber: ep.episodeNumber || ep.number,
+          title: ep.title || `Épisode ${ep.episodeNumber}`,
           duration: ep.duration || 0,
         })) || [],
       };
     } catch (error) {
-      console.error('❌ MovieBox details error:', error.message);
+      console.error('❌ Consumet details error:', error.message);
       throw new Error('Impossible de récupérer les détails de l\'anime');
-    }
-  }
-
-  // ============================================
-  // RÉCUPÉRER L'URL DE STREAMING D'UN ÉPISODE
-  // ============================================
-  async getEpisodeStreamUrl(episodeId: string) {
-    try {
-      const streamData = await getMovieStreamUrl(episodeId, {
-        session: this.session,
-      });
-
-      return {
-        videoUrl: streamData.url || streamData.videoUrl || '',
-        subtitles: streamData.subtitles || [],
-        sources: streamData.sources || [],
-      };
-    } catch (error) {
-      console.error('❌ MovieBox stream error:', error.message);
-      throw new Error('Impossible de récupérer le lien de streaming');
     }
   }
 
@@ -96,17 +72,38 @@ export class MovieboxService {
   // RÉCUPÉRER LES ANIMES POPULAIRES
   // ============================================
   async getPopularAnimes(limit: number = 10) {
-    // Simuler des animes populaires via recherche
-    const popularQueries = ['naruto', 'demon slayer', 'one piece', 'jujutsu', 'attack on titan'];
-    const results = await Promise.all(
-      popularQueries.slice(0, 3).map((q) => this.searchAnimes(q, 5))
-    );
+    try {
+      const results = await this.anilist.getPopularAnimes({
+        perPage: limit,
+      });
 
-    const allAnimes = results.flat();
-    const uniqueAnimes = allAnimes.filter(
-      (anime, index, self) => index === self.findIndex((a) => a.id === anime.id)
-    );
+      return results.results.map((item: any) => ({
+        id: item.id,
+        title: item.title?.english || item.title?.romaji || item.title?.native || 'Sans titre',
+        description: item.description || '',
+        coverImage: item.coverImage || item.image || '',
+        genre: item.genres || [],
+        rating: item.rating || item.averageScore / 10 || 0,
+        source: 'anilist',
+        externalId: item.id,
+        episodesCount: item.episodes || item.totalEpisodes || 0,
+        status: item.status || 'UNKNOWN',
+      }));
+    } catch (error) {
+      console.error('❌ Consumet popular error:', error.message);
+      return [];
+    }
+  }
 
-    return uniqueAnimes.slice(0, limit);
+  // ============================================
+  // RÉCUPÉRER L'URL DE STREAMING (si disponible)
+  // ============================================
+  async getEpisodeStreamUrl(episodeId: string) {
+    // Consumet ne fournit pas de streaming, on retourne un placeholder
+    return {
+      videoUrl: '',
+      subtitles: [],
+      sources: [],
+    };
   }
 }
