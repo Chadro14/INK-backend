@@ -1,102 +1,81 @@
-import { Injectable, NotFoundException, BadRequestException } from '@nestjs/common';
-import { PrismaService } from '../../prisma/prisma.service';
-import { StorageService } from '../../common/services/storage.service';
+import {
+  Controller,
+  Get,
+  Put,
+  Post,
+  Body,
+  Param,
+  UseGuards,
+  Req,
+  UseInterceptors,
+  UploadedFile,
+  BadRequestException,
+} from '@nestjs/common';
+import { FileInterceptor } from '@nestjs/platform-express';
+import { UsersService } from './users.service';
+import { JwtAuthGuard } from '../../common/guards/jwt-auth.guard';
 
-@Injectable()
-export class UsersService {
-  constructor(
-    private prisma: PrismaService,
-    private storage: StorageService,
-  ) {}
+@Controller('users')
+export class UsersController {
+  constructor(private readonly usersService: UsersService) {}
 
-  async findById(id: string) {
-    const user = await this.prisma.user.findUnique({
-      where: { id },
-      include: {
-        mangas: true,
-        _count: {
-          select: {
-            mangas: true,
-            followers: true,
-            following: true,
-          },
-        },
-      },
-    });
-
-    if (!user) {
-      throw new NotFoundException('Utilisateur non trouvé');
-    }
-
+  // ============================================
+  // RÉCUPÉRER LE PROFIL DE L'UTILISATEUR CONNECTÉ
+  // ============================================
+  @Get('me')
+  @UseGuards(JwtAuthGuard)
+  async getMe(@Req() req: any) {
+    const user = await this.usersService.findById(req.user.id);
+    delete user.passwordHash;
     return user;
   }
 
-  async update(id: string, data: { username?: string; email?: string; bio?: string }) {
-    const user = await this.prisma.user.findUnique({
-      where: { id },
+  // ============================================
+  // METTRE À JOUR LE PROFIL
+  // ============================================
+  @Put('me')
+  @UseGuards(JwtAuthGuard)
+  async updateMe(@Req() req: any, @Body() body: any) {
+    const { username, email, bio } = body;
+    const user = await this.usersService.update(req.user.id, {
+      username,
+      email,
+      bio,
     });
-
-    if (!user) {
-      throw new NotFoundException('Utilisateur non trouvé');
-    }
-
-    if (data.username && data.username !== user.username) {
-      const existing = await this.prisma.user.findUnique({
-        where: { username: data.username },
-      });
-      if (existing) {
-        throw new BadRequestException('Ce nom d\'utilisateur est déjà pris');
-      }
-
-      if (user.lastUsernameChange) {
-        const daysSinceLastChange = Math.floor(
-          (Date.now() - new Date(user.lastUsernameChange).getTime()) / (1000 * 60 * 60 * 24)
-        );
-        if (daysSinceLastChange < 30) {
-          throw new BadRequestException(
-            `Vous ne pouvez changer votre nom que tous les 30 jours. Prochain changement dans ${30 - daysSinceLastChange} jours.`
-          );
-        }
-      }
-    }
-
-    return this.prisma.user.update({
-      where: { id },
-      data: {
-        username: data.username,
-        email: data.email,
-        bio: data.bio,
-        lastUsernameChange: data.username && data.username !== user.username ? new Date() : user.lastUsernameChange,
-      },
-    });
+    delete user.passwordHash;
+    return user;
   }
 
-  // ✅ AJOUTE CETTE MÉTHODE
-  async uploadAvatar(userId: string, file: Express.Multer.File) {
-    const user = await this.prisma.user.findUnique({
-      where: { id: userId },
-    });
-
-    if (!user) {
-      throw new NotFoundException('Utilisateur non trouvé');
+  // ============================================
+  // UPLOADER UN AVATAR
+  // ============================================
+  @Post('avatar')
+  @UseGuards(JwtAuthGuard)
+  @UseInterceptors(FileInterceptor('avatar'))
+  async uploadAvatar(@Req() req: any, @UploadedFile() file: Express.Multer.File) {
+    if (!file) {
+      throw new BadRequestException('Aucun fichier fourni');
     }
 
-    // Upload du fichier
-    const key = `avatars/${userId}-${Date.now()}.jpg`;
-    const avatarUrl = await this.storage.upload(key, file.buffer, file.mimetype);
+    // Vérifier le type de fichier
+    if (!file.mimetype.startsWith('image/')) {
+      throw new BadRequestException('Le fichier doit être une image');
+    }
 
-    // Mise à jour de l'utilisateur
-    await this.prisma.user.update({
-      where: { id: userId },
-      data: { avatarUrl },
-    });
+    // Vérifier la taille (max 5MB)
+    if (file.size > 5 * 1024 * 1024) {
+      throw new BadRequestException('L\'image ne doit pas dépasser 5MB');
+    }
 
-    return avatarUrl;
+    const avatarUrl = await this.usersService.uploadAvatar(req.user.id, file);
+    return { avatarUrl };
   }
 
-  async findByEmail(email: string) {
-    return this.prisma.user.findUnique({
-      where: { email },
-    });
+  // ============================================
+  // RÉCUPÉRER UN UTILISATEUR PAR ID
+  // ============================================
+  @Get(':id')
+  async findOne(@Param('id') id: string) {
+    return this.usersService.findById(id);
   }
 }
