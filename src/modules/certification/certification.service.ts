@@ -36,14 +36,10 @@ export class CertificationService {
     private followService: FollowService,
   ) {}
 
-  // ============================================
-  // VÉRIFICATION AUTOMATIQUE (Cron job)
-  // ============================================
   @Cron(CronExpression.EVERY_DAY_AT_MIDNIGHT)
   async autoCertifyUsers() {
     console.log('🔄 Vérification des certifications...');
 
-    // Récupérer tous les créateurs qui ne sont pas encore certifiés
     const creators = await this.prisma.user.findMany({
       where: {
         role: 'CREATOR',
@@ -66,7 +62,6 @@ export class CertificationService {
 
       const { followersCount } = await this.followService.getFollowCounts(creator.id);
 
-      // Seuils pour la certification
       const hasEnoughChapters = totalChapters >= 10;
       const hasEnoughFollowers = followersCount >= 50;
       const isOldEnough = creator.createdAt
@@ -82,13 +77,13 @@ export class CertificationService {
           },
         });
 
-        // Notification
+        // ✅ Notification sans emojis
         await this.prisma.notification.create({
           data: {
             userId: creator.id,
             type: 'CERTIFICATION',
-            title: '🎉 Félicitations !',
-            body: 'Vous êtes maintenant certifié ⭐',
+            title: 'Félicitations',
+            body: 'Vous êtes maintenant certifié',
             metadata: { badge: 'gold' },
           },
         });
@@ -98,9 +93,6 @@ export class CertificationService {
     console.log('✅ Certification terminée');
   }
 
-  // ============================================
-  // CHANGER LA COULEUR DU BADGE
-  // ============================================
   async updateBadgeColor(userId: string, color: string) {
     const user = await this.prisma.user.findUnique({
       where: { id: userId },
@@ -124,9 +116,6 @@ export class CertificationService {
     });
   }
 
-  // ============================================
-  // OBTENIR LE STATUT DE CERTIFICATION
-  // ============================================
   async getCertificationStatus(userId: string) {
     const user = await this.prisma.user.findUnique({
       where: { id: userId },
@@ -183,9 +172,6 @@ export class CertificationService {
     };
   }
 
-  // ============================================
-  // LISTE DES COULEURS DISPONIBLES
-  // ============================================
   getAvailableColors() {
     return Object.keys(BADGE_COLORS).map((key) => ({
       name: key,
