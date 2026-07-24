@@ -4,6 +4,7 @@ import { InkstreamController } from './controllers/inkstream.controller';
 import { InkstreamService } from './services/inkstream.service';
 import { MovieboxService } from './services/moviebox.service';
 import { ScraperService } from './services/scraper.service';
+import { ManasModule } from '../manas/manas.module';
 
 @Module({
   imports: [
@@ -11,6 +12,7 @@ import { ScraperService } from './services/scraper.service';
       timeout: 30000,
       maxRedirects: 5,
     }),
+    ManasModule,
   ],
   controllers: [InkstreamController],
   providers: [InkstreamService, MovieboxService, ScraperService],
