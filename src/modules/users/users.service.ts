@@ -48,7 +48,6 @@ export class UsersService {
 
     // Vérifier si le nom d'utilisateur change
     if (data.username && data.username !== user.username) {
-      // Vérifier si le nom est déjà pris
       const existing = await this.prisma.user.findUnique({
         where: { username: data.username },
       });
@@ -56,7 +55,6 @@ export class UsersService {
         throw new BadRequestException('Ce nom d\'utilisateur est déjà pris');
       }
 
-      // ✅ Vérification des 30 jours
       if (user.lastUsernameChange) {
         const daysSinceLastChange = Math.floor(
           (Date.now() - new Date(user.lastUsernameChange).getTime()) / (1000 * 60 * 60 * 24)
@@ -69,7 +67,6 @@ export class UsersService {
       }
     }
 
-    // Mise à jour
     return this.prisma.user.update({
       where: { id },
       data: {
@@ -93,14 +90,12 @@ export class UsersService {
       throw new NotFoundException('Utilisateur non trouvé');
     }
 
-    // Générer un nom de fichier unique
-    const ext = file.mimetype.split('/')[1] || 'jpg';
+    // Stocker dans le bucket chapters avec un chemin spécifique
+    const ext = file.originalname.split('.').pop() || 'jpg';
     const key = `avatars/${userId}-${Date.now()}.${ext}`;
 
-    // Upload vers le stockage (Supabase Storage / S3 / R2)
     const avatarUrl = await this.storage.upload(key, file.buffer, file.mimetype);
 
-    // Mettre à jour l'utilisateur
     await this.prisma.user.update({
       where: { id: userId },
       data: { avatarUrl },
