@@ -2,11 +2,11 @@ import { Injectable } from '@nestjs/common';
 import { PrismaService } from '../../prisma/prisma.service';
 
 export const STEAM_LEVELS = [
-  { level: '🥉 Bronze', minPoints: 0, reward: 50 },
-  { level: '🥈 Argent', minPoints: 1000, reward: 150 },
-  { level: '🥇 Or', minPoints: 5000, reward: 500 },
-  { level: '💎 Platine', minPoints: 20000, reward: 1500 },
-  { level: '👑 Diamant', minPoints: 100000, reward: 5000 },
+  { level: 1, name: 'Bronze', minPoints: 0, reward: 50 },
+  { level: 2, name: 'Argent', minPoints: 1000, reward: 150 },
+  { level: 3, name: 'Or', minPoints: 5000, reward: 500 },
+  { level: 4, name: 'Platine', minPoints: 20000, reward: 1500 },
+  { level: 5, name: 'Diamant', minPoints: 100000, reward: 5000 },
 ];
 
 export const ACTION_POINTS = {
@@ -35,19 +35,19 @@ export class SteamService {
     });
 
     const newLevel = this.getLevel(user.steamPoints);
+    
     if (user.steamLevel !== newLevel) {
       await this.prisma.user.update({
         where: { id: userId },
         data: { steamLevel: newLevel },
       });
 
-      // ✅ Notification sans emojis
       await this.prisma.notification.create({
         data: {
           userId,
           type: 'SYSTEM',
           title: 'Nouveau niveau Steam',
-          body: `Vous avez atteint le niveau ${newLevel}`,
+          body: `Vous avez atteint le niveau ${this.getLevelName(newLevel)}`,
         },
       });
     }
@@ -55,13 +55,19 @@ export class SteamService {
     return { points, total: user.steamPoints, level: newLevel };
   }
 
-  getLevel(points: number): string {
-    for (const level of STEAM_LEVELS.slice().reverse()) {
-      if (points >= level.minPoints) {
-        return level.level;
+  getLevel(points: number): number {
+    let level = 1;
+    for (const lvl of STEAM_LEVELS) {
+      if (points >= lvl.minPoints) {
+        level = lvl.level;
       }
     }
-    return STEAM_LEVELS[0].level;
+    return level;
+  }
+
+  getLevelName(level: number): string {
+    const found = STEAM_LEVELS.find((l) => l.level === level);
+    return found ? found.name : 'Bronze';
   }
 
   async getUserSteam(userId: string) {
@@ -77,19 +83,21 @@ export class SteamService {
       throw new Error('Utilisateur non trouvé');
     }
 
-    const currentLevel = this.getLevel(user.steamPoints);
-    const nextLevel = STEAM_LEVELS.find((l) => l.minPoints > user.steamPoints);
+    const currentLevel = user.steamLevel || 1;
+    const nextLevel = STEAM_LEVELS.find((l) => l.level > currentLevel);
 
     return {
-      points: user.steamPoints,
+      points: user.steamPoints || 0,
       level: currentLevel,
+      levelName: this.getLevelName(currentLevel),
       nextLevel: nextLevel ? {
-        name: nextLevel.level,
-        pointsNeeded: nextLevel.minPoints - user.steamPoints,
+        level: nextLevel.level,
+        name: nextLevel.name,
+        pointsNeeded: nextLevel.minPoints - (user.steamPoints || 0),
         totalNeeded: nextLevel.minPoints,
       } : null,
       progress: nextLevel
-        ? Math.round((user.steamPoints / nextLevel.minPoints) * 100)
+        ? Math.round(((user.steamPoints || 0) / nextLevel.minPoints) * 100)
         : 100,
     };
   }
