@@ -1,7 +1,6 @@
-import { Injectable, NotFoundException, BadRequestException } from '@nestjs/common';
+import { Injectable, NotFoundException } from '@nestjs/common';
 import { PrismaService } from '../../../prisma/prisma.service';
 import { MovieboxService } from './moviebox.service';
-import { ScraperService } from './scraper.service';
 import { SearchAnimeDto } from '../dto/search-anime.dto';
 
 @Injectable()
@@ -9,43 +8,50 @@ export class InkstreamService {
   constructor(
     private prisma: PrismaService,
     private movieboxService: MovieboxService,
-    private scraperService: ScraperService,
   ) {}
 
   // ============================================
-  // RECHERCHER DES ANIMES (MovieBox + Fallback)
+  // RECHERCHER DES ANIMES
   // ============================================
   async searchAnimes(dto: SearchAnimeDto) {
     const { q, page = 1, limit = 20 } = dto;
     const skip = (page - 1) * limit;
 
-    // 🔥 1. Essayer MovieBox
+    // 1. Essayer Anilist
     try {
-      const movieboxResults = await this.movieboxService.searchAnimes(q, limit);
-      if (movieboxResults.length > 0) {
+      const anilistResults = await this.movieboxService.searchAnimes(q, limit);
+      if (anilistResults.length > 0) {
         return {
-          data: movieboxResults,
+          data: anilistResults,
           meta: {
-            total: movieboxResults.length,
+            total: anilistResults.length,
             page,
             limit,
-            source: 'moviebox',
+            source: 'anilist',
           },
         };
       }
     } catch (error) {
-      console.warn('⚠️ MovieBox API failed, falling back to Pinterest');
+      console.warn('⚠️ Anilist API failed');
     }
 
-    // 🔥 2. Fallback : API Pinterest
-    const pinterestResults = await this.scraperService.searchByKeyword(q, limit);
+    // 2. Fallback : base de données
+    const dbAnimes = await this.prisma.inkStreamAnime.findMany({
+      where: {
+        title: { contains: q, mode: 'insensitive' },
+        isActive: true,
+      },
+      skip,
+      take: limit,
+    });
+
     return {
-      data: pinterestResults,
+      data: dbAnimes,
       meta: {
-        total: pinterestResults.length,
+        total: dbAnimes.length,
         page,
         limit,
-        source: 'pinterest',
+        source: 'database',
       },
     };
   }
@@ -64,10 +70,10 @@ export class InkstreamService {
       return anime;
     }
 
-    // Sinon, chercher via MovieBox
+    // Sinon, chercher via Anilist
     try {
-      const movieboxAnime = await this.movieboxService.getAnimeDetails(id);
-      return movieboxAnime;
+      const anilistAnime = await this.movieboxService.getAnimeDetails(id);
+      return anilistAnime;
     } catch (error) {
       throw new NotFoundException('Anime non trouvé');
     }
@@ -88,50 +94,13 @@ export class InkstreamService {
       return dbAnimes;
     }
 
-    // Sinon, via MovieBox
+    // Sinon, via Anilist
     try {
-      const movieboxAnimes = await this.movieboxService.getPopularAnimes(10);
-      return movieboxAnimes;
+      const anilistAnimes = await this.movieboxService.getPopularAnimes(10);
+      return anilistAnimes;
     } catch (error) {
-      // Fallback : Pinterest
-      return this.scraperService.getPopularAnimes();
+      console.warn('⚠️ Anilist popular failed');
+      return [];
     }
-  }
-
-  // ============================================
-  // REGARDER UN ÉPISODE
-  // ============================================
-  async watchEpisode(userId: string, animeId: string, episodeNumber: number) {
-    // Récupérer l'anime
-    const anime = await this.getAnime(animeId);
-    if (!anime) {
-      throw new NotFoundException('Anime non trouvé');
-    }
-
-    // Trouver l'épisode
-    const episode = anime.episodes?.find(
-      (ep: any) => ep.episodeNumber === episodeNumber
-    );
-
-    if (!episode) {
-      throw new NotFoundException('Épisode non trouvé');
-    }
-
-    // Récupérer l'URL de streaming
-    let streamUrl = episode.videoUrl;
-    if (!streamUrl) {
-      try {
-        const streamData = await this.movieboxService.getEpisodeStreamUrl(episode.id);
-        streamUrl = streamData.videoUrl;
-      } catch (error) {
-        throw new BadRequestException('Impossible de charger la vidéo');
-      }
-    }
-
-    return {
-      episode,
-      streamUrl,
-      animeTitle: anime.title,
-    };
   }
 }
