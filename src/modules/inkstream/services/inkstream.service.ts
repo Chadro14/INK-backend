@@ -1,7 +1,7 @@
 import { Injectable, NotFoundException } from '@nestjs/common';
 import { PrismaService } from '../../../prisma/prisma.service';
 import { MovieboxService } from './moviebox.service';
-import { ManasService } from '../../manas/manas.service';
+import { ManasService } from './manas.service';
 import { SearchAnimeDto } from '../dto/search-anime.dto';
 
 @Injectable()
