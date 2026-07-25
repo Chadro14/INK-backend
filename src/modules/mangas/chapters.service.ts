@@ -85,7 +85,7 @@ export class ChaptersService {
 
       // ⚠️ REMPLACE 'NOM_DU_BUCKET_PDF' PAR LE VRAI NOM DE TON 2EME BUCKET
       const { error } = await this.supabase.storage
-        .from('NOM_DU_BUCKET_PDF') 
+        .from('CHAPTERS1') 
         .upload(fileName, pdfFile.buffer, {
           contentType: pdfFile.mimetype,
         });
