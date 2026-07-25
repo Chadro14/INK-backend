@@ -9,6 +9,8 @@ import { StorageService } from '../../common/services/storage.service';
 import { CreateChapterDto } from './dto/create-chapter.dto';
 import { UpdateChapterDto } from './dto/update-chapter.dto';
 import sharp from 'sharp';
+// @ts-ignore
+import pdfParse from 'pdf-parse';
 
 @Injectable()
 export class ChaptersService {
@@ -27,6 +29,21 @@ export class ChaptersService {
     file: Express.Multer.File,
     coverFile?: Express.Multer.File,
   ) {
+    // Vérifier le nombre minimum de 10 pages dans le PDF
+    if (file && file.buffer) {
+      try {
+        const pdfData = await pdfParse(file.buffer);
+        if (pdfData.numpages < 10) {
+          throw new BadRequestException(
+            `Un chapitre doit contenir au minimum 10 pages. Votre fichier en contient ${pdfData.numpages}.`
+          );
+        }
+      } catch (err: any) {
+        if (err instanceof BadRequestException) throw err;
+        // Si le parsing échoue pour une raison technique, on peut laisser passer ou bloquer selon ta préférence
+      }
+    }
+
     const manga = await this.prisma.manga.findUnique({
       where: { id: mangaId },
     });
