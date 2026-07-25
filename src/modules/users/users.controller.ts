@@ -10,6 +10,7 @@ import {
   UseInterceptors,
   UploadedFile,
   BadRequestException,
+  NotFoundException, // ✅ Ajouté ici
 } from '@nestjs/common';
 import { FileInterceptor } from '@nestjs/platform-express';
 import { UsersService } from './users.service';
@@ -67,6 +68,21 @@ export class UsersController {
 
     const avatarUrl = await this.usersService.uploadAvatar(req.user.id, file);
     return { avatarUrl };
+  }
+
+  // ============================================
+  // RÉCUPÉRER UN UTILISATEUR PAR USERNAME
+  // ============================================
+  @Get('username/:username')
+  async findByUsername(@Param('username') username: string) {
+    const user = await this.usersService.findByUsername(username);
+    if (!user) {
+      throw new NotFoundException('Utilisateur non trouvé');
+    }
+    if (user.passwordHash) {
+      delete user.passwordHash;
+    }
+    return user;
   }
 
   // ============================================
