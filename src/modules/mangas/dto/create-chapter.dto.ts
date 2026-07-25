@@ -32,4 +32,8 @@ export class CreateChapterDto {
   @Min(0)
   @Type(() => Number)
   price?: number;
+
+  @IsOptional()
+  @IsString()
+  freePageIndexes?: string; // Chaîne JSON, ex: "[0,1,2]" — index des photos gratuites
 }
