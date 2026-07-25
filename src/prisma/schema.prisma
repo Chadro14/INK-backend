@@ -4,28 +4,28 @@ generator client {
 }
 
 datasource db {
-  provider   = "postgresql"
-  url        = env("DATABASE_URL")
-  directUrl  = env("DIRECT_URL")
+  provider  = "postgresql"
+  url       = env("DATABASE_URL")
+  directUrl = env("DIRECT_URL")
 }
 
 // ============================================
 // UTILISATEURS
 // ============================================
 model User {
-  id                 String    @id @default(uuid())
-  email              String    @unique
-  username           String    @unique
+  id                 String       @id @default(uuid())
+  email              String       @unique
+  username           String       @unique
   passwordHash       String?
   avatarUrl          String?
   avatarColor        String?
-  bio                String?   @db.Text
-  role               Role      @default(READER)
-  isCertified        Boolean   @default(false)
+  bio                String?      @db.Text
+  role               Role         @default(READER)
+  isCertified        Boolean      @default(false)
   certifiedAt        DateTime?
   mobileNumber       String?
-  mobileVerified     Boolean   @default(false)
-  premiumActive      Boolean   @default(false)
+  mobileVerified     Boolean      @default(false)
+  premiumActive      Boolean      @default(false)
   premiumExpires     DateTime?
   premiumPlan        PremiumPlan?
   lastUsernameChange DateTime?
@@ -39,25 +39,25 @@ model User {
   payouts            Payout[]
   notifications      Notification[]
   watchHistory       InkStreamWatchHistory[]
-  manas              Int       @default(0)
+  manas              Int          @default(0)
 
   // FOLLOW
   following          UserFollow[] @relation("Follower")
   followers          UserFollow[] @relation("Following")
 
   // STEAM (progression)
-  steamPoints        Int       @default(0)
-  steamLevel         Int       @default(1)
+  steamPoints        Int          @default(0)
+  steamLevel         Int          @default(1)
 
   // MESSAGERIE
-  sentMessages       Message[] @relation("SentMessages")
-  receivedMessages   Message[] @relation("ReceivedMessages")
+  sentMessages       Message[]    @relation("SentMessages")
+  receivedMessages   Message[]    @relation("ReceivedMessages")
 
   // EVENTS
   eventParticipations EventParticipation[]
 
-  createdAt          DateTime  @default(now())
-  updatedAt          DateTime  @updatedAt
+  createdAt          DateTime     @default(now())
+  updatedAt          DateTime     @updatedAt
 
   @@index([username])
   @@index([email])
@@ -80,28 +80,28 @@ enum PremiumPlan {
 // MANGAS
 // ============================================
 model Manga {
-  id                String    @id @default(uuid())
-  title             String
-  description       String?   @db.Text
-  coverUrl          String?
-  authorId          String
-  author            User      @relation(fields: [authorId], references: [id], onDelete: Cascade)
-  status            Status    @default(ONGOING)
-  genre             String[]  @default([])
-  tags              String[]  @default([])
-  viewsCount        Int       @default(0)
-  likesCount        Int       @default(0)
-  subscribersCount  Int       @default(0)
-  commentsCount     Int       @default(0)
-  isPremium         Boolean   @default(false)
+  id               String      @id @default(uuid())
+  title            String
+  description      String?     @db.Text
+  coverUrl         String?
+  authorId         String
+  author           User        @relation(fields: [authorId], references: [id], onDelete: Cascade)
+  status           Status      @default(ONGOING)
+  genre            String[]    @default([])
+  tags             String[]    @default([])
+  viewsCount       Int         @default(0)
+  likesCount       Int         @default(0)
+  subscribersCount Int         @default(0)
+  commentsCount    Int         @default(0)
+  isPremium        Boolean     @default(false)
 
-  chapters          Chapter[]
-  likes             Like[]
-  comments          Comment[]
-  subscriptions     Subscription[]
+  chapters         Chapter[]
+  likes            Like[]
+  comments         Comment[]
+  subscriptions    Subscription[]
 
-  createdAt         DateTime  @default(now())
-  updatedAt         DateTime  @updatedAt
+  createdAt        DateTime    @default(now())
+  updatedAt        DateTime    @updatedAt
 
   @@index([authorId])
   @@index([status, createdAt])
@@ -118,29 +118,35 @@ enum Status {
 // CHAPITRES
 // ============================================
 model Chapter {
-  id          String    @id @default(uuid())
-  mangaId     String
-  manga       Manga     @relation(fields: [mangaId], references: [id], onDelete: Cascade)
-  number      Int
-  title       String?
-  pdfKey      String?
-  pages       String[]
-  pdfSize     Int?
-  pageCount   Int       @default(0)
-  isFree      Boolean   @default(false)
-  isDraft     Boolean   @default(true)
-  price       Float?
-  viewsCount  Int       @default(0)
-  coverUrl    String?
-  publishedAt DateTime?
-  createdAt   DateTime  @default(now())
-  updatedAt   DateTime  @updatedAt
+  id              String             @id @default(uuid())
+  mangaId         String
+  manga           Manga              @relation(fields: [mangaId], references: [id], onDelete: Cascade)
+  number          Int
+  title           String?
+  contentType     ChapterContentType @default(PDF)
+  pdfKey          String?
+  pages           Json               @default("[]")
+  pdfSize         Int?
+  pageCount       Int                @default(0)
+  isFree          Boolean            @default(false)
+  isDraft         Boolean            @default(true)
+  price           Float?
+  viewsCount      Int                @default(0)
+  coverUrl        String?
+  publishedAt     DateTime?
+  createdAt       DateTime           @default(now())
+  updatedAt       DateTime           @updatedAt
 
-  comments    Comment[]
+  comments        Comment[]
 
   @@unique([mangaId, number])
   @@index([mangaId, publishedAt])
   @@index([isFree, publishedAt])
+}
+
+enum ChapterContentType {
+  PDF
+  IMAGES
 }
 
 // ============================================
@@ -352,16 +358,16 @@ model InkStreamAnime {
 }
 
 model InkStreamEpisode {
-  id            String         @id @default(uuid())
+  id            String           @id @default(uuid())
   animeId       String
-  anime         InkStreamAnime @relation(fields: [animeId], references: [id], onDelete: Cascade)
+  anime         InkStreamAnime   @relation(fields: [animeId], references: [id], onDelete: Cascade)
   episodeNumber Int
   title         String?
   videoUrl      String
   thumbnail     String?
   duration      Int?
-  isAvailable   Boolean        @default(true)
-  createdAt     DateTime       @default(now())
+  isAvailable   Boolean          @default(true)
+  createdAt     DateTime         @default(now())
 
   watchHistory  InkStreamWatchHistory[]
 
