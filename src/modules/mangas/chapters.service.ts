@@ -23,8 +23,8 @@ export class ChaptersService {
         number: Number(dto.number),
         title: dto.title,
         price: dto.price ? Number(dto.price) : null,
-        isFree: dto.isFree === 'true' || dto.isFree === true,
-        // Ajoute ici pdfKey, pages, coverUrl une fois tes fichiers uploadés
+        // CORRECTION ICI : on force TypeScript à accepter la comparaison
+        isFree: dto.isFree === true || (dto.isFree as any) === 'true',
       },
     });
   }
