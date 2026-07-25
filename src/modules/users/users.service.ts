@@ -35,6 +35,25 @@ export class UsersService {
   }
 
   // ============================================
+  // RÉCUPÉRER UN UTILISATEUR PAR USERNAME
+  // ============================================
+  async findByUsername(username: string) {
+    return this.prisma.user.findUnique({
+      where: { username },
+      include: {
+        mangas: true,
+        _count: {
+          select: {
+            mangas: true,
+            followers: true,
+            following: true,
+          },
+        },
+      },
+    });
+  }
+
+  // ============================================
   // METTRE À JOUR UN UTILISATEUR
   // ============================================
   async update(id: string, data: { username?: string; email?: string; bio?: string }) {
@@ -46,7 +65,6 @@ export class UsersService {
       throw new NotFoundException('Utilisateur non trouvé');
     }
 
-    // Vérifier si le nom d'utilisateur change
     if (data.username && data.username !== user.username) {
       const existing = await this.prisma.user.findUnique({
         where: { username: data.username },
@@ -90,7 +108,6 @@ export class UsersService {
       throw new NotFoundException('Utilisateur non trouvé');
     }
 
-    // Stocker dans le bucket chapters avec un chemin spécifique
     const ext = file.originalname.split('.').pop() || 'jpg';
     const key = `avatars/${userId}-${Date.now()}.${ext}`;
 
