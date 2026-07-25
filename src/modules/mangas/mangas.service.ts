@@ -100,9 +100,9 @@ export class MangasService {
   }
 
   // ============================================
-  // RÉCUPÉRER UN MANGA PAR ID
+  // RÉCUPÉRER UN MANGA PAR ID (AVEC PROTECTION DES VUES)
   // ============================================
-  async findById(id: string) {
+  async findById(id: string, userId?: string) {
     const manga = await this.prisma.manga.findUnique({
       where: { id },
       include: {
@@ -142,10 +142,13 @@ export class MangasService {
       throw new NotFoundException('Manga non trouvé');
     }
 
-    await this.prisma.manga.update({
-      where: { id },
-      data: { viewsCount: { increment: 1 } },
-    });
+    // Incrémenter les vues uniquement si l'utilisateur connecté n'est PAS l'auteur
+    if (!userId || manga.authorId !== userId) {
+      await this.prisma.manga.update({
+        where: { id },
+        data: { viewsCount: { increment: 1 } },
+      });
+    }
 
     return manga;
   }
