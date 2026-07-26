@@ -15,6 +15,7 @@ import { SteamModule } from './modules/steam/steam.module';
 import { EventsModule } from './modules/events/events.module';
 import { AdminModule } from './modules/admin/admin.module';
 import { PrismaModule } from './prisma/prisma.module';
+import { BootstrapModule } from './modules/admin/bootstrap.module';
 
 @Module({
   imports: [
@@ -37,6 +38,7 @@ import { PrismaModule } from './prisma/prisma.module';
     SteamModule,
     EventsModule,
     AdminModule,
+    BootstrapModule,
   ],
 })
 export class AppModule {}
