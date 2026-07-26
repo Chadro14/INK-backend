@@ -1,139 +1,246 @@
-import { Injectable, InternalServerErrorException } from '@nestjs/common';
+import {
+  Injectable,
+  NotFoundException,
+  BadRequestException,
+  ForbiddenException,
+} from '@nestjs/common';
 import { PrismaService } from '../../prisma/prisma.service';
+import { StorageService } from '../../common/services/storage.service';
 import { CreateChapterDto } from './dto/create-chapter.dto';
-import { createClient, SupabaseClient } from '@supabase/supabase-js';
+import { UpdateChapterDto } from './dto/update-chapter.dto';
+import { ChapterContentType } from '@prisma/client';
+import sharp from 'sharp';
+
+interface ChapterPage {
+  key: string;
+  order: number;
+  isFree: boolean;
+}
 
 @Injectable()
 export class ChaptersService {
-  private supabase: SupabaseClient;
-
-  constructor(private readonly prisma: PrismaService) {
-    // Initialisation de Supabase avec tes variables d'environnement Vercel
-    this.supabase = createClient(
-      process.env.SUPABASE_URL,
-      process.env.SUPABASE_SERVICE_ROLE_KEY
-    );
-  }
+  constructor(
+    private prisma: PrismaService,
+    private storage: StorageService,
+  ) {}
 
   async create(
     mangaId: string,
     userId: string,
     dto: CreateChapterDto,
-    pdfFile?: any,
-    imageFiles?: any[],
-    coverFile?: any
+    pdfFile?: Express.Multer.File,
+    photoFiles?: Express.Multer.File[],
+    coverFile?: Express.Multer.File,
   ) {
-    // 1. Déterminer le type de contenu
-    const contentType = imageFiles && imageFiles.length > 0 ? 'IMAGES' : 'PDF';
+    if (!pdfFile && (!photoFiles || photoFiles.length === 0)) {
+      throw new BadRequestException('Fournissez un PDF ou au moins une photo');
+    }
 
-    // 2. Récupérer et transformer les index des pages gratuites
+    const manga = await this.prisma.manga.findUnique({
+      where: { id: mangaId },
+    });
+
+    if (!manga) {
+      throw new NotFoundException('Manga non trouvé');
+    }
+
+    const user = await this.prisma.user.findUnique({ where: { id: userId } });
+    if (manga.authorId !== userId && user?.role !== 'ADMIN') {
+      throw new ForbiddenException("Vous n'êtes pas l'auteur de ce manga");
+    }
+
+    const existing = await this.prisma.chapter.findUnique({
+      where: {
+        mangaId_number: {
+          mangaId,
+          number: dto.number,
+        },
+      },
+    });
+
+    if (existing) {
+      throw new BadRequestException('Ce numéro de chapitre existe déjà pour ce manga');
+    }
+
+    let coverUrl: string | undefined;
+    if (coverFile) {
+      const coverBuffer = await sharp(coverFile.buffer)
+        .resize(600, 850, { fit: 'cover' })
+        .webp({ quality: 80 })
+        .toBuffer();
+
+      const coverKey = `${mangaId}/cover-chapter-${dto.number}-${Date.now()}.webp`;
+      coverUrl = await this.storage.upload(coverKey, coverBuffer, 'image/webp');
+    }
+
+    if (pdfFile) {
+      const pdfKey = `${mangaId}/chapter-${dto.number}-${Date.now()}.pdf`;
+      await this.storage.upload(pdfKey, pdfFile.buffer, 'application/pdf');
+
+      return this.prisma.chapter.create({
+        data: {
+          mangaId,
+          number: dto.number,
+          title: dto.title,
+          contentType: ChapterContentType.PDF,
+          pdfKey,
+          pdfSize: pdfFile.size,
+          isFree: dto.isFree ?? false,
+          isDraft: dto.isDraft ?? true,
+          price: dto.price,
+          coverUrl,
+          publishedAt: dto.isDraft === false ? new Date() : null,
+        },
+      });
+    }
+
     let freeIndexes: number[] = [];
     if (dto.freePageIndexes) {
       try {
         freeIndexes = JSON.parse(dto.freePageIndexes);
-      } catch (e) {
-        console.error('Erreur de parsing des freePageIndexes', e);
+      } catch {
+        freeIndexes = [];
       }
     }
 
-    // 3. Construction des données de pages et d'upload
-    let pagesJson: any[] = [];
-    let pageCount = 0;
-    let pdfKey = null;
-    let pdfSize = null;
+    const pages: ChapterPage[] = [];
+    for (let i = 0; i < photoFiles.length; i++) {
+      const photo = photoFiles[i];
+      const pageNumber = String(i + 1).padStart(3, '0');
 
-    // ==========================================
-    // UPLOAD DES IMAGES (BUCKET : CHAPTERS1)
-    // ==========================================
-    if (contentType === 'IMAGES' && imageFiles) {
-      pageCount = imageFiles.length;
-      
-      for (let i = 0; i < imageFiles.length; i++) {
-        const file = imageFiles[i];
-        const fileName = `${mangaId}/chapitre-${dto.number}/${Date.now()}_${file.originalname}`;
-        
-        // Envoi vers le bucket CHAPTERS1
-        const { error } = await this.supabase.storage
-          .from('CHAPTERS1') 
-          .upload(fileName, file.buffer, {
-            contentType: file.mimetype,
-          });
+      const processedBuffer = await sharp(photo.buffer)
+        .resize(1200, undefined, { withoutEnlargement: true })
+        .webp({ quality: 85 })
+        .toBuffer();
 
-        if (error) {
-          throw new InternalServerErrorException("Erreur lors de l'upload de l'image");
-        }
+      const pageKey = `${mangaId}/chapter-${dto.number}/page-${pageNumber}-${Date.now()}.webp`;
+      await this.storage.upload(pageKey, processedBuffer, 'image/webp');
 
-        // Récupération du lien public
-        const { data: publicUrlData } = this.supabase.storage
-          .from('CHAPTERS1')
-          .getPublicUrl(fileName);
-
-        pagesJson.push({
-          key: publicUrlData.publicUrl,
-          order: i,         
-          isFree: freeIndexes.includes(i), 
-        });
-      }
-    } 
-    // ==========================================
-    // UPLOAD DU PDF (BUCKET : CHAPTERS1)
-    // ==========================================
-    else if (contentType === 'PDF' && pdfFile) {
-      pageCount = 1; 
-      pdfSize = pdfFile.size;
-      const fileName = `${mangaId}/chapitre-${dto.number}/${Date.now()}_${pdfFile.originalname}`;
-
-      const { error } = await this.supabase.storage
-        .from('CHAPTERS1') 
-        .upload(fileName, pdfFile.buffer, {
-          contentType: pdfFile.mimetype,
-        });
-
-      if (error) {
-        throw new InternalServerErrorException("Erreur lors de l'upload du PDF : " + error.message);
-      }
-
-      // Récupération du lien public
-      const { data: publicUrlData } = this.supabase.storage
-        .from('CHAPTERS1')
-        .getPublicUrl(fileName);
-
-      pdfKey = publicUrlData.publicUrl;
+      pages.push({
+        key: pageKey,
+        order: i + 1,
+        isFree: freeIndexes.includes(i),
+      });
     }
 
-    // 4. Enregistrement en base de données
     return this.prisma.chapter.create({
       data: {
         mangaId,
-        number: Number(dto.number),
+        number: dto.number,
         title: dto.title,
-        price: dto.price ? Number(dto.price) : null,
-        isFree: dto.isFree === true || (dto.isFree as any) === 'true',
-        isDraft: dto.isDraft === true || (dto.isDraft as any) === 'true',
-        contentType: contentType,
-        pages: pagesJson,
-        pageCount,
-        pdfKey,
-        pdfSize,
+        contentType: ChapterContentType.IMAGES,
+        pages: pages as any,
+        pageCount: pages.length,
+        isFree: dto.isFree ?? false,
+        isDraft: dto.isDraft ?? true,
+        price: dto.price,
+        coverUrl,
+        publishedAt: dto.isDraft === false ? new Date() : null,
       },
     });
+  }
+
+  async update(chapterId: string, dto: UpdateChapterDto) {
+    const chapter = await this.prisma.chapter.findUnique({
+      where: { id: chapterId },
+    });
+
+    if (!chapter) {
+      throw new NotFoundException('Chapitre non trouvé');
+    }
+
+    const willBePublished = dto.isDraft === false && chapter.isDraft === true;
+
+    return this.prisma.chapter.update({
+      where: { id: chapterId },
+      data: {
+        title: dto.title,
+        isFree: dto.isFree,
+        isDraft: dto.isDraft,
+        price: dto.price,
+        publishedAt: willBePublished ? new Date() : chapter.publishedAt,
+      },
+    });
+  }
+
+  async findOne(chapterId: string) {
+    const chapter = await this.prisma.chapter.findUnique({
+      where: { id: chapterId },
+    });
+
+    if (!chapter) {
+      throw new NotFoundException('Chapitre non trouvé');
+    }
+
+    return this.attachSignedUrls(chapter);
+  }
+
+  async findByNumber(mangaId: string, number: number) {
+    const chapter = await this.prisma.chapter.findUnique({
+      where: {
+        mangaId_number: {
+          mangaId,
+          number,
+        },
+      },
+    });
+
+    if (!chapter) {
+      throw new NotFoundException('Chapitre non trouvé');
+    }
+
+    return this.attachSignedUrls(chapter);
+  }
+
+  private async attachSignedUrls(chapter: any) {
+    if (chapter.contentType === ChapterContentType.PDF && chapter.pdfKey) {
+      const pdfUrl = await this.storage.getSignedUrl(chapter.pdfKey);
+      return { ...chapter, pdfUrl };
+    }
+
+    if (chapter.contentType === ChapterContentType.IMAGES && Array.isArray(chapter.pages)) {
+      const pagesWithUrls = await Promise.all(
+        (chapter.pages as ChapterPage[]).map(async (page) => ({
+          order: page.order,
+          isFree: page.isFree,
+          url: await this.storage.getSignedUrl(page.key),
+        })),
+      );
+      return { ...chapter, pages: pagesWithUrls };
+    }
+
+    return chapter;
   }
 
   async findByManga(mangaId: string) {
     return this.prisma.chapter.findMany({
-      where: { mangaId },
+      where: { mangaId, isDraft: false },
       orderBy: { number: 'asc' },
     });
   }
 
-  async findByNumber(mangaId: string, number: number) {
-    return this.prisma.chapter.findUnique({
-      where: {
-        mangaId_number: {
-          mangaId,
-          number: Number(number),
-        },
-      },
+  async delete(chapterId: string) {
+    const chapter = await this.prisma.chapter.findUnique({
+      where: { id: chapterId },
     });
+
+    if (!chapter) {
+      throw new NotFoundException('Chapitre non trouvé');
+    }
+
+    if (chapter.pdfKey) {
+      await this.storage.delete(chapter.pdfKey);
+    }
+    if (Array.isArray(chapter.pages)) {
+      await Promise.all(
+        (chapter.pages as ChapterPage[]).map((p) => this.storage.delete(p.key)),
+      );
+    }
+
+    await this.prisma.chapter.delete({
+      where: { id: chapterId },
+    });
+
+    return { message: 'Chapitre supprimé avec succès' };
   }
 }
