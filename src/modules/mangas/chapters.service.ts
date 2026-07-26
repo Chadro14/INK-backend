@@ -200,7 +200,7 @@ export class ChaptersService {
 
     if (chapter.contentType === ChapterContentType.IMAGES && Array.isArray(chapter.pages)) {
       const pagesWithUrls = await Promise.all(
-        (chapter.pages as ChapterPage[]).map(async (page) => ({
+        (chapter.pages as unknown as ChapterPage[]).map(async (page) => ({
           order: page.order,
           isFree: page.isFree,
           url: await this.storage.getSignedUrl(page.key),
@@ -233,7 +233,7 @@ export class ChaptersService {
     }
     if (Array.isArray(chapter.pages)) {
       await Promise.all(
-        (chapter.pages as ChapterPage[]).map((p) => this.storage.delete(p.key)),
+        (chapter.pages as unknown as ChapterPage[]).map((p) => this.storage.delete(p.key)),
       );
     }
 
