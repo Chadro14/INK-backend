@@ -9,11 +9,11 @@ import {
   Query,
   UseGuards,
   Req,
-  UploadedFile,
+  UploadedFiles,
   UseInterceptors,
   BadRequestException,
 } from '@nestjs/common';
-import { FileInterceptor } from '@nestjs/platform-express';
+import { FileFieldsInterceptor } from '@nestjs/platform-express';
 import { MangasService } from './mangas.service';
 import { ChaptersService } from './chapters.service';
 import { JwtAuthGuard } from '../../common/guards/jwt-auth.guard';
@@ -98,30 +98,38 @@ export class MangasController {
   }
 
   // ============================================
-  // AJOUTER UN CHAPITRE (avec upload PDF)
+  // AJOUTER UN CHAPITRE — PDF ou photos multiples
   // ============================================
   @Post(':id/chapters')
   @UseGuards(JwtAuthGuard)
-  @UseInterceptors(FileInterceptor('pdf'))
+  @UseInterceptors(FileFieldsInterceptor([
+    { name: 'pdf', maxCount: 1 },
+    { name: 'photos', maxCount: 60 },
+    { name: 'cover', maxCount: 1 },
+  ]))
   async addChapter(
     @Param('id') mangaId: string,
     @Req() req: any,
     @Body() dto: CreateChapterDto,
-    @UploadedFile() file: Express.Multer.File,
+    @UploadedFiles() files: {
+      pdf?: Express.Multer.File[];
+      photos?: Express.Multer.File[];
+      cover?: Express.Multer.File[];
+    },
   ) {
-    if (!file) {
-      throw new BadRequestException('Fichier PDF requis');
-    }
+    const pdfFile = files.pdf?.[0];
+    const photoFiles = files.photos;
+    const coverFile = files.cover?.[0];
 
-    if (file.mimetype !== 'application/pdf') {
+    if (pdfFile && pdfFile.mimetype !== 'application/pdf') {
       throw new BadRequestException('Le fichier doit être un PDF');
     }
 
-    if (file.size > 50 * 1024 * 1024) {
+    if (pdfFile && pdfFile.size > 50 * 1024 * 1024) {
       throw new BadRequestException('Le PDF doit faire moins de 50MB');
     }
 
-    return this.chaptersService.create(mangaId, req.user.id, dto, file);
+    return this.chaptersService.create(mangaId, req.user.id, dto, pdfFile, photoFiles, coverFile);
   }
 
   // ============================================
