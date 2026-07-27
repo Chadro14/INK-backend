@@ -77,7 +77,6 @@ export class CertificationService {
           },
         });
 
-        // ✅ Notification sans emojis
         await this.prisma.notification.create({
           data: {
             userId: creator.id,
@@ -177,5 +176,46 @@ export class CertificationService {
       name: key,
       value: BADGE_COLORS[key],
     }));
+  }
+
+  // ============================================
+  // CERTIFIER MANUELLEMENT (admin uniquement)
+  // ============================================
+  async certifyUser(adminId: string, targetUserId: string) {
+    const admin = await this.prisma.user.findUnique({
+      where: { id: adminId },
+    });
+
+    if (!admin || admin.role !== 'ADMIN') {
+      throw new Error('Seul un administrateur peut certifier un utilisateur');
+    }
+
+    const target = await this.prisma.user.findUnique({
+      where: { id: targetUserId },
+    });
+
+    if (!target) {
+      throw new NotFoundException('Utilisateur non trouvé');
+    }
+
+    const updated = await this.prisma.user.update({
+      where: { id: targetUserId },
+      data: {
+        isCertified: true,
+        certifiedAt: new Date(),
+      },
+    });
+
+    await this.prisma.notification.create({
+      data: {
+        userId: targetUserId,
+        type: 'CERTIFICATION',
+        title: 'Félicitations',
+        body: 'Vous êtes maintenant certifié',
+        metadata: { badge: 'gold', certifiedBy: adminId },
+      },
+    });
+
+    return { success: true, username: updated.username, isCertified: true };
   }
 }
