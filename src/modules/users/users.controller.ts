@@ -54,7 +54,7 @@ export class UsersController {
   }
 
   // ============================================
-  // UPLOADER UN AVATAR — DIRECT VERS SUPABASE
+  // UPLOADER UN AVATAR
   // ============================================
   @Post('avatar')
   @UseGuards(JwtAuthGuard)
@@ -72,11 +72,9 @@ export class UsersController {
       throw new BadRequestException('L\'image ne doit pas dépasser 5MB');
     }
 
-    // Upload direct vers le bucket CHAPTERS1 (avatars)
     const key = `user/${req.user.id}/avatar-${Date.now()}.webp`;
     await this.storage.upload(key, file.buffer, file.mimetype, 'avatars');
 
-    // Mettre à jour l'URL de l'avatar dans la base
     const avatarUrl = await this.storage.getSignedUrl(key, 86400, 'avatars');
     await this.usersService.updateAvatar(req.user.id, avatarUrl);
 
