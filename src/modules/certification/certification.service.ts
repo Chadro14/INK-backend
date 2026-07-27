@@ -36,10 +36,14 @@ export class CertificationService {
     private followService: FollowService,
   ) {}
 
+  // ============================================
+  // CERTIFICATION AUTOMATIQUE (tous les jours à minuit)
+  // ============================================
   @Cron(CronExpression.EVERY_DAY_AT_MIDNIGHT)
   async autoCertifyUsers() {
     console.log('🔄 Vérification des certifications...');
 
+    // Récupérer tous les créateurs non certifiés
     const creators = await this.prisma.user.findMany({
       where: {
         role: 'CREATOR',
@@ -62,10 +66,11 @@ export class CertificationService {
 
       const { followersCount } = await this.followService.getFollowCounts(creator.id);
 
-      const hasEnoughChapters = totalChapters >= 10;
-      const hasEnoughFollowers = followersCount >= 50;
+      // ✅ NOUVELLES CONDITIONS
+      const hasEnoughChapters = totalChapters >= 40;
+      const hasEnoughFollowers = followersCount >= 350;
       const isOldEnough = creator.createdAt
-        ? new Date(creator.createdAt) < new Date(Date.now() - 30 * 24 * 60 * 60 * 1000)
+        ? new Date(creator.createdAt) < new Date(Date.now() - 5 * 30 * 24 * 60 * 60 * 1000)
         : false;
 
       if (hasEnoughChapters && hasEnoughFollowers && isOldEnough) {
@@ -77,21 +82,27 @@ export class CertificationService {
           },
         });
 
+        // Notification
         await this.prisma.notification.create({
           data: {
             userId: creator.id,
             type: 'CERTIFICATION',
             title: 'Félicitations',
-            body: 'Vous êtes maintenant certifié',
+            body: 'Vous êtes maintenant certifié sur INKDROP',
             metadata: { badge: 'gold' },
           },
         });
+
+        console.log(`✅ Utilisateur ${creator.username} certifié !`);
       }
     }
 
-    console.log('✅ Certification terminée');
+    console.log('✅ Vérification des certifications terminée');
   }
 
+  // ============================================
+  // CHANGER LA COULEUR DU BADGE
+  // ============================================
   async updateBadgeColor(userId: string, color: string) {
     const user = await this.prisma.user.findUnique({
       where: { id: userId },
@@ -115,6 +126,9 @@ export class CertificationService {
     });
   }
 
+  // ============================================
+  // STATUT DE CERTIFICATION D'UN UTILISATEUR
+  // ============================================
   async getCertificationStatus(userId: string) {
     const user = await this.prisma.user.findUnique({
       where: { id: userId },
@@ -141,21 +155,21 @@ export class CertificationService {
     const conditions = {
       chapters: {
         current: totalChapters,
-        required: 10,
-        met: totalChapters >= 10,
+        required: 40,
+        met: totalChapters >= 40,
       },
       followers: {
         current: followersCount,
-        required: 50,
-        met: followersCount >= 50,
+        required: 350,
+        met: followersCount >= 350,
       },
       age: {
         current: user.createdAt
           ? Math.floor((Date.now() - new Date(user.createdAt).getTime()) / (1000 * 60 * 60 * 24))
           : 0,
-        required: 30,
+        required: 150, // 5 mois ≈ 150 jours
         met: user.createdAt
-          ? new Date(user.createdAt) < new Date(Date.now() - 30 * 24 * 60 * 60 * 1000)
+          ? new Date(user.createdAt) < new Date(Date.now() - 5 * 30 * 24 * 60 * 60 * 1000)
           : false,
       },
     };
@@ -171,51 +185,13 @@ export class CertificationService {
     };
   }
 
+  // ============================================
+  // LISTE DES COULEURS DISPONIBLES
+  // ============================================
   getAvailableColors() {
     return Object.keys(BADGE_COLORS).map((key) => ({
       name: key,
       value: BADGE_COLORS[key],
     }));
-  }
-
-  // ============================================
-  // CERTIFIER MANUELLEMENT (admin uniquement)
-  // ============================================
-  async certifyUser(adminId: string, targetUserId: string) {
-    const admin = await this.prisma.user.findUnique({
-      where: { id: adminId },
-    });
-
-    if (!admin || admin.role !== 'ADMIN') {
-      throw new Error('Seul un administrateur peut certifier un utilisateur');
-    }
-
-    const target = await this.prisma.user.findUnique({
-      where: { id: targetUserId },
-    });
-
-    if (!target) {
-      throw new NotFoundException('Utilisateur non trouvé');
-    }
-
-    const updated = await this.prisma.user.update({
-      where: { id: targetUserId },
-      data: {
-        isCertified: true,
-        certifiedAt: new Date(),
-      },
-    });
-
-    await this.prisma.notification.create({
-      data: {
-        userId: targetUserId,
-        type: 'CERTIFICATION',
-        title: 'Félicitations',
-        body: 'Vous êtes maintenant certifié',
-        metadata: { badge: 'gold', certifiedBy: adminId },
-      },
-    });
-
-    return { success: true, username: updated.username, isCertified: true };
   }
 }
