@@ -126,6 +126,8 @@ export class MangasService {
             price: true,
             pageCount: true,
             publishedAt: true,
+            coverUrl: true,     // ✅ AJOUTÉ
+            contentType: true,  // ✅ AJOUTÉ
           },
         },
         _count: {
