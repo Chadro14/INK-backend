@@ -1,14 +1,20 @@
 import { Injectable } from '@nestjs/common';
+import { ConfigService } from '@nestjs/config';
 import { createClient, SupabaseClient } from '@supabase/supabase-js';
 
 @Injectable()
 export class StorageService {
   private supabase: SupabaseClient;
-  private readonly bucket = 'chapters'; // Utilisation du bucket chapters existant
 
-  constructor() {
-    const supabaseUrl = process.env.SUPABASE_URL;
-    const supabaseKey = process.env.SUPABASE_SERVICE_ROLE_KEY;
+  // ✅ Buckets séparés
+  private readonly buckets = {
+    chapters: 'chapters',    // Pour les mangas (PDF, photos)
+    avatars: 'CHAPTERS1',    // Pour les avatars
+  };
+
+  constructor(private configService: ConfigService) {
+    const supabaseUrl = this.configService.get('SUPABASE_URL');
+    const supabaseKey = this.configService.get('SUPABASE_SERVICE_ROLE_KEY');
 
     if (!supabaseUrl || !supabaseKey) {
       throw new Error('Supabase credentials missing');
@@ -18,44 +24,37 @@ export class StorageService {
   }
 
   // ============================================
-  // UPLOAD UN FICHIER
+  // UPLOAD GÉNÉRIQUE
   // ============================================
-  async upload(key: string, buffer: Buffer, contentType: string): Promise<string> {
+  async upload(
+    key: string,
+    buffer: Buffer,
+    contentType: string,
+    bucketType: 'chapters' | 'avatars' = 'chapters'
+  ): Promise<string> {
+    const bucket = this.buckets[bucketType];
     const { error } = await this.supabase.storage
-      .from(this.bucket)
+      .from(bucket)
       .upload(key, buffer, { contentType });
 
     if (error) {
       throw new Error(`Échec de l'upload: ${error.message}`);
     }
 
-    // Récupérer l'URL publique
-    const { data } = this.supabase.storage
-      .from(this.bucket)
-      .getPublicUrl(key);
-
-    return data.publicUrl;
+    return key;
   }
 
   // ============================================
-  // SUPPRIMER UN FICHIER
+  // URL SIGNÉE
   // ============================================
-  async delete(key: string): Promise<void> {
-    const { error } = await this.supabase.storage
-      .from(this.bucket)
-      .remove([key]);
-
-    if (error) {
-      throw new Error(`Échec de la suppression: ${error.message}`);
-    }
-  }
-
-  // ============================================
-  // OBTENIR UNE URL SIGNÉE
-  // ============================================
-  async getSignedUrl(key: string, expiresInSeconds = 3600): Promise<string> {
+  async getSignedUrl(
+    key: string,
+    expiresInSeconds = 3600,
+    bucketType: 'chapters' | 'avatars' = 'chapters'
+  ): Promise<string> {
+    const bucket = this.buckets[bucketType];
     const { data, error } = await this.supabase.storage
-      .from(this.bucket)
+      .from(bucket)
       .createSignedUrl(key, expiresInSeconds);
 
     if (error || !data) {
@@ -63,5 +62,42 @@ export class StorageService {
     }
 
     return data.signedUrl;
+  }
+
+  // ============================================
+  // URL D'UPLOAD DIRECT
+  // ============================================
+  async getUploadUrl(
+    key: string,
+    contentType: string,
+    bucketType: 'chapters' | 'avatars' = 'chapters'
+  ): Promise<string> {
+    const bucket = this.buckets[bucketType];
+    const { data, error } = await this.supabase.storage
+      .from(bucket)
+      .createSignedUploadUrl(key, { contentType });
+
+    if (error || !data) {
+      throw new Error(`Impossible de générer l'URL d'upload: ${error?.message}`);
+    }
+
+    return data.signedUrl;
+  }
+
+  // ============================================
+  // SUPPRESSION
+  // ============================================
+  async delete(
+    key: string,
+    bucketType: 'chapters' | 'avatars' = 'chapters'
+  ): Promise<void> {
+    const bucket = this.buckets[bucketType];
+    const { error } = await this.supabase.storage
+      .from(bucket)
+      .remove([key]);
+
+    if (error) {
+      throw new Error(`Échec de la suppression: ${error.message}`);
+    }
   }
 }
