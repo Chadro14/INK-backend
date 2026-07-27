@@ -1,3 +1,4 @@
+
 import { Injectable } from '@nestjs/common';
 import { ConfigService } from '@nestjs/config';
 import { createClient, SupabaseClient } from '@supabase/supabase-js';
@@ -65,17 +66,16 @@ export class StorageService {
   }
 
   // ============================================
-  // URL D'UPLOAD DIRECT
+  // URL D'UPLOAD DIRECT (corrigé)
   // ============================================
   async getUploadUrl(
     key: string,
-    contentType: string,
     bucketType: 'chapters' | 'avatars' = 'chapters'
   ): Promise<string> {
     const bucket = this.buckets[bucketType];
     const { data, error } = await this.supabase.storage
       .from(bucket)
-      .createSignedUploadUrl(key, { contentType });
+      .createSignedUploadUrl(key);
 
     if (error || !data) {
       throw new Error(`Impossible de générer l'URL d'upload: ${error?.message}`);
