@@ -1,4 +1,3 @@
-
 import {
   Controller,
   Get,
@@ -25,6 +24,7 @@ import { UpdateMangaDto } from './dto/update-manga.dto';
 import { CreateChapterDto } from './dto/create-chapter.dto';
 import { UpdateChapterDto } from './dto/update-chapter.dto';
 import { StorageService } from '../../common/services/storage.service';
+import { PrismaService } from '../../prisma/prisma.service'; // ✅ AJOUTÉ
 
 @Controller('mangas')
 export class MangasController {
@@ -32,6 +32,7 @@ export class MangasController {
     private readonly mangasService: MangasService,
     private readonly chaptersService: ChaptersService,
     private readonly storage: StorageService,
+    private readonly prisma: PrismaService, // ✅ AJOUTÉ
   ) {}
 
   // ============================================
@@ -165,7 +166,7 @@ export class MangasController {
 
     // Stocker dans le bucket "chapters"
     const key = `manga/${mangaId}/${body.fileName}`;
-    const uploadUrl = await this.storage.getUploadUrl(key, body.fileType, 'chapters');
+    const uploadUrl = await this.storage.getUploadUrl(key, 'chapters');
 
     return { uploadUrl, key };
   }
