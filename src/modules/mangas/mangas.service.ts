@@ -1,12 +1,16 @@
 import { Injectable, NotFoundException, ForbiddenException, BadRequestException } from '@nestjs/common';
 import { PrismaService } from '../../prisma/prisma.service';
+import { StorageService } from '../../common/services/storage.service';
 import { CreateMangaDto } from './dto/create-manga.dto';
 import { UpdateMangaDto } from './dto/update-manga.dto';
 import { Status } from '@prisma/client';
 
 @Injectable()
 export class MangasService {
-  constructor(private prisma: PrismaService) {}
+  constructor(
+    private prisma: PrismaService,
+    private storage: StorageService,
+  ) {}
 
   // ============================================
   // CRÉER UN MANGA
@@ -100,9 +104,9 @@ export class MangasService {
   }
 
   // ============================================
-  // RÉCUPÉRER UN MANGA PAR ID (AVEC PROTECTION DES VUES)
+  // RÉCUPÉRER UN MANGA PAR ID
   // ============================================
-  async findById(id: string, userId?: string) {
+  async findById(id: string) {
     const manga = await this.prisma.manga.findUnique({
       where: { id },
       include: {
@@ -126,8 +130,9 @@ export class MangasService {
             price: true,
             pageCount: true,
             publishedAt: true,
-            coverUrl: true,     // ✅ AJOUTÉ
-            contentType: true,  // ✅ AJOUTÉ
+            coverUrl: true,
+            contentType: true,
+            pages: true,
           },
         },
         _count: {
@@ -144,15 +149,35 @@ export class MangasService {
       throw new NotFoundException('Manga non trouvé');
     }
 
-    // Incrémenter les vues uniquement si l'utilisateur connecté n'est PAS l'auteur
-    if (!userId || manga.authorId !== userId) {
-      await this.prisma.manga.update({
-        where: { id },
-        data: { viewsCount: { increment: 1 } },
-      });
-    }
+    await this.prisma.manga.update({
+      where: { id },
+      data: { viewsCount: { increment: 1 } },
+    });
 
-    return manga;
+    // Génère une vignette de secours à partir de la 1ère page si le chapitre n'a pas de couverture dédiée
+    const chaptersWithThumbnails = await Promise.all(
+      manga.chapters.map(async (chapter: any) => {
+        const { pages, contentType, ...rest } = chapter;
+
+        if (rest.coverUrl) {
+          return rest;
+        }
+
+        if (contentType === 'IMAGES' && Array.isArray(pages) && pages.length > 0) {
+          try {
+            const firstPage = pages[0] as { key: string };
+            const thumbnailUrl = await this.storage.getSignedUrl(firstPage.key, 3600);
+            return { ...rest, coverUrl: thumbnailUrl };
+          } catch {
+            return rest;
+          }
+        }
+
+        return rest;
+      }),
+    );
+
+    return { ...manga, chapters: chaptersWithThumbnails };
   }
 
   // ============================================
