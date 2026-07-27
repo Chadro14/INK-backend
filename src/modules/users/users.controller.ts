@@ -10,15 +10,19 @@ import {
   UseInterceptors,
   UploadedFile,
   BadRequestException,
-  NotFoundException, // ✅ Ajouté ici
+  NotFoundException,
 } from '@nestjs/common';
 import { FileInterceptor } from '@nestjs/platform-express';
 import { UsersService } from './users.service';
 import { JwtAuthGuard } from '../../common/guards/jwt-auth.guard';
+import { StorageService } from '../../common/services/storage.service';
 
 @Controller('users')
 export class UsersController {
-  constructor(private readonly usersService: UsersService) {}
+  constructor(
+    private readonly usersService: UsersService,
+    private readonly storage: StorageService,
+  ) {}
 
   // ============================================
   // RÉCUPÉRER LE PROFIL DE L'UTILISATEUR CONNECTÉ
@@ -48,7 +52,7 @@ export class UsersController {
   }
 
   // ============================================
-  // UPLOADER UN AVATAR
+  // UPLOADER UN AVATAR — DIRECT VERS SUPABASE
   // ============================================
   @Post('avatar')
   @UseGuards(JwtAuthGuard)
@@ -66,7 +70,14 @@ export class UsersController {
       throw new BadRequestException('L\'image ne doit pas dépasser 5MB');
     }
 
-    const avatarUrl = await this.usersService.uploadAvatar(req.user.id, file);
+    // 🔥 Upload direct vers le bucket CHAPTERS1 (avatars)
+    const key = `user/${req.user.id}/avatar-${Date.now()}.webp`;
+    await this.storage.upload(key, file.buffer, file.mimetype, 'avatars');
+
+    // Mettre à jour l'URL de l'avatar dans la base
+    const avatarUrl = await this.storage.getSignedUrl(key, 86400, 'avatars');
+    await this.usersService.updateAvatar(req.user.id, avatarUrl);
+
     return { avatarUrl };
   }
 
