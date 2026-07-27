@@ -16,7 +16,7 @@ import { FileInterceptor } from '@nestjs/platform-express';
 import { UsersService } from './users.service';
 import { JwtAuthGuard } from '../../common/guards/jwt-auth.guard';
 import { StorageService } from '../../common/services/storage.service';
-import { PrismaService } from '../../prisma/prisma.service'; // ✅ AJOUTÉ
+import { PrismaService } from '../../prisma/prisma.service';
 
 @Controller('users')
 export class UsersController {
@@ -72,17 +72,13 @@ export class UsersController {
       throw new BadRequestException('L\'image ne doit pas dépasser 5MB');
     }
 
-    // 🔥 Upload direct vers le bucket CHAPTERS1 (avatars)
+    // Upload direct vers le bucket CHAPTERS1 (avatars)
     const key = `user/${req.user.id}/avatar-${Date.now()}.webp`;
     await this.storage.upload(key, file.buffer, file.mimetype, 'avatars');
 
-    // 🔥 Mettre à jour l'URL de l'avatar dans la base (via Prisma directement)
+    // Mettre à jour l'URL de l'avatar dans la base
     const avatarUrl = await this.storage.getSignedUrl(key, 86400, 'avatars');
-
-    await this.prisma.user.update({
-      where: { id: req.user.id },
-      data: { avatarUrl },
-    });
+    await this.usersService.updateAvatar(req.user.id, avatarUrl);
 
     return { avatarUrl };
   }
