@@ -1,3 +1,4 @@
+
 import {
   Controller,
   Get,
@@ -12,6 +13,8 @@ import {
   UploadedFiles,
   UseInterceptors,
   BadRequestException,
+  NotFoundException,
+  ForbiddenException,
 } from '@nestjs/common';
 import { FileFieldsInterceptor } from '@nestjs/platform-express';
 import { MangasService } from './mangas.service';
@@ -21,12 +24,14 @@ import { CreateMangaDto } from './dto/create-manga.dto';
 import { UpdateMangaDto } from './dto/update-manga.dto';
 import { CreateChapterDto } from './dto/create-chapter.dto';
 import { UpdateChapterDto } from './dto/update-chapter.dto';
+import { StorageService } from '../../common/services/storage.service';
 
 @Controller('mangas')
 export class MangasController {
   constructor(
     private readonly mangasService: MangasService,
     private readonly chaptersService: ChaptersService,
+    private readonly storage: StorageService,
   ) {}
 
   // ============================================
@@ -98,7 +103,7 @@ export class MangasController {
   }
 
   // ============================================
-  // AJOUTER UN CHAPITRE — PDF ou photos multiples
+  // AJOUTER UN CHAPITRE
   // ============================================
   @Post(':id/chapters')
   @UseGuards(JwtAuthGuard)
@@ -130,6 +135,39 @@ export class MangasController {
     }
 
     return this.chaptersService.create(mangaId, req.user.id, dto, pdfFile, photoFiles, coverFile);
+  }
+
+  // ============================================
+  // GÉNÉRER UNE URL D'UPLOAD DIRECT
+  // ============================================
+  @Post(':id/chapters/upload-url')
+  @UseGuards(JwtAuthGuard)
+  async getUploadUrl(
+    @Param('id') mangaId: string,
+    @Req() req: any,
+    @Body() body: { fileName: string; fileType: string },
+  ) {
+    const user = await this.prisma.user.findUnique({
+      where: { id: req.user.id },
+    });
+
+    const manga = await this.prisma.manga.findUnique({
+      where: { id: mangaId },
+    });
+
+    if (!manga) {
+      throw new NotFoundException('Manga non trouvé');
+    }
+
+    if (manga.authorId !== user.id && user.role !== 'ADMIN') {
+      throw new ForbiddenException('Vous n\'êtes pas l\'auteur de ce manga');
+    }
+
+    // Stocker dans le bucket "chapters"
+    const key = `manga/${mangaId}/${body.fileName}`;
+    const uploadUrl = await this.storage.getUploadUrl(key, body.fileType, 'chapters');
+
+    return { uploadUrl, key };
   }
 
   // ============================================
