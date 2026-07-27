@@ -24,7 +24,7 @@ import { UpdateMangaDto } from './dto/update-manga.dto';
 import { CreateChapterDto } from './dto/create-chapter.dto';
 import { UpdateChapterDto } from './dto/update-chapter.dto';
 import { StorageService } from '../../common/services/storage.service';
-import { PrismaService } from '../../prisma/prisma.service'; // ✅ AJOUTÉ
+import { PrismaService } from '../../prisma/prisma.service';
 
 @Controller('mangas')
 export class MangasController {
@@ -32,7 +32,7 @@ export class MangasController {
     private readonly mangasService: MangasService,
     private readonly chaptersService: ChaptersService,
     private readonly storage: StorageService,
-    private readonly prisma: PrismaService, // ✅ AJOUTÉ
+    private readonly prisma: PrismaService,
   ) {}
 
   // ============================================
@@ -148,9 +148,15 @@ export class MangasController {
     @Req() req: any,
     @Body() body: { fileName: string; fileType: string },
   ) {
+    console.log('📝 Upload URL request:', { mangaId, fileName: body.fileName, fileType: body.fileType });
+
     const user = await this.prisma.user.findUnique({
       where: { id: req.user.id },
     });
+
+    if (!user) {
+      throw new NotFoundException('Utilisateur non trouvé');
+    }
 
     const manga = await this.prisma.manga.findUnique({
       where: { id: mangaId },
@@ -167,6 +173,8 @@ export class MangasController {
     // Stocker dans le bucket "chapters"
     const key = `manga/${mangaId}/${body.fileName}`;
     const uploadUrl = await this.storage.getUploadUrl(key, 'chapters');
+
+    console.log('✅ Upload URL générée:', uploadUrl);
 
     return { uploadUrl, key };
   }
