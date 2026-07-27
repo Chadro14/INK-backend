@@ -16,12 +16,14 @@ import { FileInterceptor } from '@nestjs/platform-express';
 import { UsersService } from './users.service';
 import { JwtAuthGuard } from '../../common/guards/jwt-auth.guard';
 import { StorageService } from '../../common/services/storage.service';
+import { PrismaService } from '../../prisma/prisma.service'; // ✅ AJOUTÉ
 
 @Controller('users')
 export class UsersController {
   constructor(
     private readonly usersService: UsersService,
     private readonly storage: StorageService,
+    private readonly prisma: PrismaService,
   ) {}
 
   // ============================================
@@ -74,9 +76,13 @@ export class UsersController {
     const key = `user/${req.user.id}/avatar-${Date.now()}.webp`;
     await this.storage.upload(key, file.buffer, file.mimetype, 'avatars');
 
-    // Mettre à jour l'URL de l'avatar dans la base
+    // 🔥 Mettre à jour l'URL de l'avatar dans la base (via Prisma directement)
     const avatarUrl = await this.storage.getSignedUrl(key, 86400, 'avatars');
-    await this.usersService.updateAvatar(req.user.id, avatarUrl);
+
+    await this.prisma.user.update({
+      where: { id: req.user.id },
+      data: { avatarUrl },
+    });
 
     return { avatarUrl };
   }
