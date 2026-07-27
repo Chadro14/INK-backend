@@ -1,4 +1,3 @@
-
 import { Injectable } from '@nestjs/common';
 import { ConfigService } from '@nestjs/config';
 import { createClient, SupabaseClient } from '@supabase/supabase-js';
@@ -66,7 +65,7 @@ export class StorageService {
   }
 
   // ============================================
-  // URL D'UPLOAD DIRECT (corrigé)
+  // URL D'UPLOAD DIRECT
   // ============================================
   async getUploadUrl(
     key: string,
