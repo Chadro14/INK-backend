@@ -34,6 +34,15 @@ export class CertificationController {
   }
 
   // ============================================
+  // CERTIFIER MANUELLEMENT (admin uniquement)
+  // ============================================
+  @Post('certify/:userId')
+  @UseGuards(JwtAuthGuard)
+  async certifyUser(@Req() req: any, @Param('userId') userId: string) {
+    return this.certificationService.certifyUser(req.user.id, userId);
+  }
+
+  // ============================================
   // STATUT D'UN UTILISATEUR SPÉCIFIQUE (public)
   // ============================================
   @Get(':userId/status')
