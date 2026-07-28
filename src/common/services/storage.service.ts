@@ -24,7 +24,7 @@ export class StorageService {
   }
 
   // ============================================
-  // UPLOAD GÉNÉRIQUE
+  // UPLOAD GÉNÉRIQUE (CORRIGÉ 🎉)
   // ============================================
   async upload(
     key: string,
@@ -35,13 +35,18 @@ export class StorageService {
     const bucket = this.buckets[bucketType];
     const { error } = await this.supabase.storage
       .from(bucket)
-      .upload(key, buffer, { contentType });
+      .upload(key, buffer, { contentType, upsert: true });
 
     if (error) {
       throw new Error(`Échec de l'upload: ${error.message}`);
     }
 
-    return key;
+    // 🚀 FIX: On récupère et on renvoie l'URL publique complète !
+    const { data } = this.supabase.storage
+      .from(bucket)
+      .getPublicUrl(key);
+
+    return data.publicUrl;
   }
 
   // ============================================
