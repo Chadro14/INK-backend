@@ -5,6 +5,7 @@ import {
   IsBoolean,
   IsNumber,
   Min,
+  IsArray,
 } from 'class-validator';
 import { Type } from 'class-transformer';
 
@@ -36,4 +37,18 @@ export class CreateChapterDto {
   @IsOptional()
   @IsString()
   freePageIndexes?: string;
+
+  // 🚀 Nouveaux champs pour recevoir les URLs générées par Supabase
+  @IsOptional()
+  @IsString()
+  pdfUrl?: string;
+
+  @IsOptional()
+  @IsArray()
+  @IsString({ each: true })
+  imagesUrls?: string[];
+
+  @IsOptional()
+  @IsString()
+  coverUrl?: string;
 }
