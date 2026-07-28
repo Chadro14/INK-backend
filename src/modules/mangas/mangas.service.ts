@@ -39,6 +39,43 @@ export class MangasService {
   }
 
   // ============================================
+  // UPLOADER / METTRE À JOUR LA COUVERTURE (NOUVEAU 🎉)
+  // ============================================
+  async updateCover(id: string, userId: string, file: Express.Multer.File) {
+    // 1. Vérifier si le manga existe
+    const manga = await this.prisma.manga.findUnique({
+      where: { id },
+    });
+
+    if (!manga) {
+      throw new NotFoundException('Manga non trouvé');
+    }
+
+    // 2. Vérifier que l'utilisateur est bien l'auteur (sécurité)
+    if (manga.authorId !== userId) {
+      throw new ForbiddenException('Vous n\'êtes pas l\'auteur de ce manga');
+    }
+
+    try {
+      // 3. Générer un nom de fichier unique et l'envoyer au Storage
+      // On extrait l'extension de l'image (ex: .png, .jpg)
+      const extension = file.originalname.split('.').pop();
+      const key = `mangas/${id}/cover-${Date.now()}.${extension}`;
+      
+      // Utilisation de ton service de stockage existant pour uploader le fichier
+      const coverUrl = await this.storage.upload(key, file.buffer, file.mimetype);
+
+      // 4. Mettre à jour l'URL de l'image dans la base de données Prisma
+      return await this.prisma.manga.update({
+        where: { id },
+        data: { coverUrl },
+      });
+    } catch (error) {
+      throw new BadRequestException("Erreur lors de l'enregistrement de l'image de couverture.");
+    }
+  }
+
+  // ============================================
   // RÉCUPÉRER TOUS LES MANGAS (PAGINÉ)
   // ============================================
   async findAll(page: number = 1, limit: number = 20, filters?: any) {
