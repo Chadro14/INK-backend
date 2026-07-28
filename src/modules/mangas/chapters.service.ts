@@ -9,7 +9,6 @@ import { StorageService } from '../../common/services/storage.service';
 import { CreateChapterDto } from './dto/create-chapter.dto';
 import { UpdateChapterDto } from './dto/update-chapter.dto';
 import { ChapterContentType } from '@prisma/client';
-import sharp from 'sharp';
 
 interface ChapterPage {
   key: string;
@@ -28,12 +27,10 @@ export class ChaptersService {
     mangaId: string,
     userId: string,
     dto: CreateChapterDto,
-    pdfFile?: Express.Multer.File,
-    photoFiles?: Express.Multer.File[],
-    coverFile?: Express.Multer.File,
   ) {
-    if (!pdfFile && (!photoFiles || photoFiles.length === 0)) {
-      throw new BadRequestException('Fournissez un PDF ou au moins une photo');
+    // Vérification : au moins un PDF ou des images doivent être fournis
+    if (!dto.pdfUrl && (!dto.imagesUrls || dto.imagesUrls.length === 0)) {
+      throw new BadRequestException('Fournissez un lien PDF ou au moins une image');
     }
 
     const manga = await this.prisma.manga.findUnique({
@@ -62,29 +59,17 @@ export class ChaptersService {
       throw new BadRequestException('Ce numéro de chapitre existe déjà pour ce manga');
     }
 
-    let coverUrl: string | undefined;
-    if (coverFile) {
-      const coverBuffer = await sharp(coverFile.buffer)
-        .resize(600, 850, { fit: 'cover' })
-        .webp({ quality: 80 })
-        .toBuffer();
+    const coverUrl = dto.coverUrl || null;
 
-      const coverKey = `${mangaId}/cover-chapter-${dto.number}-${Date.now()}.webp`;
-      coverUrl = await this.storage.upload(coverKey, coverBuffer, 'image/webp');
-    }
-
-    if (pdfFile) {
-      const pdfKey = `${mangaId}/chapter-${dto.number}-${Date.now()}.pdf`;
-      await this.storage.upload(pdfKey, pdfFile.buffer, 'application/pdf');
-
+    // --- CAS 1 : CHAPITRE FORMAT PDF ---
+    if (dto.pdfUrl) {
       return this.prisma.chapter.create({
         data: {
           mangaId,
           number: dto.number,
           title: dto.title,
           contentType: ChapterContentType.PDF,
-          pdfKey,
-          pdfSize: pdfFile.size,
+          pdfKey: dto.pdfUrl,
           isFree: dto.isFree ?? false,
           isDraft: dto.isDraft ?? true,
           price: dto.price,
@@ -94,6 +79,7 @@ export class ChaptersService {
       });
     }
 
+    // --- CAS 2 : CHAPITRE FORMAT IMAGES (PAGES) ---
     let freeIndexes: number[] = [];
     if (dto.freePageIndexes) {
       try {
@@ -103,25 +89,11 @@ export class ChaptersService {
       }
     }
 
-    const pages: ChapterPage[] = [];
-    for (let i = 0; i < photoFiles.length; i++) {
-      const photo = photoFiles[i];
-      const pageNumber = String(i + 1).padStart(3, '0');
-
-      const processedBuffer = await sharp(photo.buffer)
-        .resize(1200, undefined, { withoutEnlargement: true })
-        .webp({ quality: 85 })
-        .toBuffer();
-
-      const pageKey = `${mangaId}/chapter-${dto.number}/page-${pageNumber}-${Date.now()}.webp`;
-      await this.storage.upload(pageKey, processedBuffer, 'image/webp');
-
-      pages.push({
-        key: pageKey,
-        order: i + 1,
-        isFree: freeIndexes.includes(i),
-      });
-    }
+    const pages: ChapterPage[] = (dto.imagesUrls || []).map((urlOrKey, i) => ({
+      key: urlOrKey,
+      order: i + 1,
+      isFree: freeIndexes.includes(i),
+    }));
 
     return this.prisma.chapter.create({
       data: {
@@ -194,17 +166,21 @@ export class ChaptersService {
 
   private async attachSignedUrls(chapter: any) {
     if (chapter.contentType === ChapterContentType.PDF && chapter.pdfKey) {
-      const pdfUrl = await this.storage.getSignedUrl(chapter.pdfKey);
+      const isFullUrl = chapter.pdfKey.startsWith('http://') || chapter.pdfKey.startsWith('https://');
+      const pdfUrl = isFullUrl ? chapter.pdfKey : await this.storage.getSignedUrl(chapter.pdfKey);
       return { ...chapter, pdfUrl };
     }
 
     if (chapter.contentType === ChapterContentType.IMAGES && Array.isArray(chapter.pages)) {
       const pagesWithUrls = await Promise.all(
-        (chapter.pages as unknown as ChapterPage[]).map(async (page) => ({
-          order: page.order,
-          isFree: page.isFree,
-          url: await this.storage.getSignedUrl(page.key),
-        })),
+        (chapter.pages as unknown as ChapterPage[]).map(async (page) => {
+          const isFullUrl = page.key.startsWith('http://') || page.key.startsWith('https://');
+          return {
+            order: page.order,
+            isFree: page.isFree,
+            url: isFullUrl ? page.key : await this.storage.getSignedUrl(page.key),
+          };
+        }),
       );
       return { ...chapter, pages: pagesWithUrls };
     }
@@ -228,12 +204,14 @@ export class ChaptersService {
       throw new NotFoundException('Chapitre non trouvé');
     }
 
-    if (chapter.pdfKey) {
+    if (chapter.pdfKey && !chapter.pdfKey.startsWith('http')) {
       await this.storage.delete(chapter.pdfKey);
     }
     if (Array.isArray(chapter.pages)) {
       await Promise.all(
-        (chapter.pages as unknown as ChapterPage[]).map((p) => this.storage.delete(p.key)),
+        (chapter.pages as unknown as ChapterPage[])
+          .filter((p) => p.key && !p.key.startsWith('http'))
+          .map((p) => this.storage.delete(p.key)),
       );
     }
 
