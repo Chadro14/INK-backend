@@ -7,7 +7,7 @@ import {
   Min,
   IsArray,
 } from 'class-validator';
-import { Type } from 'class-transformer';
+import { Type, Transform } from 'class-transformer';
 
 export class CreateChapterDto {
   @IsInt()
@@ -20,12 +20,20 @@ export class CreateChapterDto {
 
   @IsOptional()
   @IsBoolean()
-  @Type(() => Boolean)
+  @Transform(({ value }) => {
+    if (value === 'true' || value === true) return true;
+    if (value === 'false' || value === false) return false;
+    return value;
+  })
   isFree?: boolean;
 
   @IsOptional()
   @IsBoolean()
-  @Type(() => Boolean)
+  @Transform(({ value }) => {
+    if (value === 'true' || value === true) return true;
+    if (value === 'false' || value === false) return false;
+    return value;
+  })
   isDraft?: boolean;
 
   @IsOptional()
@@ -38,7 +46,7 @@ export class CreateChapterDto {
   @IsString()
   freePageIndexes?: string;
 
-  // 🚀 Nouveaux champs pour recevoir les URLs générées par Supabase
+  // URLs transmises directement par le front-end
   @IsOptional()
   @IsString()
   pdfUrl?: string;
