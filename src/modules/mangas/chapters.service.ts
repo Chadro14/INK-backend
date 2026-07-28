@@ -28,58 +28,63 @@ export class ChaptersService {
     userId: string,
     dto: CreateChapterDto,
   ) {
-    // Vérification : au moins un PDF ou des images doivent être fournis
+    // 1. Validation : PDF ou au moins une image obligatoire
     if (!dto.pdfUrl && (!dto.imagesUrls || dto.imagesUrls.length === 0)) {
-      throw new BadRequestException('Fournissez un lien PDF ou au moins une image');
+      throw new BadRequestException('Fournissez un fichier PDF ou au moins une image.');
     }
 
+    // 2. Vérification de l'existence du manga
     const manga = await this.prisma.manga.findUnique({
       where: { id: mangaId },
     });
 
     if (!manga) {
-      throw new NotFoundException('Manga non trouvé');
+      throw new NotFoundException('Manga non trouvé.');
     }
 
+    // 3. Vérification des droits d'auteur
     const user = await this.prisma.user.findUnique({ where: { id: userId } });
     if (manga.authorId !== userId && user?.role !== 'ADMIN') {
-      throw new ForbiddenException("Vous n'êtes pas l'auteur de ce manga");
+      throw new ForbiddenException("Vous n'êtes pas l'auteur de ce manga.");
     }
 
+    // 4. Vérification d'unicité du numéro de chapitre
+    const chapterNumber = Number(dto.number);
     const existing = await this.prisma.chapter.findUnique({
       where: {
         mangaId_number: {
           mangaId,
-          number: dto.number,
+          number: chapterNumber,
         },
       },
     });
 
     if (existing) {
-      throw new BadRequestException('Ce numéro de chapitre existe déjà pour ce manga');
+      throw new BadRequestException(`Le chapitre N°${chapterNumber} existe déjà pour ce manga.`);
     }
 
     const coverUrl = dto.coverUrl || null;
+    const isDraft = dto.isDraft ?? false;
 
-    // --- CAS 1 : CHAPITRE FORMAT PDF ---
+    // --- CAS 1 : FORMAT PDF ---
     if (dto.pdfUrl) {
       return this.prisma.chapter.create({
         data: {
           mangaId,
-          number: dto.number,
-          title: dto.title,
+          number: chapterNumber,
+          title: dto.title?.trim() || null,
           contentType: ChapterContentType.PDF,
           pdfKey: dto.pdfUrl,
-          isFree: dto.isFree ?? false,
-          isDraft: dto.isDraft ?? true,
-          price: dto.price,
+          isFree: dto.isFree ?? true,
+          isDraft,
+          price: dto.isFree ? 0 : (dto.price || 0),
           coverUrl,
-          publishedAt: dto.isDraft === false ? new Date() : null,
+          publishedAt: !isDraft ? new Date() : null,
         },
       });
     }
 
-    // --- CAS 2 : CHAPITRE FORMAT IMAGES (PAGES) ---
+    // --- CAS 2 : FORMAT IMAGES ---
     let freeIndexes: number[] = [];
     if (dto.freePageIndexes) {
       try {
@@ -98,16 +103,16 @@ export class ChaptersService {
     return this.prisma.chapter.create({
       data: {
         mangaId,
-        number: dto.number,
-        title: dto.title,
+        number: chapterNumber,
+        title: dto.title?.trim() || null,
         contentType: ChapterContentType.IMAGES,
         pages: pages as any,
         pageCount: pages.length,
-        isFree: dto.isFree ?? false,
-        isDraft: dto.isDraft ?? true,
-        price: dto.price,
+        isFree: dto.isFree ?? true,
+        isDraft,
+        price: dto.isFree ? 0 : (dto.price || 0),
         coverUrl,
-        publishedAt: dto.isDraft === false ? new Date() : null,
+        publishedAt: !isDraft ? new Date() : null,
       },
     });
   }
@@ -118,7 +123,7 @@ export class ChaptersService {
     });
 
     if (!chapter) {
-      throw new NotFoundException('Chapitre non trouvé');
+      throw new NotFoundException('Chapitre non trouvé.');
     }
 
     const willBePublished = dto.isDraft === false && chapter.isDraft === true;
@@ -141,7 +146,7 @@ export class ChaptersService {
     });
 
     if (!chapter) {
-      throw new NotFoundException('Chapitre non trouvé');
+      throw new NotFoundException('Chapitre non trouvé.');
     }
 
     return this.attachSignedUrls(chapter);
@@ -152,16 +157,23 @@ export class ChaptersService {
       where: {
         mangaId_number: {
           mangaId,
-          number,
+          number: Number(number),
         },
       },
     });
 
     if (!chapter) {
-      throw new NotFoundException('Chapitre non trouvé');
+      throw new NotFoundException('Chapitre non trouvé.');
     }
 
     return this.attachSignedUrls(chapter);
+  }
+
+  async findByManga(mangaId: string) {
+    return this.prisma.chapter.findMany({
+      where: { mangaId, isDraft: false },
+      orderBy: { number: 'asc' },
+    });
   }
 
   private async attachSignedUrls(chapter: any) {
@@ -188,25 +200,19 @@ export class ChaptersService {
     return chapter;
   }
 
-  async findByManga(mangaId: string) {
-    return this.prisma.chapter.findMany({
-      where: { mangaId, isDraft: false },
-      orderBy: { number: 'asc' },
-    });
-  }
-
   async delete(chapterId: string) {
     const chapter = await this.prisma.chapter.findUnique({
       where: { id: chapterId },
     });
 
     if (!chapter) {
-      throw new NotFoundException('Chapitre non trouvé');
+      throw new NotFoundException('Chapitre non trouvé.');
     }
 
     if (chapter.pdfKey && !chapter.pdfKey.startsWith('http')) {
       await this.storage.delete(chapter.pdfKey);
     }
+    
     if (Array.isArray(chapter.pages)) {
       await Promise.all(
         (chapter.pages as unknown as ChapterPage[])
@@ -219,6 +225,6 @@ export class ChaptersService {
       where: { id: chapterId },
     });
 
-    return { message: 'Chapitre supprimé avec succès' };
+    return { message: 'Chapitre supprimé avec succès.' };
   }
 }
