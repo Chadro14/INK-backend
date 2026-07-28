@@ -9,14 +9,13 @@ import {
   Query,
   UseGuards,
   Req,
-  UploadedFile, // <--- AJOUTÉ
-  UploadedFiles,
+  UploadedFile,
   UseInterceptors,
   BadRequestException,
   NotFoundException,
   ForbiddenException,
 } from '@nestjs/common';
-import { FileFieldsInterceptor, FileInterceptor } from '@nestjs/platform-express'; // <--- AJOUTÉ FileInterceptor
+import { FileInterceptor } from '@nestjs/platform-express';
 import { MangasService } from './mangas.service';
 import { ChaptersService } from './chapters.service';
 import { JwtAuthGuard } from '../../common/guards/jwt-auth.guard';
@@ -46,7 +45,7 @@ export class MangasController {
   }
 
   // ============================================
-  // UPLOAD DE LA COUVERTURE DU MANGA (LA ROUTE MANQUANTE ! 🎉)
+  // UPLOAD DE LA COUVERTURE DU MANGA
   // ============================================
   @Post(':id/cover')
   @UseGuards(JwtAuthGuard)
@@ -59,7 +58,6 @@ export class MangasController {
     if (!file) {
       throw new BadRequestException('Aucune image de couverture fournie');
     }
-    // On envoie le fichier au service pour le traiter et l'enregistrer
     return this.mangasService.updateCover(id, req.user.id, file);
   }
 
@@ -123,38 +121,16 @@ export class MangasController {
   }
 
   // ============================================
-  // AJOUTER UN CHAPITRE
+  // AJOUTER UN CHAPITRE (CORRIGÉ : JSON uniquement)
   // ============================================
   @Post(':id/chapters')
   @UseGuards(JwtAuthGuard)
-  @UseInterceptors(FileFieldsInterceptor([
-    { name: 'pdf', maxCount: 1 },
-    { name: 'photos', maxCount: 60 },
-    { name: 'cover', maxCount: 1 },
-  ]))
   async addChapter(
     @Param('id') mangaId: string,
     @Req() req: any,
     @Body() dto: CreateChapterDto,
-    @UploadedFiles() files: {
-      pdf?: Express.Multer.File[];
-      photos?: Express.Multer.File[];
-      cover?: Express.Multer.File[];
-    },
   ) {
-    const pdfFile = files.pdf?.[0];
-    const photoFiles = files.photos;
-    const coverFile = files.cover?.[0];
-
-    if (pdfFile && pdfFile.mimetype !== 'application/pdf') {
-      throw new BadRequestException('Le fichier doit être un PDF');
-    }
-
-    if (pdfFile && pdfFile.size > 50 * 1024 * 1024) {
-      throw new BadRequestException('Le PDF doit faire moins de 50MB');
-    }
-
-    return this.chaptersService.create(mangaId, req.user.id, dto, pdfFile, photoFiles, coverFile);
+    return this.chaptersService.create(mangaId, req.user.id, dto);
   }
 
   // ============================================
@@ -186,10 +162,9 @@ export class MangasController {
     }
 
     if (manga.authorId !== user.id && user.role !== 'ADMIN') {
-      throw new ForbiddenException('Vous n\'êtes pas l\'auteur de ce manga');
+      throw new ForbiddenException("Vous n'êtes pas l'auteur de ce manga");
     }
 
-    // Stocker dans le bucket "chapters"
     const key = `manga/${mangaId}/${body.fileName}`;
     const uploadUrl = await this.storage.getUploadUrl(key, 'chapters');
 
