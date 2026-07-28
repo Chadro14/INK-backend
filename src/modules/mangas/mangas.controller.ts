@@ -9,13 +9,14 @@ import {
   Query,
   UseGuards,
   Req,
+  UploadedFile, // <--- AJOUTÉ
   UploadedFiles,
   UseInterceptors,
   BadRequestException,
   NotFoundException,
   ForbiddenException,
 } from '@nestjs/common';
-import { FileFieldsInterceptor } from '@nestjs/platform-express';
+import { FileFieldsInterceptor, FileInterceptor } from '@nestjs/platform-express'; // <--- AJOUTÉ FileInterceptor
 import { MangasService } from './mangas.service';
 import { ChaptersService } from './chapters.service';
 import { JwtAuthGuard } from '../../common/guards/jwt-auth.guard';
@@ -42,6 +43,24 @@ export class MangasController {
   @UseGuards(JwtAuthGuard)
   async create(@Req() req: any, @Body() dto: CreateMangaDto) {
     return this.mangasService.create(req.user.id, dto);
+  }
+
+  // ============================================
+  // UPLOAD DE LA COUVERTURE DU MANGA (LA ROUTE MANQUANTE ! 🎉)
+  // ============================================
+  @Post(':id/cover')
+  @UseGuards(JwtAuthGuard)
+  @UseInterceptors(FileInterceptor('cover'))
+  async uploadCover(
+    @Param('id') id: string,
+    @Req() req: any,
+    @UploadedFile() file: Express.Multer.File,
+  ) {
+    if (!file) {
+      throw new BadRequestException('Aucune image de couverture fournie');
+    }
+    // On envoie le fichier au service pour le traiter et l'enregistrer
+    return this.mangasService.updateCover(id, req.user.id, file);
   }
 
   // ============================================
