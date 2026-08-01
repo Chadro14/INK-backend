@@ -142,14 +142,10 @@ export class MangasController {
     return this.prisma.chapter.create({
       data: {
         mangaId,
-        number: dto.number,
-        title: dto.title,
-        content: dto.content || '',
-        pages: dto.pages || [],
-        contentType: dto.contentType || 'IMAGES',
-        isFree: dto.isFree ?? true,
-        price: dto.price || 0,
-        pageCount: Array.isArray(dto.pages) ? dto.pages.length : 0,
+        number: (dto as any).number,
+        title: (dto as any).title,
+        isFree: (dto as any).isFree ?? true,
+        price: (dto as any).price || 0,
       },
     });
   }
