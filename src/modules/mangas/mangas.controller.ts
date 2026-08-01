@@ -1,3 +1,4 @@
+
 import {
   Controller,
   Get,
@@ -121,7 +122,7 @@ export class MangasController {
   }
 
   // ============================================
-  // AJOUTER UN CHAPITRE (CORRIGÉ : JSON uniquement)
+  // AJOUTER UN CHAPITRE
   // ============================================
   @Post(':id/chapters')
   @UseGuards(JwtAuthGuard)
@@ -134,16 +135,21 @@ export class MangasController {
   }
 
   // ============================================
-  // GÉNÉRER UNE URL D'UPLOAD DIRECT
+  // GÉNÉRER LES URLS D'UPLOAD DIRECT (CORRIGÉ 🚀)
   // ============================================
   @Post(':id/chapters/upload-url')
   @UseGuards(JwtAuthGuard)
-  async getUploadUrl(
+  async getUploadUrls(
     @Param('id') mangaId: string,
     @Req() req: any,
-    @Body() body: { fileName: string; fileType: string },
+    @Body() body: { filenames: string[]; fileNames?: string[] },
   ) {
-    console.log('📝 Upload URL request:', { mangaId, fileName: body.fileName, fileType: body.fileType });
+    // On accepte soit "filenames", soit "fileNames" pour éviter tout bug de format envoyé par le front
+    const filenames = body.filenames || body.fileNames;
+
+    if (!filenames || !Array.isArray(filenames) || filenames.length === 0) {
+      throw new BadRequestException('Aucun nom de fichier fourni.');
+    }
 
     const user = await this.prisma.user.findUnique({
       where: { id: req.user.id },
@@ -165,12 +171,8 @@ export class MangasController {
       throw new ForbiddenException("Vous n'êtes pas l'auteur de ce manga");
     }
 
-    const key = `manga/${mangaId}/${body.fileName}`;
-    const uploadUrl = await this.storage.getUploadUrl(key, 'chapters');
-
-    console.log('✅ Upload URL générée:', uploadUrl);
-
-    return { uploadUrl, key };
+    // Appel direct à la méthode de service qu'on a mise en place
+    return this.mangasService.getUploadUrls(mangaId, filenames);
   }
 
   // ============================================
