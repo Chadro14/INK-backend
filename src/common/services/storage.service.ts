@@ -1,5 +1,5 @@
 
-import { Injectable } from '@nestjs/common';
+import { Injectable, InternalServerErrorException } from '@nestjs/common';
 import { ConfigService } from '@nestjs/config';
 import { createClient, SupabaseClient } from '@supabase/supabase-js';
 
@@ -7,102 +7,42 @@ import { createClient, SupabaseClient } from '@supabase/supabase-js';
 export class StorageService {
   private supabase: SupabaseClient;
   
-  // ✅ Buckets séparés
-  private readonly buckets = {
-    chapters: 'chapters',    // Pour les mangas (PDF, photos)
-    avatars: 'CHAPTERS1',    // Pour les avatars
+  public readonly buckets = {
+    chapters: 'chapters',
+    avatars: 'avatars',
   };
 
   constructor(private configService: ConfigService) {
-    const supabaseUrl = this.configService.get('SUPABASE_URL');
-    const supabaseKey = this.configService.get('SUPABASE_SERVICE_ROLE_KEY');
-    
+    const supabaseUrl = this.configService.get<string>('SUPABASE_URL');
+    const supabaseKey = this.configService.get<string>('SUPABASE_KEY'); 
+
     if (!supabaseUrl || !supabaseKey) {
-      throw new Error('Supabase credentials missing');
+      throw new Error('Les variables Supabase ne sont pas configurées.');
     }
-    
+
     this.supabase = createClient(supabaseUrl, supabaseKey);
   }
 
-  // ============================================
-  // UPLOAD GÉNÉRIQUE (CORRIGÉ 🎉)
-  // ============================================
-  async upload(
-    key: string,
-    buffer: Buffer,
-    contentType: string,
-    bucketType: 'chapters' | 'avatars' = 'chapters'
-  ): Promise<string> {
-    const bucket = this.buckets[bucketType];
-    const { error } = await this.supabase.storage
-      .from(bucket)
-      .upload(key, buffer, { contentType, upsert: true });
-      
-    if (error) {
-      throw new Error(`Échec de l'upload: ${error.message}`);
-    }
-    
-    // 🚀 FIX: On récupère et on renvoie l'URL publique complète !
-    const { data } = this.supabase.storage
-      .from(bucket)
-      .getPublicUrl(key);
-      
-    return data.publicUrl;
-  }
-
-  // ============================================
-  // URL SIGNÉE
-  // ============================================
-  async getSignedUrl(
-    key: string,
-    expiresInSeconds = 3600,
-    bucketType: 'chapters' | 'avatars' = 'chapters'
-  ): Promise<string> {
-    const bucket = this.buckets[bucketType];
-    const { data, error } = await this.supabase.storage
-      .from(bucket)
-      .createSignedUrl(key, expiresInSeconds);
-      
-    if (error || !data) {
-      throw new Error(`Impossible de générer l'URL signée: ${error?.message}`);
-    }
-    
-    return data.signedUrl;
-  }
-
-  // ============================================
-  // URL D'UPLOAD DIRECT (Mis à jour pour le Frontend)
-  // ============================================
-  async getUploadUrl(
-    key: string,
-    bucketType: 'chapters' | 'avatars' = 'chapters'
-  ): Promise<{ path: string; token: string; signedUrl: string }> {
+  async getUploadUrl(key: string, bucketType: 'chapters' | 'avatars' = 'chapters') {
     const bucket = this.buckets[bucketType];
     const { data, error } = await this.supabase.storage
       .from(bucket)
       .createSignedUploadUrl(key);
-      
-    if (error || !data) {
-      throw new Error(`Impossible de générer l'URL d'upload: ${error?.message}`);
+
+    if (error) {
+      throw new InternalServerErrorException(`Échec de la création de l'URL d'upload: ${error.message}`);
     }
-    
-    return data;
+
+    return {
+      path: data.path,
+      token: data.token,
+    };
   }
 
-  // ============================================
-  // SUPPRESSION
-  // ============================================
-  async delete(
-    key: string,
-    bucketType: 'chapters' | 'avatars' = 'chapters'
-  ): Promise<void> {
+  // NOUVELLE MÉTHODE AJOUTÉE ICI POUR LA COUVERTURE
+  getPublicUrl(key: string, bucketType: 'chapters' | 'avatars' = 'chapters'): string {
     const bucket = this.buckets[bucketType];
-    const { error } = await this.supabase.storage
-      .from(bucket)
-      .remove([key]);
-      
-    if (error) {
-      throw new Error(`Échec de la suppression: ${error.message}`);
-    }
+    const { data } = this.supabase.storage.from(bucket).getPublicUrl(key);
+    return data.publicUrl;
   }
 }
