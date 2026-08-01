@@ -1,4 +1,3 @@
-
 import { Injectable, NotFoundException, ForbiddenException, BadRequestException } from '@nestjs/common';
 import { PrismaService } from '../../prisma/prisma.service';
 import { StorageService } from '../../common/services/storage.service';
@@ -43,7 +42,8 @@ export class MangasService {
         skip,
         take: limit,
         where,
-        include: { author: { select: { id: true, name: true, email: true } } },
+        // CORRECTION: suppression de "name" qui n'existe pas
+        include: { author: { select: { id: true, email: true } } },
         orderBy: { createdAt: 'desc' },
       }),
       this.prisma.manga.count({ where }),
@@ -63,7 +63,8 @@ export class MangasService {
     const manga = await this.prisma.manga.findUnique({
       where: { id },
       include: {
-        author: { select: { id: true, name: true, email: true } },
+        // CORRECTION: suppression de "name" qui n'existe pas
+        author: { select: { id: true, email: true } },
         chapters: { orderBy: { number: 'asc' } },
       },
     });
@@ -142,8 +143,10 @@ export class MangasService {
   async getTopMangas(limit: number) {
     return this.prisma.manga.findMany({
       take: limit,
-      orderBy: { views: 'desc' },
-      include: { author: { select: { id: true, name: true } } },
+      // CORRECTION: viewsCount au lieu de views
+      orderBy: { viewsCount: 'desc' }, 
+      // CORRECTION: suppression de "name" qui n'existe pas
+      include: { author: { select: { id: true, email: true } } },
     });
   }
 }
