@@ -9,24 +9,24 @@ import {
   Query,
   UseGuards,
   Req,
-  UploadedFiles,
-  UseInterceptors,
   BadRequestException,
+  NotFoundException,
+  ForbiddenException,
 } from '@nestjs/common';
-import { FileFieldsInterceptor } from '@nestjs/platform-express';
 import { MangasService } from './mangas.service';
 import { ChaptersService } from './chapters.service';
 import { JwtAuthGuard } from '../../common/guards/jwt-auth.guard';
 import { CreateMangaDto } from './dto/create-manga.dto';
 import { UpdateMangaDto } from './dto/update-manga.dto';
 import { CreateChapterDto } from './dto/create-chapter.dto';
-import { UpdateChapterDto } from './dto/update-chapter.dto';
+import { PrismaService } from '../../prisma/prisma.service';
 
 @Controller('mangas')
 export class MangasController {
   constructor(
     private readonly mangasService: MangasService,
     private readonly chaptersService: ChaptersService,
+    private readonly prisma: PrismaService,
   ) {}
 
   // ============================================
@@ -36,6 +36,34 @@ export class MangasController {
   @UseGuards(JwtAuthGuard)
   async create(@Req() req: any, @Body() dto: CreateMangaDto) {
     return this.mangasService.create(req.user.id, dto);
+  }
+
+  // ============================================
+  // OBTENIR L'URL SIGNÉE POUR LA COUVERTURE
+  // ============================================
+  @Post(':id/cover/upload-url')
+  @UseGuards(JwtAuthGuard)
+  async getCoverUploadUrl(
+    @Param('id') mangaId: string,
+    @Req() req: any,
+  ) {
+    return this.mangasService.getCoverUploadUrl(mangaId, req.user.id);
+  }
+
+  // ============================================
+  // FINALISER LA COUVERTURE
+  // ============================================
+  @Post(':id/cover/finalize')
+  @UseGuards(JwtAuthGuard)
+  async finalizeCover(
+    @Param('id') mangaId: string,
+    @Req() req: any,
+    @Body() body: { key: string },
+  ) {
+    if (!body.key) {
+      throw new BadRequestException('La clé du fichier (key) est requise');
+    }
+    return this.mangasService.finalizeCover(mangaId, req.user.id, body.key);
   }
 
   // ============================================
@@ -98,7 +126,7 @@ export class MangasController {
   }
 
   // ============================================
-  // OBTENIR DES URLS D'UPLOAD SIGNÉES (avant création du chapitre)
+  // OBTENIR DES URLS D'UPLOAD SIGNÉES POUR CHAPITRES
   // ============================================
   @Post(':id/chapters/upload-urls')
   @UseGuards(JwtAuthGuard)
@@ -117,7 +145,7 @@ export class MangasController {
   }
 
   // ============================================
-  // FINALISER UN CHAPITRE (fichiers déjà uploadés vers Supabase)
+  // FINALISER UN CHAPITRE
   // ============================================
   @Post(':id/chapters/finalize')
   @UseGuards(JwtAuthGuard)
@@ -130,38 +158,71 @@ export class MangasController {
   }
 
   // ============================================
-  // AJOUTER UN CHAPITRE — PDF ou photos multiples (ancien flux, gardé en fallback)
+  // AJOUTER UN CHAPITRE (Classique)
   // ============================================
   @Post(':id/chapters')
   @UseGuards(JwtAuthGuard)
-  @UseInterceptors(FileFieldsInterceptor([
-    { name: 'pdf', maxCount: 1 },
-    { name: 'photos', maxCount: 60 },
-    { name: 'cover', maxCount: 1 },
-  ]))
   async addChapter(
     @Param('id') mangaId: string,
     @Req() req: any,
     @Body() dto: CreateChapterDto,
-    @UploadedFiles() files: {
-      pdf?: Express.Multer.File[];
-      photos?: Express.Multer.File[];
-      cover?: Express.Multer.File[];
-    },
   ) {
-    const pdfFile = files.pdf?.[0];
-    const photoFiles = files.photos;
-    const coverFile = files.cover?.[0];
-
-    if (pdfFile && pdfFile.mimetype !== 'application/pdf') {
-      throw new BadRequestException('Le fichier doit être un PDF');
+    const manga = await this.prisma.manga.findUnique({ where: { id: mangaId } });
+    if (!manga) {
+      throw new NotFoundException('Manga non trouvé');
+    }
+    if (manga.authorId !== req.user.id) {
+      throw new ForbiddenException("Vous n'êtes pas l'auteur de ce manga");
     }
 
-    if (pdfFile && pdfFile.size > 50 * 1024 * 1024) {
-      throw new BadRequestException('Le PDF doit faire moins de 50MB');
+    return this.prisma.chapter.create({
+      data: {
+        mangaId,
+        number: (dto as any).number,
+        title: (dto as any).title,
+        isFree: (dto as any).isFree ?? true,
+        price: (dto as any).price || 0,
+      },
+    });
+  }
+
+  // ============================================
+  // GÉNÉRER LES URLS D'UPLOAD DIRECT (Alternative)
+  // ============================================
+  @Post(':id/chapters/upload-url')
+  @UseGuards(JwtAuthGuard)
+  async getUploadUrls(
+    @Param('id') mangaId: string,
+    @Req() req: any,
+    @Body() body: { filenames: string[]; fileNames?: string[] },
+  ) {
+    const filenames = body.filenames || body.fileNames;
+
+    if (!filenames || !Array.isArray(filenames) || filenames.length === 0) {
+      throw new BadRequestException('Aucun nom de fichier fourni.');
     }
 
-    return this.chaptersService.create(mangaId, req.user.id, dto, pdfFile, photoFiles, coverFile);
+    const user = await this.prisma.user.findUnique({
+      where: { id: req.user.id },
+    });
+
+    if (!user) {
+      throw new NotFoundException('Utilisateur non trouvé');
+    }
+
+    const manga = await this.prisma.manga.findUnique({
+      where: { id: mangaId },
+    });
+
+    if (!manga) {
+      throw new NotFoundException('Manga non trouvé');
+    }
+
+    if (manga.authorId !== user.id && user.role !== 'ADMIN') {
+      throw new ForbiddenException("Vous n'êtes pas l'auteur de ce manga");
+    }
+
+    return this.mangasService.getUploadUrls(mangaId, filenames);
   }
 
   // ============================================
@@ -169,7 +230,8 @@ export class MangasController {
   // ============================================
   @Get(':id/chapters')
   async getChapters(@Param('id') mangaId: string) {
-    return this.chaptersService.findByManga(mangaId);
+    const manga = await this.mangasService.findById(mangaId);
+    return manga.chapters;
   }
 
   // ============================================
@@ -178,8 +240,17 @@ export class MangasController {
   @Get(':mangaId/chapters/:number')
   async getChapter(
     @Param('mangaId') mangaId: string,
-    @Param('number') number: number,
+    @Param('number') number: string,
   ) {
-    return this.chaptersService.findByNumber(mangaId, number);
+    const chapterNumber = parseInt(number, 10);
+    const chapter = await this.prisma.chapter.findFirst({
+      where: { mangaId, number: chapterNumber },
+    });
+
+    if (!chapter) {
+      throw new NotFoundException('Chapitre non trouvé');
+    }
+
+    return chapter;
   }
 }
