@@ -29,18 +29,12 @@ export class MangasController {
     private readonly prisma: PrismaService,
   ) {}
 
-  // ============================================
-  // CRÉER UN MANGA
-  // ============================================
   @Post()
   @UseGuards(JwtAuthGuard)
   async create(@Req() req: any, @Body() dto: CreateMangaDto) {
     return this.mangasService.create(req.user.id, dto);
   }
 
-  // ============================================
-  // OBTENIR L'URL SIGNÉE POUR LA COUVERTURE
-  // ============================================
   @Post(':id/cover/upload-url')
   @UseGuards(JwtAuthGuard)
   async getCoverUploadUrl(
@@ -50,9 +44,6 @@ export class MangasController {
     return this.mangasService.getCoverUploadUrl(mangaId, req.user.id);
   }
 
-  // ============================================
-  // FINALISER LA COUVERTURE
-  // ============================================
   @Post(':id/cover/finalize')
   @UseGuards(JwtAuthGuard)
   async finalizeCover(
@@ -66,9 +57,6 @@ export class MangasController {
     return this.mangasService.finalizeCover(mangaId, req.user.id, body.key);
   }
 
-  // ============================================
-  // RÉCUPÉRER TOUS LES MANGAS
-  // ============================================
   @Get()
   async findAll(
     @Query('page') page?: string,
@@ -86,26 +74,17 @@ export class MangasController {
     );
   }
 
-  // ============================================
-  // TOP MANGA DU MOIS
-  // ============================================
   @Get('top')
   async getTop(@Query('limit') limit?: string) {
     const limitNumber = limit ? parseInt(limit, 10) : 10;
     return this.mangasService.getTopMangas(Number.isNaN(limitNumber) ? 10 : limitNumber);
   }
 
-  // ============================================
-  // RÉCUPÉRER UN MANGA SPÉCIFIQUE
-  // ============================================
   @Get(':id')
   async findOne(@Param('id') id: string) {
     return this.mangasService.findById(id);
   }
 
-  // ============================================
-  // METTRE À JOUR UN MANGA
-  // ============================================
   @Put(':id')
   @UseGuards(JwtAuthGuard)
   async update(
@@ -116,18 +95,12 @@ export class MangasController {
     return this.mangasService.update(id, req.user.id, dto);
   }
 
-  // ============================================
-  // SUPPRIMER UN MANGA
-  // ============================================
   @Delete(':id')
   @UseGuards(JwtAuthGuard)
   async delete(@Param('id') id: string, @Req() req: any) {
     return this.mangasService.delete(id, req.user.id);
   }
 
-  // ============================================
-  // OBTENIR DES URLS D'UPLOAD SIGNÉES POUR CHAPITRES
-  // ============================================
   @Post(':id/chapters/upload-urls')
   @UseGuards(JwtAuthGuard)
   async getChapterUploadUrls(
@@ -144,9 +117,6 @@ export class MangasController {
     );
   }
 
-  // ============================================
-  // FINALISER UN CHAPITRE
-  // ============================================
   @Post(':id/chapters/finalize')
   @UseGuards(JwtAuthGuard)
   async finalizeChapter(
@@ -157,9 +127,6 @@ export class MangasController {
     return this.chaptersService.createFromKeys(mangaId, req.user.id, dto);
   }
 
-  // ============================================
-  // AJOUTER UN CHAPITRE (Classique)
-  // ============================================
   @Post(':id/chapters')
   @UseGuards(JwtAuthGuard)
   async addChapter(
@@ -186,9 +153,6 @@ export class MangasController {
     });
   }
 
-  // ============================================
-  // GÉNÉRER LES URLS D'UPLOAD DIRECT (Alternative)
-  // ============================================
   @Post(':id/chapters/upload-url')
   @UseGuards(JwtAuthGuard)
   async getUploadUrls(
@@ -225,18 +189,15 @@ export class MangasController {
     return this.mangasService.getUploadUrls(mangaId, filenames);
   }
 
-  // ============================================
-  // RÉCUPÉRER LES CHAPITRES D'UN MANGA
-  // ============================================
+  // CORRECTION: Plus d'erreur Typescript "chapters does not exist"
   @Get(':id/chapters')
   async getChapters(@Param('id') mangaId: string) {
-    const manga = await this.mangasService.findById(mangaId);
-    return manga.chapters;
+    return this.prisma.chapter.findMany({
+      where: { mangaId },
+      orderBy: { number: 'asc' },
+    });
   }
 
-  // ============================================
-  // RÉCUPÉRER UN CHAPITRE SPÉCIFIQUE
-  // ============================================
   @Get(':mangaId/chapters/:number')
   async getChapter(
     @Param('mangaId') mangaId: string,
