@@ -117,6 +117,19 @@ export class MangasController {
   }
 
   // ============================================
+  // FINALISER UN CHAPITRE (fichiers déjà uploadés vers Supabase)
+  // ============================================
+  @Post(':id/chapters/finalize')
+  @UseGuards(JwtAuthGuard)
+  async finalizeChapter(
+    @Param('id') mangaId: string,
+    @Req() req: any,
+    @Body() dto: CreateChapterDto & { mode: 'pdf' | 'photos'; keys: string[] },
+  ) {
+    return this.chaptersService.createFromKeys(mangaId, req.user.id, dto);
+  }
+
+  // ============================================
   // AJOUTER UN CHAPITRE — PDF ou photos multiples (ancien flux, gardé en fallback)
   // ============================================
   @Post(':id/chapters')
