@@ -1,3 +1,4 @@
+
 import { Injectable, NotFoundException, ForbiddenException, BadRequestException } from '@nestjs/common';
 import { PrismaService } from '../../prisma/prisma.service';
 import { StorageService } from '../../common/services/storage.service';
@@ -39,10 +40,9 @@ export class MangasService {
   }
 
   // ============================================
-  // UPLOADER / METTRE À JOUR LA COUVERTURE (NOUVEAU 🎉)
+  // UPLOADER / METTRE À JOUR LA COUVERTURE
   // ============================================
   async updateCover(id: string, userId: string, file: Express.Multer.File) {
-    // 1. Vérifier si le manga existe
     const manga = await this.prisma.manga.findUnique({
       where: { id },
     });
@@ -51,21 +51,16 @@ export class MangasService {
       throw new NotFoundException('Manga non trouvé');
     }
 
-    // 2. Vérifier que l'utilisateur est bien l'auteur (sécurité)
     if (manga.authorId !== userId) {
       throw new ForbiddenException('Vous n\'êtes pas l\'auteur de ce manga');
     }
 
     try {
-      // 3. Générer un nom de fichier unique et l'envoyer au Storage
-      // On extrait l'extension de l'image (ex: .png, .jpg)
       const extension = file.originalname.split('.').pop();
       const key = `mangas/${id}/cover-${Date.now()}.${extension}`;
       
-      // Utilisation de ton service de stockage existant pour uploader le fichier
       const coverUrl = await this.storage.upload(key, file.buffer, file.mimetype);
 
-      // 4. Mettre à jour l'URL de l'image dans la base de données Prisma
       return await this.prisma.manga.update({
         where: { id },
         data: { coverUrl },
@@ -191,7 +186,6 @@ export class MangasService {
       data: { viewsCount: { increment: 1 } },
     });
 
-    // Génère une vignette de secours à partir de la 1ère page si le chapitre n'a pas de couverture dédiée
     const chaptersWithThumbnails = await Promise.all(
       manga.chapters.map(async (chapter: any) => {
         const { pages, contentType, ...rest } = chapter;
@@ -319,5 +313,31 @@ export class MangasService {
         },
       };
     });
+  }
+
+  // ============================================
+  // GÉNÉRER LES URLS D'UPLOAD DIRECT (NOUVEAU 🎉)
+  // ============================================
+  async getUploadUrls(mangaId: string, filenames: string[]) {
+    const instructions = [];
+    
+    for (const filename of filenames) {
+      const extension = filename.split('.').pop();
+      const uniqueSuffix = `${Date.now()}-${Math.round(Math.random() * 1e9)}`;
+      const key = `mangas/${mangaId}/chapters/${uniqueSuffix}.${extension}`;
+
+      // Utilisation de ton instance de storage
+      const uploadData = await this.storage.getUploadUrl(key, 'chapters');
+
+      instructions.push({
+        filename,                  
+        key,                       
+        uploadUrl: uploadData.signedUrl,
+        token: uploadData.token,   
+        path: uploadData.path
+      });
+    }
+    
+    return instructions;
   }
 }
