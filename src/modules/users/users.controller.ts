@@ -20,6 +20,34 @@ import { PrismaService } from '../../prisma/prisma.service';
 
 @Controller('users')
 export class UsersController {
+  // Liste des couleurs gratuites (Shonen de base)
+  private readonly FREE_COLORS = [
+    '#3B82F6', // Bleu Électrique
+    '#EC4899', // Rose Magique
+    '#10B981', // Vert Émeraude
+    '#EF4444', // Rouge Feu
+  ];
+
+  // Liste des couleurs & effets Premium / Animés
+  private readonly PREMIUM_COLORS = [
+    '#FFD700', // Or Royal / Super Saiyan
+    '#8B5CF6', // Violet Gojo / Domain
+    '#F97316', // Orange Foudre / Hokage
+    '#111827', // Obsidian Dark / Berserk
+    '#2E1065', // Espace / Void Purple
+    '#00FF66', // Cyber Matrix Green
+    '#F8FAFC', // Éclair Blanc / Lightning
+    '#881337', // Sang Maudit / Blood Moon
+    '#A5F3FC', // Glace Éternelle / Frost
+    'gradient-rainbow',  // Arc-en-ciel animé
+    'gradient-fire',     // Flamme animée
+    'holo-shimmer',      // Effet Holographique
+    'mana-pulse',        // Pulsation de Mana
+    'solar-eclipse',     // Éclipse Solaire
+    'supernova',         // Supernova
+    'divine-platinum',   // Platine Pur
+  ];
+
   constructor(
     private readonly usersService: UsersService,
     private readonly storage: StorageService,
@@ -54,19 +82,34 @@ export class UsersController {
   }
 
   // ============================================
-  // METTRE À JOUR LA COULEUR DU BADGE DE CERTIFICATION
+  // METTRE À JOUR LA COULEUR DU BADGE (AVEC VÉRIFICATION PREMIUM)
   // ============================================
   @Put('badge-color')
   @UseGuards(JwtAuthGuard)
   async updateBadgeColor(@Req() req: any, @Body() body: { badgeColor: string }) {
     const { badgeColor } = body;
+    
     if (!badgeColor) {
-      throw new BadRequestException('La couleur du badge est requise');
+      throw new BadRequestException('La couleur ou l\'effet du badge est requis');
     }
 
     const user = await this.usersService.findById(req.user.id);
+
     if (!user.isCertified) {
       throw new BadRequestException("Seuls les utilisateurs certifiés peuvent modifier la couleur de leur badge");
+    }
+
+    // Vérification des droits selon le type de couleur choisi
+    const isFreeColor = this.FREE_COLORS.includes(badgeColor);
+    const isPremiumColor = this.PREMIUM_COLORS.includes(badgeColor);
+
+    if (!isFreeColor && !isPremiumColor) {
+      throw new BadRequestException('Style de badge inconnu ou non autorisé.');
+    }
+
+    // Si c'est une couleur Premium, on vérifie que l'utilisateur a le statut Premium actif
+    if (isPremiumColor && !user.premiumActive) {
+      throw new BadRequestException('Ce style de badge scintillant ou animé est réservé aux membres Premium !');
     }
 
     const updatedUser = await this.prisma.user.update({
