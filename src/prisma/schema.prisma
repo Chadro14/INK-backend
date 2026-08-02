@@ -23,6 +23,7 @@ model User {
   role               Role         @default(READER)
   isCertified        Boolean      @default(false)
   certifiedAt        DateTime?
+  badgeColor         String?      @default("#FFD700") // <- AJOUTÉ ICI POUR LA COULEUR DU BADGE
   mobileNumber       String?
   mobileVerified     Boolean      @default(false)
   premiumActive      Boolean      @default(false)
@@ -80,28 +81,28 @@ enum PremiumPlan {
 // MANGAS
 // ============================================
 model Manga {
-  id               String      @id @default(uuid())
+  id               String       @id @default(uuid())
   title            String
-  description      String?     @db.Text
+  description      String?      @db.Text
   coverUrl         String?
   authorId         String
-  author           User        @relation(fields: [authorId], references: [id], onDelete: Cascade)
-  status           Status      @default(ONGOING)
-  genre            String[]    @default([])
-  tags             String[]    @default([])
-  viewsCount       Int         @default(0)
-  likesCount       Int         @default(0)
-  subscribersCount Int         @default(0)
-  commentsCount    Int         @default(0)
-  isPremium        Boolean     @default(false)
+  author           User         @relation(fields: [authorId], references: [id], onDelete: Cascade)
+  status           Status       @default(ONGOING)
+  genre            String[]     @default([])
+  tags             String[]     @default([])
+  viewsCount       Int          @default(0)
+  likesCount       Int          @default(0)
+  subscribersCount Int          @default(0)
+  commentsCount    Int          @default(0)
+  isPremium        Boolean      @default(false)
 
   chapters         Chapter[]
   likes            Like[]
   comments         Comment[]
   subscriptions    Subscription[]
 
-  createdAt        DateTime    @default(now())
-  updatedAt        DateTime    @updatedAt
+  createdAt        DateTime     @default(now())
+  updatedAt        DateTime     @updatedAt
 
   @@index([authorId])
   @@index([status, createdAt])
@@ -473,19 +474,19 @@ model Message {
 // ÉVÉNEMENTS THÉMATIQUES
 // ============================================
 model Event {
-  id          String               @id @default(uuid())
+  id          String   @id @default(uuid())
   title       String
-  description String?              @db.Text
+  description String?  @db.Text
   theme       String?
   icon        String?
   coverUrl    String?
   startDate   DateTime
   endDate     DateTime
-  objectives  Json                 @default("[]")
-  rewards     Json                 @default("[]")
-  isActive    Boolean              @default(true)
-  createdAt   DateTime             @default(now())
-  updatedAt   DateTime             @updatedAt
+  objectives  Json     @default("[]")
+  rewards     Json     @default("[]")
+  isActive    Boolean  @default(true)
+  createdAt   DateTime @default(now())
+  updatedAt   DateTime @updatedAt
 
   participations EventParticipation[]
 
