@@ -6,7 +6,7 @@ import { createClient, SupabaseClient } from '@supabase/supabase-js';
 export class StorageService {
   private supabase: SupabaseClient;
   private readonly logger = new Logger(StorageService.name);
-  
+
   public readonly buckets = {
     chapters: 'chapters',
     avatars: 'avatars',
@@ -14,7 +14,7 @@ export class StorageService {
 
   constructor(private configService: ConfigService) {
     const supabaseUrl = this.configService.get<string>('SUPABASE_URL');
-    const supabaseKey = this.configService.get<string>('SUPABASE_KEY'); 
+    const supabaseKey = this.configService.get<string>('SUPABASE_SERVICE_ROLE_KEY');
 
     if (!supabaseUrl || !supabaseKey) {
       throw new Error('Les variables Supabase ne sont pas configurées.');
@@ -26,7 +26,6 @@ export class StorageService {
   // ==========================================
   // MÉTHODES POUR L'UPLOAD DIRECT (FRONTEND)
   // ==========================================
-
   async getUploadUrl(key: string, bucketType: 'chapters' | 'avatars' = 'chapters') {
     const bucket = this.buckets[bucketType];
     const { data, error } = await this.supabase.storage
@@ -50,23 +49,22 @@ export class StorageService {
   }
 
   // ==========================================
-  // MÉTHODES BACKEND MANQUANTES (ERREURS VERCEL)
+  // MÉTHODES BACKEND
   // ==========================================
-
   async upload(key: string, file: Buffer, mimeType: string, bucketType: string = 'chapters'): Promise<string> {
     const bucket = this.buckets[bucketType] || bucketType;
     const { data, error } = await this.supabase.storage
       .from(bucket)
-      .upload(key, file, { 
-        contentType: mimeType, 
-        upsert: true 
+      .upload(key, file, {
+        contentType: mimeType,
+        upsert: true,
       });
 
     if (error) {
       this.logger.error(`Failed to upload ${key} to ${bucket}: ${error.message}`);
       throw new InternalServerErrorException(error.message);
     }
-    
+
     return data.path;
   }
 
@@ -80,7 +78,7 @@ export class StorageService {
       this.logger.error(`Failed to generate signed URL for ${key}: ${error.message}`);
       throw new InternalServerErrorException(error.message);
     }
-    
+
     return data.signedUrl;
   }
 
