@@ -54,6 +54,31 @@ export class UsersController {
   }
 
   // ============================================
+  // METTRE À JOUR LA COULEUR DU BADGE DE CERTIFICATION
+  // ============================================
+  @Put('badge-color')
+  @UseGuards(JwtAuthGuard)
+  async updateBadgeColor(@Req() req: any, @Body() body: { badgeColor: string }) {
+    const { badgeColor } = body;
+    if (!badgeColor) {
+      throw new BadRequestException('La couleur du badge est requise');
+    }
+
+    const user = await this.usersService.findById(req.user.id);
+    if (!user.isCertified) {
+      throw new BadRequestException("Seuls les utilisateurs certifiés peuvent modifier la couleur de leur badge");
+    }
+
+    const updatedUser = await this.prisma.user.update({
+      where: { id: req.user.id },
+      data: { badgeColor },
+    });
+
+    delete updatedUser.passwordHash;
+    return updatedUser;
+  }
+
+  // ============================================
   // UPLOADER UN AVATAR
   // ============================================
   @Post('avatar')
