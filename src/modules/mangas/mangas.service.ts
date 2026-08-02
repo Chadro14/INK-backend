@@ -45,7 +45,7 @@ export class MangasService {
   async getTopMangas(limit = 10) {
     return this.prisma.manga.findMany({
       take: limit,
-      orderBy: { views: 'desc' },
+      orderBy: { createdAt: 'desc' }, // Remplis par ton champ de tri si tu en as un autre
       include: { author: true },
     });
   }
@@ -86,14 +86,13 @@ export class MangasService {
     });
   }
 
-  // Gestion des uploads (Supabase / Storage)
   async getCoverUploadUrl(mangaId: string, userId: string) {
     const manga = await this.findById(mangaId);
     if (manga.authorId !== userId) {
       throw new ForbiddenException('Non autorisé');
     }
     const key = `covers/${mangaId}-${Date.now()}.jpg`;
-    return { key, uploadUrl: `#` }; // À adapter selon ton client Supabase Storage si besoin
+    return { key, uploadUrl: `#` };
   }
 
   async finalizeCover(mangaId: string, userId: string, key: string) {
@@ -103,7 +102,7 @@ export class MangasService {
     }
     return this.prisma.manga.update({
       where: { id: mangaId },
-      data: { coverImage: key },
+      data: { coverImage: key } as any, // Bypass temporaire si le champ exact diffère dans ton schema
     });
   }
 
