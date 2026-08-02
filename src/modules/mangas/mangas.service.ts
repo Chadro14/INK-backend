@@ -1,4 +1,3 @@
-
 import { Injectable, NotFoundException, ForbiddenException, BadRequestException } from '@nestjs/common';
 import { PrismaService } from '../../prisma/prisma.service';
 import { StorageService } from '../../common/services/storage.service';
@@ -64,7 +63,9 @@ export class MangasService {
       where: { id },
       include: {
         author: { select: { id: true, email: true } },
-        chapters: { orderBy: { number: 'asc' } },
+        chapters: { 
+          orderBy: { number: 'asc' },
+        },
       },
     });
 
@@ -72,7 +73,28 @@ export class MangasService {
       throw new NotFoundException('Manga non trouvé');
     }
 
-    return manga;
+    // Fallback pour les vignettes des chapitres : si un chapitre n'a pas de coverUrl, 
+    // on utilise sa première page (pages[0]) comme miniature si elle existe.
+    const chaptersWithThumbnails = manga.chapters.map((chapter: any) => {
+      let coverUrl = chapter.coverUrl;
+      if (!coverUrl && chapter.pages && Array.isArray(chapter.pages) && chapter.pages.length > 0) {
+        const firstPage = chapter.pages[0];
+        // Si la page est un objet avec une clé ou une chaîne de caractères
+        const pageKey = typeof firstPage === 'string' ? firstPage : firstPage?.key;
+        if (pageKey) {
+          coverUrl = this.storage.getPublicUrl(pageKey, 'chapters');
+        }
+      }
+      return {
+        ...chapter,
+        coverUrl,
+      };
+    });
+
+    return {
+      ...manga,
+      chapters: chaptersWithThumbnails,
+    };
   }
 
   async update(id: string, userId: string, dto: UpdateMangaDto) {
@@ -116,7 +138,6 @@ export class MangasService {
       throw new ForbiddenException("Vous n'êtes pas l'auteur de ce manga");
     }
 
-    // CORRECTION : On récupère la vraie URL publique complète de Supabase
     const coverUrl = this.storage.getPublicUrl(key, 'chapters');
 
     return this.prisma.manga.update({
