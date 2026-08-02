@@ -160,16 +160,18 @@ export class CertificationService {
     }
 
     if (!user.isCertified) {
-      throw new Error('Vous devez être certifié pour changer la couleur du badge');
+      throw new ForbiddenException('Vous devez être certifié pour changer la couleur du badge');
     }
 
-    if (!BADGE_COLORS[color]) {
-      throw new Error('Couleur invalide');
+    const normalizedColor = color ? color.toLowerCase().trim() : '';
+
+    if (!BADGE_COLORS[normalizedColor]) {
+      throw new BadRequestException('Couleur invalide');
     }
 
     return this.prisma.user.update({
       where: { id: userId },
-      data: { avatarColor: color },
+      data: { avatarColor: normalizedColor },
     });
   }
 
