@@ -20,7 +20,7 @@ import { PrismaService } from '../../prisma/prisma.service';
 
 @Controller('users')
 export class UsersController {
-  // Liste des couleurs gratuites (Shonen de base)
+  // Liste des 4 couleurs gratuites (Shonen de base)
   private readonly FREE_COLORS = [
     '#3B82F6', // Bleu Électrique
     '#EC4899', // Rose Magique
@@ -99,7 +99,6 @@ export class UsersController {
       throw new BadRequestException("Seuls les utilisateurs certifiés peuvent modifier la couleur de leur badge");
     }
 
-    // Vérification des droits selon le type de couleur choisi
     const isFreeColor = this.FREE_COLORS.includes(badgeColor);
     const isPremiumColor = this.PREMIUM_COLORS.includes(badgeColor);
 
@@ -107,7 +106,6 @@ export class UsersController {
       throw new BadRequestException('Style de badge inconnu ou non autorisé.');
     }
 
-    // Si c'est une couleur Premium, on vérifie que l'utilisateur a le statut Premium actif
     if (isPremiumColor && !user.premiumActive) {
       throw new BadRequestException('Ce style de badge scintillant ou animé est réservé aux membres Premium !');
     }
@@ -119,6 +117,21 @@ export class UsersController {
 
     delete updatedUser.passwordHash;
     return updatedUser;
+  }
+
+  // ============================================
+  // RÉCUPÉRER LA LISTE DES COULEURS DISPONIBLES
+  // ============================================
+  @Get('badge-colors/list')
+  @UseGuards(JwtAuthGuard)
+  async getAvailableBadgeColors(@Req() req: any) {
+    const user = await this.usersService.findById(req.user.id);
+
+    return {
+      freeColors: this.FREE_COLORS,
+      premiumColors: user.premiumActive ? this.PREMIUM_COLORS : [],
+      isUserPremium: user.premiumActive,
+    };
   }
 
   // ============================================
