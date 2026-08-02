@@ -22,7 +22,7 @@ export class MangasService {
       where.title = { contains: filters.search, mode: 'insensitive' };
     }
     if (filters?.genre) {
-      where.genre = filters.genre;
+      where.genre = { has: filters.genre };
     }
     if (filters?.status) {
       where.status = filters.status;
@@ -45,7 +45,7 @@ export class MangasService {
   async getTopMangas(limit = 10) {
     return this.prisma.manga.findMany({
       take: limit,
-      orderBy: { createdAt: 'desc' }, // Remplis par ton champ de tri si tu en as un autre
+      orderBy: { viewsCount: 'desc' }, // Corrigé avec viewsCount de ton schéma
       include: { author: true },
     });
   }
@@ -102,7 +102,7 @@ export class MangasService {
     }
     return this.prisma.manga.update({
       where: { id: mangaId },
-      data: { coverImage: key } as any, // Bypass temporaire si le champ exact diffère dans ton schema
+      data: { coverUrl: key }, // Corrigé avec coverUrl de ton schéma
     });
   }
 
