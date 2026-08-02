@@ -1,3 +1,4 @@
+
 import { Injectable, NotFoundException, ForbiddenException, BadRequestException } from '@nestjs/common';
 import { PrismaService } from '../../prisma/prisma.service';
 import { StorageService } from '../../common/services/storage.service';
@@ -42,7 +43,6 @@ export class MangasService {
         skip,
         take: limit,
         where,
-        // CORRECTION: suppression de "name" qui n'existe pas
         include: { author: { select: { id: true, email: true } } },
         orderBy: { createdAt: 'desc' },
       }),
@@ -63,7 +63,6 @@ export class MangasService {
     const manga = await this.prisma.manga.findUnique({
       where: { id },
       include: {
-        // CORRECTION: suppression de "name" qui n'existe pas
         author: { select: { id: true, email: true } },
         chapters: { orderBy: { number: 'asc' } },
       },
@@ -98,7 +97,7 @@ export class MangasService {
   }
 
   // ============================================
-  // UPLOAD DIRECT DE LA COUVERTURE (URL Signée)
+  // UPLOAD DIRECT DE LA COUVERTURE (URL Signée & Publique)
   // ============================================
   async getCoverUploadUrl(mangaId: string, userId: string) {
     const manga = await this.findById(mangaId);
@@ -117,6 +116,7 @@ export class MangasService {
       throw new ForbiddenException("Vous n'êtes pas l'auteur de ce manga");
     }
 
+    // CORRECTION : On récupère la vraie URL publique complète de Supabase
     const coverUrl = this.storage.getPublicUrl(key, 'chapters');
 
     return this.prisma.manga.update({
@@ -143,9 +143,7 @@ export class MangasService {
   async getTopMangas(limit: number) {
     return this.prisma.manga.findMany({
       take: limit,
-      // CORRECTION: viewsCount au lieu de views
       orderBy: { viewsCount: 'desc' }, 
-      // CORRECTION: suppression de "name" qui n'existe pas
       include: { author: { select: { id: true, email: true } } },
     });
   }
