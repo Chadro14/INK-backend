@@ -20,32 +20,22 @@ import { PrismaService } from '../../prisma/prisma.service';
 
 @Controller('users')
 export class UsersController {
-  // Liste des 4 couleurs gratuites (Shonen de base)
-  private readonly FREE_COLORS = [
+  // Liste unique de toutes les couleurs & effets disponibles
+  private readonly AVAILABLE_COLORS = [
     '#3B82F6', // Bleu Électrique
     '#EC4899', // Rose Magique
     '#10B981', // Vert Émeraude
     '#EF4444', // Rouge Feu
-  ];
-
-  // Liste des couleurs & effets Premium / Animés
-  private readonly PREMIUM_COLORS = [
-    '#FFD700', // Or Royal / Super Saiyan
-    '#8B5CF6', // Violet Gojo / Domain
-    '#F97316', // Orange Foudre / Hokage
-    '#111827', // Obsidian Dark / Berserk
-    '#2E1065', // Espace / Void Purple
-    '#00FF66', // Cyber Matrix Green
-    '#F8FAFC', // Éclair Blanc / Lightning
-    '#881337', // Sang Maudit / Blood Moon
-    '#A5F3FC', // Glace Éternelle / Frost
-    'gradient-rainbow', // Arc-en-ciel animé
-    'gradient-fire', // Flamme animée
-    'holo-shimmer', // Effet Holographique
-    'mana-pulse', // Pulsation de Mana
-    'solar-eclipse', // Éclipse Solaire
-    'supernova', // Supernova
-    'divine-platinum', // Platine Pur
+    '#FFD700', // Or Royal
+    '#8B5CF6', // Violet
+    '#F97316', // Orange
+    '#111827', // Obsidian Dark
+    '#00FF66', // Cyber Green
+    '#A5F3FC', // Glace Éternelle
+    'gradient-rainbow',
+    'gradient-fire',
+    'holo-shimmer',
+    'mana-pulse',
   ];
 
   constructor(
@@ -82,7 +72,7 @@ export class UsersController {
   }
 
   // ============================================
-  // METTRE À JOUR LA COULEUR DU BADGE (AVEC VÉRIFICATION PREMIUM)
+  // METTRE À JOUR LA COULEUR DU BADGE (SIMPLE)
   // ============================================
   @Put('badge-color')
   @UseGuards(JwtAuthGuard)
@@ -101,19 +91,7 @@ export class UsersController {
       );
     }
 
-    const isFreeColor = this.FREE_COLORS.includes(badgeColor);
-    const isPremiumColor = this.PREMIUM_COLORS.includes(badgeColor);
-
-    if (!isFreeColor && !isPremiumColor) {
-      throw new BadRequestException('Style de badge inconnu ou non autorisé.');
-    }
-
-    if (isPremiumColor && !user.premiumActive) {
-      throw new BadRequestException(
-        'Ce style de badge scintillant ou animé est réservé aux membres Premium !',
-      );
-    }
-
+    // Met à jour directement la couleur du badge sans restriction Premium
     const updatedUser = await this.prisma.user.update({
       where: { id: req.user.id },
       data: { badgeColor },
@@ -128,13 +106,9 @@ export class UsersController {
   // ============================================
   @Get('badge-colors/list')
   @UseGuards(JwtAuthGuard)
-  async getAvailableBadgeColors(@Req() req: any) {
-    const user = await this.usersService.findById(req.user.id);
-
+  async getAvailableBadgeColors() {
     return {
-      freeColors: this.FREE_COLORS,
-      premiumColors: user.premiumActive ? this.PREMIUM_COLORS : [],
-      isUserPremium: user.premiumActive,
+      colors: this.AVAILABLE_COLORS,
     };
   }
 
