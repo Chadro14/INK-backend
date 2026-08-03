@@ -39,13 +39,13 @@ export class UsersController {
     '#F8FAFC', // Éclair Blanc / Lightning
     '#881337', // Sang Maudit / Blood Moon
     '#A5F3FC', // Glace Éternelle / Frost
-    'gradient-rainbow',  // Arc-en-ciel animé
-    'gradient-fire',     // Flamme animée
-    'holo-shimmer',      // Effet Holographique
-    'mana-pulse',        // Pulsation de Mana
-    'solar-eclipse',     // Éclipse Solaire
-    'supernova',         // Supernova
-    'divine-platinum',   // Platine Pur
+    'gradient-rainbow', // Arc-en-ciel animé
+    'gradient-fire', // Flamme animée
+    'holo-shimmer', // Effet Holographique
+    'mana-pulse', // Pulsation de Mana
+    'solar-eclipse', // Éclipse Solaire
+    'supernova', // Supernova
+    'divine-platinum', // Platine Pur
   ];
 
   constructor(
@@ -61,7 +61,7 @@ export class UsersController {
   @UseGuards(JwtAuthGuard)
   async getMe(@Req() req: any) {
     const user = await this.usersService.findById(req.user.id);
-    delete user.passwordHash;
+    delete (user as any).passwordHash;
     return user;
   }
 
@@ -77,7 +77,7 @@ export class UsersController {
       email,
       bio,
     });
-    delete user.passwordHash;
+    delete (user as any).passwordHash;
     return user;
   }
 
@@ -88,15 +88,17 @@ export class UsersController {
   @UseGuards(JwtAuthGuard)
   async updateBadgeColor(@Req() req: any, @Body() body: { badgeColor: string }) {
     const { badgeColor } = body;
-    
+
     if (!badgeColor) {
-      throw new BadRequestException('La couleur ou l\'effet du badge est requis');
+      throw new BadRequestException("La couleur ou l'effet du badge est requis");
     }
 
     const user = await this.usersService.findById(req.user.id);
 
     if (!user.isCertified) {
-      throw new BadRequestException("Seuls les utilisateurs certifiés peuvent modifier la couleur de leur badge");
+      throw new BadRequestException(
+        'Seuls les utilisateurs certifiés peuvent modifier la couleur de leur badge',
+      );
     }
 
     const isFreeColor = this.FREE_COLORS.includes(badgeColor);
@@ -107,7 +109,9 @@ export class UsersController {
     }
 
     if (isPremiumColor && !user.premiumActive) {
-      throw new BadRequestException('Ce style de badge scintillant ou animé est réservé aux membres Premium !');
+      throw new BadRequestException(
+        'Ce style de badge scintillant ou animé est réservé aux membres Premium !',
+      );
     }
 
     const updatedUser = await this.prisma.user.update({
@@ -115,7 +119,7 @@ export class UsersController {
       data: { badgeColor },
     });
 
-    delete updatedUser.passwordHash;
+    delete (updatedUser as any).passwordHash;
     return updatedUser;
   }
 
@@ -135,6 +139,18 @@ export class UsersController {
   }
 
   // ============================================
+  // ACCORDER / RETIRER LA CERTIFICATION (ADMIN)
+  // ============================================
+  @Put(':id/certify')
+  @UseGuards(JwtAuthGuard)
+  async setCertification(
+    @Param('id') targetUserId: string,
+    @Body('isCertified') isCertified: boolean,
+  ) {
+    return this.usersService.setCertification(targetUserId, isCertified);
+  }
+
+  // ============================================
   // UPLOADER UN AVATAR
   // ============================================
   @Post('avatar')
@@ -150,7 +166,7 @@ export class UsersController {
     }
 
     if (file.size > 5 * 1024 * 1024) {
-      throw new BadRequestException('L\'image ne doit pas dépasser 5MB');
+      throw new BadRequestException("L'image ne doit pas dépasser 5MB");
     }
 
     const key = `user/${req.user.id}/avatar-${Date.now()}.webp`;
@@ -171,8 +187,8 @@ export class UsersController {
     if (!user) {
       throw new NotFoundException('Utilisateur non trouvé');
     }
-    if (user.passwordHash) {
-      delete user.passwordHash;
+    if ((user as any).passwordHash) {
+      delete (user as any).passwordHash;
     }
     return user;
   }
@@ -182,6 +198,10 @@ export class UsersController {
   // ============================================
   @Get(':id')
   async findOne(@Param('id') id: string) {
-    return this.usersService.findById(id);
+    const user = await this.usersService.findById(id);
+    if ((user as any).passwordHash) {
+      delete (user as any).passwordHash;
+    }
+    return user;
   }
 }
