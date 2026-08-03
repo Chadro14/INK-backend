@@ -1,0 +1,512 @@
+generator client {
+  provider      = "prisma-client-js"
+  binaryTargets = ["native", "rhel-openssl-3.0.x"]
+}
+
+datasource db {
+  provider  = "postgresql"
+  url       = env("DATABASE_URL")
+  directUrl = env("DIRECT_URL")
+}
+
+// ============================================
+// UTILISATEURS
+// ============================================
+model User {
+  id                 String    @id @default(uuid())
+  email              String    @unique
+  username           String    @unique
+  passwordHash       String?
+  avatarUrl          String?
+  avatarColor        String?
+  bio                String?   @db.Text
+  role               Role      @default(READER)
+  isCertified        Boolean   @default(false)
+  certifiedAt        DateTime?
+  badgeColor         String?   @default("#2563EB")
+  mobileNumber       String?
+  mobileVerified     Boolean   @default(false)
+  premiumActive      Boolean   @default(false)
+  premiumExpires     DateTime?
+  premiumPlan        PremiumPlan?
+  lastUsernameChange DateTime?
+
+  mangas             Manga[]
+  comments           Comment[]
+  commentLikes       CommentLike[]
+  likes              Like[]
+  subscriptions      Subscription[]
+  payments           Payment[]
+  earnings           CreatorEarning[]
+  payouts            Payout[]
+  notifications      Notification[]
+  watchHistory       InkStreamWatchHistory[]
+  manas              Int       @default(0)
+
+  // FOLLOW
+  following          UserFollow[] @relation("Follower")
+  followers          UserFollow[] @relation("Following")
+
+  // STEAM (progression)
+  steamPoints        Int       @default(0)
+  steamLevel         Int       @default(1)
+
+  // MESSAGERIE
+  sentMessages       Message[] @relation("SentMessages")
+  receivedMessages   Message[] @relation("ReceivedMessages")
+
+  // EVENTS
+  eventParticipations EventParticipation[]
+
+  createdAt          DateTime  @default(now())
+  updatedAt          DateTime  @updatedAt
+
+  @@index([username])
+  @@index([email])
+  @@index([role])
+}
+
+enum Role {
+  READER
+  CREATOR
+  ADMIN
+  SUSPENDED
+}
+
+enum PremiumPlan {
+  MONTHLY
+  YEARLY
+}
+
+// ============================================
+// MANGAS
+// ============================================
+model Manga {
+  id               String   @id @default(uuid())
+  title            String
+  description      String?  @db.Text
+  coverUrl         String?
+  authorId         String
+  author           User     @relation(fields: [authorId], references: [id], onDelete: Cascade)
+  status           Status   @default(ONGOING)
+  genre            String[] @default([])
+  tags             String[] @default([])
+  viewsCount       Int      @default(0)
+  likesCount       Int      @default(0)
+  subscribersCount Int      @default(0)
+  commentsCount    Int      @default(0)
+  isPremium        Boolean  @default(false)
+
+  chapters         Chapter[]
+  likes            Like[]
+  comments         Comment[]
+  subscriptions    Subscription[]
+
+  createdAt        DateTime @default(now())
+  updatedAt        DateTime @updatedAt
+
+  @@index([authorId])
+  @@index([status, createdAt])
+  @@index([viewsCount, likesCount])
+}
+
+enum Status {
+  ONGOING
+  COMPLETED
+  HIATUS
+}
+
+// ============================================
+// CHAPITRES
+// ============================================
+model Chapter {
+  id          String             @id @default(uuid())
+  mangaId     String
+  manga       Manga              @relation(fields: [mangaId], references: [id], onDelete: Cascade)
+  number      Int
+  title       String?
+  contentType ChapterContentType @default(PDF)
+  pdfKey      String?
+  pages       Json               @default("[]")
+  pdfSize     Int?
+  pageCount   Int                @default(0)
+  isFree      Boolean            @default(false)
+  isDraft     Boolean            @default(true)
+  price       Float?
+  viewsCount  Int                @default(0)
+  coverUrl    String?
+  publishedAt DateTime?
+  createdAt   DateTime           @default(now())
+  updatedAt   DateTime           @updatedAt
+
+  comments    Comment[]
+
+  @@unique([mangaId, number])
+  @@index([mangaId, publishedAt])
+  @@index([isFree, publishedAt])
+}
+
+enum ChapterContentType {
+  PDF
+  IMAGES
+}
+
+// ============================================
+// COMMENTAIRES
+// ============================================
+model Comment {
+  id           String        @id @default(uuid())
+  userId       String
+  user         User          @relation(fields: [userId], references: [id], onDelete: Cascade)
+  mangaId      String
+  manga        Manga         @relation(fields: [mangaId], references: [id], onDelete: Cascade)
+  chapterId    String?
+  chapter      Chapter?      @relation(fields: [chapterId], references: [id], onDelete: Cascade)
+  pageNumber   Int?
+  parentId     String?
+  parent       Comment?      @relation("Replies", fields: [parentId], references: [id], onDelete: Cascade)
+  replies      Comment[]     @relation("Replies")
+  content      String        @db.Text
+  likesCount   Int           @default(0)
+  isPinned     Boolean       @default(false)
+  isReported   Boolean       @default(false)
+  status       CommentStatus @default(ACTIVE)
+  createdAt    DateTime      @default(now())
+  updatedAt    DateTime      @updatedAt
+
+  commentLikes CommentLike[]
+
+  @@index([mangaId, parentId, createdAt])
+  @@index([chapterId, createdAt])
+  @@index([status, createdAt])
+}
+
+enum CommentStatus {
+  ACTIVE
+  HIDDEN
+  DELETED
+}
+
+// ============================================
+// LIKES SUR COMMENTAIRES
+// ============================================
+model CommentLike {
+  id        String   @id @default(uuid())
+  userId    String
+  user      User     @relation(fields: [userId], references: [id], onDelete: Cascade)
+  commentId String
+  comment   Comment  @relation(fields: [commentId], references: [id], onDelete: Cascade)
+  createdAt DateTime @default(now())
+
+  @@unique([userId, commentId])
+  @@index([commentId, userId])
+}
+
+// ============================================
+// LIKES SUR MANGAS / CHAPITRES
+// ============================================
+model Like {
+  id        String   @id @default(uuid())
+  userId    String
+  user      User     @relation(fields: [userId], references: [id], onDelete: Cascade)
+  mangaId   String
+  manga     Manga    @relation(fields: [mangaId], references: [id], onDelete: Cascade)
+  chapterId String?
+  createdAt DateTime @default(now())
+
+  @@unique([userId, mangaId, chapterId])
+  @@index([userId, mangaId])
+}
+
+// ============================================
+// ABONNEMENTS (SUIVI DE MANGAS)
+// ============================================
+model Subscription {
+  id         String   @id @default(uuid())
+  followerId String
+  follower   User     @relation(fields: [followerId], references: [id], onDelete: Cascade)
+  mangaId    String
+  manga      Manga    @relation(fields: [mangaId], references: [id], onDelete: Cascade)
+  createdAt  DateTime @default(now())
+
+  @@unique([followerId, mangaId])
+  @@index([mangaId, createdAt])
+}
+
+// ============================================
+// PAIEMENTS
+// ============================================
+model Payment {
+  id            String        @id @default(uuid())
+  userId        String
+  user          User          @relation(fields: [userId], references: [id], onDelete: Cascade)
+  transactionId String?       @unique
+  amount        Float
+  currency      String        @default("USD")
+  type          PaymentType
+  status        PaymentStatus @default(PENDING)
+  plan          PremiumPlan?
+  mangaId       String?
+  chapterNumber Int?
+  mobileNumber  String?
+  metadata      Json?
+  completedAt   DateTime?
+  createdAt     DateTime      @default(now())
+
+  earnings      CreatorEarning[]
+
+  @@index([userId, status])
+  @@index([transactionId])
+  @@index([status, createdAt])
+}
+
+enum PaymentType {
+  PREMIUM
+  CHAPTER
+  TIP
+}
+
+enum PaymentStatus {
+  PENDING
+  SUCCESS
+  FAILED
+  CANCELLED
+}
+
+// ============================================
+// REVENUS DES CRÉATEURS
+// ============================================
+model CreatorEarning {
+  id        String        @id @default(uuid())
+  creatorId String
+  creator   User          @relation(fields: [creatorId], references: [id], onDelete: Cascade)
+  source    EarningSource
+  amount    Float
+  currency  String        @default("USD")
+  paymentId String?
+  payment   Payment?      @relation(fields: [paymentId], references: [id])
+  status    EarningStatus @default(PENDING)
+  metadata  Json?
+  createdAt DateTime      @default(now())
+  paidAt    DateTime?
+
+  @@index([creatorId, status])
+  @@index([source, createdAt])
+}
+
+enum EarningSource {
+  SUBSCRIPTION
+  CHAPTER_SALE
+  TIP
+  AD
+}
+
+enum EarningStatus {
+  PENDING
+  PAID
+  FAILED
+}
+
+// ============================================
+// PAYOUTS
+// ============================================
+model Payout {
+  id            String       @id @default(uuid())
+  creatorId     String
+  creator       User         @relation(fields: [creatorId], references: [id], onDelete: Cascade)
+  amount        Float
+  currency      String       @default("USD")
+  mobileNumber  String
+  status        PayoutStatus @default(PENDING)
+  transactionId String?
+  metadata      Json?
+  requestedAt   DateTime     @default(now())
+  completedAt   DateTime?
+
+  @@index([creatorId, status])
+}
+
+enum PayoutStatus {
+  PENDING
+  PROCESSING
+  COMPLETED
+  FAILED
+}
+
+// ============================================
+// INKSTREAM — ANIMES
+// ============================================
+model InkStreamAnime {
+  id            String   @id @default(uuid())
+  title         String
+  description   String?  @db.Text
+  coverImage    String
+  genre         String[] @default([])
+  source        String
+  externalId    String
+  externalUrl   String
+  rating        Float?
+  releaseYear   Int?
+  episodesCount Int      @default(0)
+  isActive      Boolean  @default(true)
+  lastSyncAt    DateTime
+  createdAt     DateTime @default(now())
+  updatedAt     DateTime @updatedAt
+
+  episodes      InkStreamEpisode[]
+  watchHistory  InkStreamWatchHistory[]
+
+  @@unique([source, externalId])
+  @@index([title, source])
+}
+
+model InkStreamEpisode {
+  id            String   @id @default(uuid())
+  animeId       String
+  anime         InkStreamAnime @relation(fields: [animeId], references: [id], onDelete: Cascade)
+  episodeNumber Int
+  title         String?
+  videoUrl      String
+  thumbnail     String?
+  duration      Int?
+  isAvailable   Boolean  @default(true)
+  createdAt     DateTime @default(now())
+
+  watchHistory  InkStreamWatchHistory[]
+
+  @@unique([animeId, episodeNumber])
+}
+
+model InkStreamWatchHistory {
+  id            String   @id @default(uuid())
+  userId        String
+  user          User     @relation(fields: [userId], references: [id], onDelete: Cascade)
+  animeId       String
+  anime         InkStreamAnime @relation(fields: [animeId], references: [id], onDelete: Cascade)
+  episodeId     String
+  episode       InkStreamEpisode @relation(fields: [episodeId], references: [id], onDelete: Cascade)
+  progress      Int      @default(0)
+  lastWatchedAt DateTime @default(now())
+
+  @@unique([userId, episodeId])
+  @@index([userId, animeId])
+}
+
+// ============================================
+// NOTIFICATIONS
+// ============================================
+model Notification {
+  id        String           @id @default(uuid())
+  userId    String
+  user      User             @relation(fields: [userId], references: [id], onDelete: Cascade)
+  type      NotificationType
+  title     String
+  body      String?
+  link      String?
+  isRead    Boolean          @default(false)
+  metadata  Json?
+  createdAt DateTime         @default(now())
+
+  @@index([userId, isRead, createdAt])
+}
+
+enum NotificationType {
+  NEW_CHAPTER
+  NEW_COMMENT
+  NEW_SUBSCRIBER
+  EARNING
+  CERTIFICATION
+  PREMIUM_EXPIRY
+  SYSTEM
+}
+
+// ============================================
+// AUDIT
+// ============================================
+model AuditLog {
+  id         String   @id @default(uuid())
+  userId     String?
+  action     String
+  targetId   String?
+  targetType String?
+  details    Json?
+  ipAddress  String?
+  userAgent  String?
+  createdAt  DateTime @default(now())
+
+  @@index([userId, action])
+  @@index([createdAt])
+}
+
+// ============================================
+// FOLLOW (Abonnements entre utilisateurs)
+// ============================================
+model UserFollow {
+  id          String   @id @default(uuid())
+  followerId  String
+  follower    User     @relation("Follower", fields: [followerId], references: [id], onDelete: Cascade)
+  followingId String
+  following   User     @relation("Following", fields: [followingId], references: [id], onDelete: Cascade)
+  createdAt   DateTime @default(now())
+
+  @@unique([followerId, followingId])
+  @@index([followerId])
+  @@index([followingId])
+}
+
+// ============================================
+// MESSAGERIE (Chat / Inbox)
+// ============================================
+model Message {
+  id         String   @id @default(uuid())
+  senderId   String
+  sender     User     @relation("SentMessages", fields: [senderId], references: [id], onDelete: Cascade)
+  receiverId String
+  receiver   User     @relation("ReceivedMessages", fields: [receiverId], references: [id], onDelete: Cascade)
+  content    String   @db.Text
+  isRead     Boolean  @default(false)
+  createdAt  DateTime @default(now())
+
+  @@index([senderId, receiverId])
+  @@index([receiverId, isRead])
+  @@index([createdAt])
+}
+
+// ============================================
+// ÉVÉNEMENTS THÉMATIQUES
+// ============================================
+model Event {
+  id          String   @id @default(uuid())
+  title       String
+  description String?  @db.Text
+  theme       String?
+  icon        String?
+  coverUrl    String?
+  startDate   DateTime
+  endDate     DateTime
+  objectives  Json     @default("[]")
+  rewards     Json     @default("[]")
+  isActive    Boolean  @default(true)
+  createdAt   DateTime @default(now())
+  updatedAt   DateTime @updatedAt
+
+  participations EventParticipation[]
+
+  @@index([isActive, startDate, endDate])
+}
+
+model EventParticipation {
+  id            String    @id @default(uuid())
+  userId        String
+  user          User      @relation(fields: [userId], references: [id], onDelete: Cascade)
+  eventId       String
+  event         Event     @relation(fields: [eventId], references: [id], onDelete: Cascade)
+  progress      Json      @default("{}")
+  isCompleted   Boolean   @default(false)
+  rewardClaimed Boolean   @default(false)
+  joinedAt      DateTime  @default(now())
+  completedAt   DateTime?
+
+  @@unique([userId, eventId])
+  @@index([eventId])
+}
