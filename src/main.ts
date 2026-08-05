@@ -5,25 +5,26 @@ import { ValidationPipe } from '@nestjs/common';
 async function bootstrap() {
   const app = await NestFactory.create(AppModule);
 
-  // 1. Déverrouiller le CORS en dev (autorise localhost ET 127.0.0.1 sur n'importe quel port)
+  // 1. ACTIVER EXPLICITEMENT LES CORS (Indispensable !)
   app.enableCors({
-    origin: true, // Autorise toutes les origines dynamiquement en dev
+    origin: true, // Autorise toutes les origines (ou l'URL de ton frontend Next.js)
     methods: 'GET,HEAD,PUT,PATCH,POST,DELETE,OPTIONS',
     credentials: true,
+    allowedHeaders: 'Content-Type, Accept, Authorization',
   });
 
+  // 2. PIPES DE VALIDATION
   app.useGlobalPipes(
     new ValidationPipe({
       whitelist: true,
-      transform: true,
       forbidNonWhitelisted: true,
+      transform: true,
     }),
   );
 
-  // 2. Écouter explicitement sur '0.0.0.0' pour être joignable en IPv4
+  // 3. ECOUTE SUR LE PORT ET BINDING GLOBAL 0.0.0.0
   const port = process.env.PORT || 4000;
   await app.listen(port, '0.0.0.0');
-  console.log(`🚀 Server running on http://localhost:${port}`);
+  console.log(`🚀 Serveur démarré sur le port ${port}`);
 }
-
 bootstrap();
