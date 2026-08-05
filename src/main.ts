@@ -5,9 +5,10 @@ import { ValidationPipe } from '@nestjs/common';
 async function bootstrap() {
   const app = await NestFactory.create(AppModule);
 
-  // 1. Configuration CORS valide
+  // 1. Déverrouiller le CORS en dev (autorise localhost ET 127.0.0.1 sur n'importe quel port)
   app.enableCors({
-    origin: ['http://localhost:3000', 'http://localhost:3001'],
+    origin: true, // Autorise toutes les origines dynamiquement en dev
+    methods: 'GET,HEAD,PUT,PATCH,POST,DELETE,OPTIONS',
     credentials: true,
   });
 
@@ -19,9 +20,9 @@ async function bootstrap() {
     }),
   );
 
-  // 2. Port 4000 pour éviter le conflit avec Next.js (qui utilise 3000)
+  // 2. Écouter explicitement sur '0.0.0.0' pour être joignable en IPv4
   const port = process.env.PORT || 4000;
-  await app.listen(port);
+  await app.listen(port, '0.0.0.0');
   console.log(`🚀 Server running on http://localhost:${port}`);
 }
 
