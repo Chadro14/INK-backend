@@ -13,10 +13,18 @@ import {
   NotFoundException,
 } from '@nestjs/common';
 import { FileInterceptor } from '@nestjs/platform-express';
+import { IsString, IsNotEmpty } from 'class-validator';
 import { UsersService } from './users.service';
 import { JwtAuthGuard } from '../../common/guards/jwt-auth.guard';
 import { StorageService } from '../../common/services/storage.service';
 import { PrismaService } from '../../prisma/prisma.service';
+
+// DTO pour valider le body avec le ValidationPipe de NestJS
+export class UpdateBadgeColorDto {
+  @IsString({ message: 'La couleur du badge doit être une chaîne de caractères' })
+  @IsNotEmpty({ message: 'La couleur ou l\'effet du badge est requis' })
+  badgeColor: string;
+}
 
 @Controller('users')
 export class UsersController {
@@ -50,7 +58,8 @@ export class UsersController {
   @Get('me')
   @UseGuards(JwtAuthGuard)
   async getMe(@Req() req: any) {
-    const user = await this.usersService.findById(req.user.id);
+    const userId = req.user?.id || req.user?.sub;
+    const user = await this.usersService.findById(userId);
     delete (user as any).passwordHash;
     return user;
   }
@@ -61,8 +70,9 @@ export class UsersController {
   @Put('me')
   @UseGuards(JwtAuthGuard)
   async updateMe(@Req() req: any, @Body() body: any) {
+    const userId = req.user?.id || req.user?.sub;
     const { username, email, bio } = body;
-    const user = await this.usersService.update(req.user.id, {
+    const user = await this.usersService.update(userId, {
       username,
       email,
       bio,
@@ -72,18 +82,19 @@ export class UsersController {
   }
 
   // ============================================
-  // METTRE À JOUR LA COULEUR DU BADGE (SIMPLE)
+  // METTRE À JOUR LA COULEUR DU BADGE (CORRIGÉ)
   // ============================================
   @Put('badge-color')
   @UseGuards(JwtAuthGuard)
-  async updateBadgeColor(@Req() req: any, @Body() body: { badgeColor: string }) {
-    const { badgeColor } = body;
+  async updateBadgeColor(@Req() req: any, @Body() dto: UpdateBadgeColorDto) {
+    const userId = req.user?.id || req.user?.sub;
+    const { badgeColor } = dto;
 
-    if (!badgeColor) {
-      throw new BadRequestException("La couleur ou l'effet du badge est requis");
+    const user = await this.usersService.findById(userId);
+
+    if (!user) {
+      throw new NotFoundException('Utilisateur introuvable');
     }
-
-    const user = await this.usersService.findById(req.user.id);
 
     if (!user.isCertified) {
       throw new BadRequestException(
@@ -91,9 +102,9 @@ export class UsersController {
       );
     }
 
-    // Met à jour directement la couleur du badge sans restriction Premium
+    // Met à jour la couleur du badge
     const updatedUser = await this.prisma.user.update({
-      where: { id: req.user.id },
+      where: { id: userId },
       data: { badgeColor },
     });
 
@@ -143,11 +154,12 @@ export class UsersController {
       throw new BadRequestException("L'image ne doit pas dépasser 5MB");
     }
 
-    const key = `user/${req.user.id}/avatar-${Date.now()}.webp`;
+    const userId = req.user?.id || req.user?.sub;
+    const key = `user/${userId}/avatar-${Date.now()}.webp`;
     await this.storage.upload(key, file.buffer, file.mimetype, 'avatars');
 
     const avatarUrl = await this.storage.getSignedUrl(key, 86400, 'avatars');
-    await this.usersService.updateAvatar(req.user.id, avatarUrl);
+    await this.usersService.updateAvatar(userId, avatarUrl);
 
     return { avatarUrl };
   }
