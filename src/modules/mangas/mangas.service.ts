@@ -22,16 +22,30 @@ export class MangasService {
     });
   }
 
-  async findAll(query?: any) {
+  // ✅ Corrigé : accepte 3 arguments (page, limit, filters)
+  async findAll(page?: number, limit?: number, filters?: any) {
+    const take = limit ? Number(limit) : 20;
+    const skip = page ? (Number(page) - 1) * take : 0;
+
     return this.prisma.manga.findMany({
+      take,
+      skip,
+      where: {
+        ...(filters?.search && {
+          title: { contains: filters.search, mode: 'insensitive' },
+        }),
+        ...(filters?.genre && { genre: filters.genre }),
+        ...(filters?.status && { status: filters.status }),
+      },
       orderBy: { createdAt: 'desc' },
     });
   }
 
+  // ✅ Corrigé : trie par createdAt au lieu du champ views inexistant
   async getTopMangas(limit = 10) {
     return this.prisma.manga.findMany({
-      take: limit,
-      orderBy: { views: 'desc' },
+      take: Number(limit) || 10,
+      orderBy: { createdAt: 'desc' },
     });
   }
 
