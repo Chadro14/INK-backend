@@ -1,117 +1,44 @@
-import { Injectable, NotFoundException, ForbiddenException } from '@nestjs/common';
-import { PrismaService } from '../../prisma/prisma.service';
+import { Injectable, ForbiddenException, NotFoundException } from '@nestjs/common';
+import { PrismaService } from '../prisma/prisma.service';
+import { StorageService } from '../common/services/storage.service'; // Ajuste le chemin si besoin
 
 @Injectable()
 export class MangasService {
-  constructor(private prisma: PrismaService) {}
-
-  async create(userId: string, dto: any) {
-    return this.prisma.manga.create({
-      data: {
-        ...dto,
-        authorId: userId,
-      },
-    });
-  }
-
-  async findAll(page = 1, limit = 20, filters?: { search?: string; genre?: string; status?: string }) {
-    const skip = (page - 1) * limit;
-    const where: any = {};
-
-    if (filters?.search) {
-      where.title = { contains: filters.search, mode: 'insensitive' };
-    }
-    if (filters?.genre) {
-      where.genre = { has: filters.genre };
-    }
-    if (filters?.status) {
-      where.status = filters.status;
-    }
-
-    const [data, total] = await Promise.all([
-      this.prisma.manga.findMany({
-        where,
-        skip,
-        take: limit,
-        include: { author: true },
-        orderBy: { createdAt: 'desc' },
-      }),
-      this.prisma.manga.count({ where }),
-    ]);
-
-    return { data, total, page, lastPage: Math.ceil(total / limit) };
-  }
-
-  async getTopMangas(limit = 10) {
-    return this.prisma.manga.findMany({
-      take: limit,
-      orderBy: { viewsCount: 'desc' }, // Corrigé avec viewsCount de ton schéma
-      include: { author: true },
-    });
-  }
-
-  async findById(id: string) {
-    const manga = await this.prisma.manga.findUnique({
-      where: { id },
-      include: { chapters: true, author: true },
-    });
-
-    if (!manga) {
-      throw new NotFoundException('Manga non trouvé');
-    }
-
-    return manga;
-  }
-
-  async update(id: string, userId: string, dto: any) {
-    const manga = await this.findById(id);
-    if (manga.authorId !== userId) {
-      throw new ForbiddenException('Non autorisé à modifier ce manga');
-    }
-
-    return this.prisma.manga.update({
-      where: { id },
-      data: dto,
-    });
-  }
-
-  async delete(id: string, userId: string) {
-    const manga = await this.findById(id);
-    if (manga.authorId !== userId) {
-      throw new ForbiddenException('Non autorisé à supprimer ce manga');
-    }
-
-    return this.prisma.manga.delete({
-      where: { id },
-    });
-  }
+  constructor(
+    private prisma: PrismaService,
+    private storage: StorageService, // 👈 Inscription de StorageService
+  ) {}
 
   async getCoverUploadUrl(mangaId: string, userId: string) {
-    const manga = await this.findById(mangaId);
+    const manga = await this.prisma.manga.findUnique({ where: { id: mangaId } });
+    if (!manga) {
+      throw new NotFoundException('Manga introuvable');
+    }
     if (manga.authorId !== userId) {
       throw new ForbiddenException('Non autorisé');
     }
-    const key = `covers/${mangaId}-${Date.now()}.jpg`;
-    return { key, uploadUrl: `#` };
+
+    const key = `covers/${mangaId}-${Date.now()}.webp`;
+    const upload = await this.storage.getUploadUrl(key, 'chapters');
+    
+    return { key, ...upload };
   }
 
   async finalizeCover(mangaId: string, userId: string, key: string) {
-    const manga = await this.findById(mangaId);
+    const manga = await this.prisma.manga.findUnique({ where: { id: mangaId } });
+    if (!manga) {
+      throw new NotFoundException('Manga introuvable');
+    }
     if (manga.authorId !== userId) {
       throw new ForbiddenException('Non autorisé');
     }
+
+    // Récupère la vraie URL publique/signée Supabase
+    const coverUrl = await this.storage.getSignedUrl(key, 3600 * 24 * 365, 'chapters');
+
     return this.prisma.manga.update({
       where: { id: mangaId },
-      data: { coverUrl: key }, // Corrigé avec coverUrl de ton schéma
+      data: { coverUrl },
     });
-  }
-
-  async getUploadUrls(mangaId: string, filenames: string[]) {
-    await this.findById(mangaId);
-    return filenames.map((filename) => ({
-      filename,
-      key: `chapters/${mangaId}/${Date.now()}-${filename}`,
-      uploadUrl: `#`,
-    }));
   }
 }
