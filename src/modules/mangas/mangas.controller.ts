@@ -101,30 +101,30 @@ export class MangasController {
     return this.mangasService.delete(id, req.user.id);
   }
 
+  // 🛡️ CORRIGÉ : Appel la bonne méthode generateSignedUploadUrls
   @Post(':id/chapters/upload-urls')
   @UseGuards(JwtAuthGuard)
   async getChapterUploadUrls(
     @Param('id') mangaId: string,
     @Req() req: any,
-    @Body() body: { mode: 'pdf' | 'photos'; count: number; chapterNumber: number },
+    @Body() body: { filenames: string[]; fileNames?: string[] },
   ) {
-    return this.chaptersService.generateUploadUrls(
-      mangaId,
-      req.user.id,
-      body.mode,
-      body.count,
-      body.chapterNumber,
-    );
+    const filenames = body.filenames || body.fileNames || [];
+    if (filenames.length === 0) {
+      throw new BadRequestException('Aucun nom de fichier fourni.');
+    }
+    return this.chaptersService.generateSignedUploadUrls(mangaId, filenames);
   }
 
+  // 🛡️ CORRIGÉ : Appel la bonne méthode create
   @Post(':id/chapters/finalize')
   @UseGuards(JwtAuthGuard)
   async finalizeChapter(
     @Param('id') mangaId: string,
     @Req() req: any,
-    @Body() dto: CreateChapterDto & { mode: 'pdf' | 'photos'; keys: string[] },
+    @Body() dto: CreateChapterDto,
   ) {
-    return this.chaptersService.createFromKeys(mangaId, req.user.id, dto);
+    return this.chaptersService.create(mangaId, req.user.id, dto);
   }
 
   @Post(':id/chapters')
@@ -189,7 +189,6 @@ export class MangasController {
     return this.mangasService.getUploadUrls(mangaId, filenames);
   }
 
-  // CORRECTION: Plus d'erreur Typescript "chapters does not exist"
   @Get(':id/chapters')
   async getChapters(@Param('id') mangaId: string) {
     return this.prisma.chapter.findMany({
