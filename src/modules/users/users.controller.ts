@@ -2,6 +2,7 @@ import {
   Controller,
   Get,
   Put,
+  Patch,
   Post,
   Body,
   Param,
@@ -13,22 +14,24 @@ import {
   NotFoundException,
 } from '@nestjs/common';
 import { FileInterceptor } from '@nestjs/platform-express';
-import { IsString, IsNotEmpty } from 'class-validator';
+import { IsString, IsOptional } from 'class-validator';
 import { UsersService } from './users.service';
 import { JwtAuthGuard } from '../../common/guards/jwt-auth.guard';
 import { StorageService } from '../../common/services/storage.service';
 import { PrismaService } from '../../prisma/prisma.service';
 
-// DTO pour valider le body avec le ValidationPipe de NestJS
 export class UpdateBadgeColorDto {
   @IsString({ message: 'La couleur du badge doit être une chaîne de caractères' })
-  @IsNotEmpty({ message: 'La couleur ou l\'effet du badge est requis' })
-  badgeColor: string;
+  @IsOptional()
+  badgeColor?: string;
+
+  @IsString()
+  @IsOptional()
+  avatarColor?: string;
 }
 
 @Controller('users')
 export class UsersController {
-  // Liste unique de toutes les couleurs & effets disponibles
   private readonly AVAILABLE_COLORS = [
     '#3B82F6', // Bleu Électrique
     '#EC4899', // Rose Magique
@@ -60,7 +63,9 @@ export class UsersController {
   async getMe(@Req() req: any) {
     const userId = req.user?.id || req.user?.sub;
     const user = await this.usersService.findById(userId);
-    delete (user as any).passwordHash;
+    if (user && (user as any).passwordHash) {
+      delete (user as any).passwordHash;
+    }
     return user;
   }
 
@@ -77,18 +82,25 @@ export class UsersController {
       email,
       bio,
     });
-    delete (user as any).passwordHash;
+    if (user && (user as any).passwordHash) {
+      delete (user as any).passwordHash;
+    }
     return user;
   }
 
   // ============================================
-  // METTRE À JOUR LA COULEUR DU BADGE (CORRIGÉ)
+  // METTRE À JOUR LA COULEUR DU BADGE (PATCH & PUT)
   // ============================================
+  @Patch('badge-color')
   @Put('badge-color')
   @UseGuards(JwtAuthGuard)
   async updateBadgeColor(@Req() req: any, @Body() dto: UpdateBadgeColorDto) {
     const userId = req.user?.id || req.user?.sub;
-    const { badgeColor } = dto;
+    const selectedColor = dto.badgeColor || dto.avatarColor;
+
+    if (!selectedColor) {
+      throw new BadRequestException('La couleur est requise.');
+    }
 
     const user = await this.usersService.findById(userId);
 
@@ -102,13 +114,15 @@ export class UsersController {
       );
     }
 
-    // Met à jour la couleur du badge
+    // Met à jour la couleur du badge dans Prisma
     const updatedUser = await this.prisma.user.update({
       where: { id: userId },
-      data: { badgeColor },
+      data: { badgeColor: selectedColor },
     });
 
-    delete (updatedUser as any).passwordHash;
+    if (updatedUser && (updatedUser as any).passwordHash) {
+      delete (updatedUser as any).passwordHash;
+    }
     return updatedUser;
   }
 
