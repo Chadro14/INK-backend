@@ -13,7 +13,7 @@ import {
 import { ChaptersService } from './chapters.service';
 import { CreateChapterDto } from './dto/create-chapter.dto';
 import { UpdateChapterDto } from './dto/update-chapter.dto';
-import { JwtAuthGuard } from '../auth/guards/jwt-auth.guard'; // ⚠️ Ajuste le chemin selon ton projet
+import { JwtAuthGuard } from '../../auth/guards/jwt-auth.guard'; // ✅ Import corrigé
 
 @Controller('mangas/:mangaId/chapters')
 export class ChaptersController {
@@ -29,7 +29,7 @@ export class ChaptersController {
     return this.chaptersService.generateSignedUploadUrls(mangaId, filenames);
   }
 
-  // 2. Finalisation / Création du chapitre dans la base de données
+  // 2. Finalisation / Création du chapitre dans la BDD
   @Post('finalize')
   @UseGuards(JwtAuthGuard)
   async createFinalized(
@@ -40,7 +40,6 @@ export class ChaptersController {
     return this.chaptersService.create(mangaId, req.user.id, createChapterDto);
   }
 
-  // Permet aussi d'utiliser POST /mangas/:mangaId/chapters directement
   @Post()
   @UseGuards(JwtAuthGuard)
   async create(
@@ -57,7 +56,7 @@ export class ChaptersController {
     return this.chaptersService.findByManga(mangaId);
   }
 
-  // 4. Récupérer un chapitre spécifique par son numéro
+  // 4. Récupérer un chapitre par son numéro
   @Get('number/:number')
   async findByNumber(
     @Param('mangaId') mangaId: string,
@@ -72,7 +71,7 @@ export class ChaptersController {
     return this.chaptersService.findOne(chapterId);
   }
 
-  // 6. Mettre à jour un chapitre (titre, prix, brouillon, etc.)
+  // 6. Mettre à jour un chapitre
   @Patch(':chapterId')
   @UseGuards(JwtAuthGuard)
   async update(
@@ -82,7 +81,7 @@ export class ChaptersController {
     return this.chaptersService.update(chapterId, updateChapterDto);
   }
 
-  // 7. Supprimer un chapitre (et ses fichiers associés dans Supabase)
+  // 7. Supprimer un chapitre
   @Delete(':chapterId')
   @UseGuards(JwtAuthGuard)
   async delete(@Param('chapterId') chapterId: string) {
