@@ -1,4 +1,4 @@
-import { Injectable, InternalServerErrorException, Logger } from '@nestjs/common';
+import { Injectable, InternalServerErrorException, Logger, BadRequestException } from '@nestjs/common';
 import { ConfigService } from '@nestjs/config';
 import { createClient, SupabaseClient } from '@supabase/supabase-js';
 
@@ -27,6 +27,11 @@ export class StorageService {
   // MÉTHODES POUR L'UPLOAD DIRECT (FRONTEND)
   // ==========================================
   async getUploadUrl(key: string, bucketType: 'chapters' | 'avatars' = 'chapters') {
+    // 🛡️ Protection contre key undefined
+    if (!key) {
+      throw new BadRequestException("La clé (key) du fichier est requise pour générer l'URL d'upload");
+    }
+
     const bucket = this.buckets[bucketType];
     const { data, error } = await this.supabase.storage
       .from(bucket)
@@ -43,6 +48,9 @@ export class StorageService {
   }
 
   getPublicUrl(key: string, bucketType: 'chapters' | 'avatars' = 'chapters'): string {
+    // 🛡️ Protection si key est indéfinie
+    if (!key) return '';
+
     const bucket = this.buckets[bucketType];
     const { data } = this.supabase.storage.from(bucket).getPublicUrl(key);
     return data.publicUrl;
@@ -52,6 +60,10 @@ export class StorageService {
   // MÉTHODES BACKEND
   // ==========================================
   async upload(key: string, file: Buffer, mimeType: string, bucketType: string = 'chapters'): Promise<string> {
+    if (!key) {
+      throw new BadRequestException('La clé (key) du fichier est requise pour l\'upload');
+    }
+
     const bucket = this.buckets[bucketType] || bucketType;
     const { data, error } = await this.supabase.storage
       .from(bucket)
@@ -69,6 +81,11 @@ export class StorageService {
   }
 
   async getSignedUrl(key: string, expiresIn: number = 3600, bucketType: string = 'chapters'): Promise<string> {
+    // 🚨 SÉCURITÉ CRITIQUE : Évite le crash crash Supabase (Cannot read properties of undefined reading 'replace')
+    if (!key) {
+      return '';
+    }
+
     const bucket = this.buckets[bucketType] || bucketType;
     const { data, error } = await this.supabase.storage
       .from(bucket)
@@ -83,6 +100,8 @@ export class StorageService {
   }
 
   async delete(key: string, bucketType: string = 'chapters'): Promise<void> {
+    if (!key) return;
+
     const bucket = this.buckets[bucketType] || bucketType;
     const { error } = await this.supabase.storage
       .from(bucket)
