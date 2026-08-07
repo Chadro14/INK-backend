@@ -1,8 +1,4 @@
-import {
-  Injectable,
-  NotFoundException,
-  ForbiddenException,
-} from '@nestjs/common';
+import { Injectable, NotFoundException, ForbiddenException } from '@nestjs/common';
 import { PrismaService } from '../../prisma/prisma.service';
 import { StorageService } from '../../common/services/storage.service';
 
@@ -22,42 +18,55 @@ export class MangasService {
     });
   }
 
-  // ✅ Corrigé : accepte 3 arguments (page, limit, filters)
-  async findAll(page?: number, limit?: number, filters?: any) {
-    const take = limit ? Number(limit) : 20;
-    const skip = page ? (Number(page) - 1) * take : 0;
-
-    return this.prisma.manga.findMany({
-      take,
-      skip,
-      where: {
-        ...(filters?.search && {
-          title: { contains: filters.search, mode: 'insensitive' },
-        }),
-        ...(filters?.genre && { genre: filters.genre }),
-        ...(filters?.status && { status: filters.status }),
-      },
-      orderBy: { createdAt: 'desc' },
-    });
+  async findAll(page = 1, limit = 20, filters?: { search?: string; genre?: string; status?: string }) {
+    const skip = (page - 1) * limit;
+    const where: any = {};
+    if (filters?.search) {
+      where.title = { contains: filters.search, mode: 'insensitive' };
+    }
+    if (filters?.genre) {
+      where.genre = { has: filters.genre };
+    }
+    if (filters?.status) {
+      where.status = filters.status;
+    }
+    const [data, total] = await Promise.all([
+      this.prisma.manga.findMany({
+        where,
+        skip,
+        take: limit,
+        include: { author: true },
+        orderBy: { createdAt: 'desc' },
+      }),
+      this.prisma.manga.count({ where }),
+    ]);
+    return { data, total, page, lastPage: Math.ceil(total / limit) };
   }
 
-  // ✅ Corrigé : trie par createdAt au lieu du champ views inexistant
   async getTopMangas(limit = 10) {
     return this.prisma.manga.findMany({
-      take: Number(limit) || 10,
-      orderBy: { createdAt: 'desc' },
+      take: limit,
+      orderBy: { viewsCount: 'desc' },
+      include: { author: true },
     });
   }
 
   async findById(id: string) {
-    const manga = await this.prisma.manga.findUnique({ where: { id } });
-    if (!manga) throw new NotFoundException('Manga introuvable');
+    const manga = await this.prisma.manga.findUnique({
+      where: { id },
+      include: { chapters: true, author: true },
+    });
+    if (!manga) {
+      throw new NotFoundException('Manga non trouvé');
+    }
     return manga;
   }
 
   async update(id: string, userId: string, dto: any) {
     const manga = await this.findById(id);
-    if (manga.authorId !== userId) throw new ForbiddenException('Non autorisé');
+    if (manga.authorId !== userId) {
+      throw new ForbiddenException('Non autorisé à modifier ce manga');
+    }
     return this.prisma.manga.update({
       where: { id },
       data: dto,
@@ -66,14 +75,19 @@ export class MangasService {
 
   async delete(id: string, userId: string) {
     const manga = await this.findById(id);
-    if (manga.authorId !== userId) throw new ForbiddenException('Non autorisé');
-    await this.prisma.manga.delete({ where: { id } });
-    return { message: 'Manga supprimé avec succès' };
+    if (manga.authorId !== userId) {
+      throw new ForbiddenException('Non autorisé à supprimer ce manga');
+    }
+    return this.prisma.manga.delete({
+      where: { id },
+    });
   }
 
   async getCoverUploadUrl(mangaId: string, userId: string) {
     const manga = await this.findById(mangaId);
-    if (manga.authorId !== userId) throw new ForbiddenException('Non autorisé');
+    if (manga.authorId !== userId) {
+      throw new ForbiddenException('Non autorisé');
+    }
     const key = `covers/${mangaId}-${Date.now()}.webp`;
     const upload = await this.storage.getUploadUrl(key, 'chapters');
     return { key, ...upload };
@@ -81,7 +95,9 @@ export class MangasService {
 
   async finalizeCover(mangaId: string, userId: string, key: string) {
     const manga = await this.findById(mangaId);
-    if (manga.authorId !== userId) throw new ForbiddenException('Non autorisé');
+    if (manga.authorId !== userId) {
+      throw new ForbiddenException('Non autorisé');
+    }
     const coverUrl = await this.storage.getSignedUrl(key, 3600 * 24 * 365, 'chapters');
     return this.prisma.manga.update({
       where: { id: mangaId },
@@ -90,12 +106,13 @@ export class MangasService {
   }
 
   async getUploadUrls(mangaId: string, filenames: string[]) {
-    return Promise.all(
-      filenames.map(async (filename) => {
-        const key = `mangas/${mangaId}/${Date.now()}-${filename}`;
-        const upload = await this.storage.getUploadUrl(key, 'chapters');
-        return { filename, key, ...upload };
-      }),
-    );
+    await this.findById(mangaId);
+    const results = [];
+    for (const filename of filenames) {
+      const key = `chapters/${mangaId}/${Date.now()}-${filename}`;
+      const upload = await this.storage.getUploadUrl(key, 'chapters');
+      results.push({ filename, key, ...upload });
+    }
+    return results;
   }
 }
