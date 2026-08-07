@@ -13,7 +13,13 @@ import {
 import { ChaptersService } from './chapters.service';
 import { CreateChapterDto } from './dto/create-chapter.dto';
 import { UpdateChapterDto } from './dto/update-chapter.dto';
-import { JwtAuthGuard } from '../../auth/guards/jwt-auth.guard'; // ✅ Import corrigé
+
+// ✅ Si ton dossier auth est dans src/modules/auth/guards/ :
+import { JwtAuthGuard } from '../auth/guards/jwt-auth.guard';
+
+// ℹ️ Remarque : Si ton guard est dans src/auth/jwt-auth.guard.ts (sans dossier guards),
+// remplace la ligne du dessus par :
+// import { JwtAuthGuard } from '../../auth/jwt-auth.guard';
 
 @Controller('mangas/:mangaId/chapters')
 export class ChaptersController {
