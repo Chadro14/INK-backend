@@ -7,7 +7,7 @@ export class StorageService {
   private supabase: SupabaseClient;
   private readonly logger = new Logger(StorageService.name);
 
-  public readonly buckets = {
+  public readonly buckets: Record<string, string> = {
     chapters: 'chapters',
     avatars: 'avatars',
   };
@@ -23,19 +23,40 @@ export class StorageService {
     this.supabase = createClient(supabaseUrl, supabaseKey);
   }
 
+  /**
+   * Helper : Nettoie la clé et extrait le bon bucket si la clé contient un préfixe de bucket.
+   */
+  private resolveBucketAndKey(key: string, defaultBucketType: string = 'chapters') {
+    if (!key) return { bucket: this.buckets[defaultBucketType] || defaultBucketType, cleanKey: '' };
+
+    let cleanKey = key.trim();
+    let bucket = this.buckets[defaultBucketType] || defaultBucketType;
+
+    // Si la clé commence déjà par un des buckets connus (ex: "avatars/user/..." ou "chapters/mangas/...")
+    for (const [_, bucketName] of Object.entries(this.buckets)) {
+      if (cleanKey.startsWith(`${bucketName}/`)) {
+        bucket = bucketName;
+        cleanKey = cleanKey.replace(`${bucketName}/`, '');
+        break;
+      }
+    }
+
+    return { bucket, cleanKey };
+  }
+
   // ==========================================
   // MÉTHODES POUR L'UPLOAD DIRECT (FRONTEND)
   // ==========================================
   async getUploadUrl(key: string, bucketType: 'chapters' | 'avatars' = 'chapters') {
-    // 🛡️ Protection contre key undefined
     if (!key) {
       throw new BadRequestException("La clé (key) du fichier est requise pour générer l'URL d'upload");
     }
 
-    const bucket = this.buckets[bucketType];
+    const { bucket, cleanKey } = this.resolveBucketAndKey(key, bucketType);
+
     const { data, error } = await this.supabase.storage
       .from(bucket)
-      .createSignedUploadUrl(key);
+      .createSignedUploadUrl(cleanKey);
 
     if (error) {
       throw new InternalServerErrorException(`Échec de la création de l'URL d'upload: ${error.message}`);
@@ -48,11 +69,11 @@ export class StorageService {
   }
 
   getPublicUrl(key: string, bucketType: 'chapters' | 'avatars' = 'chapters'): string {
-    // 🛡️ Protection si key est indéfinie
     if (!key) return '';
+    if (key.startsWith('http://') || key.startsWith('https://')) return key;
 
-    const bucket = this.buckets[bucketType];
-    const { data } = this.supabase.storage.from(bucket).getPublicUrl(key);
+    const { bucket, cleanKey } = this.resolveBucketAndKey(key, bucketType);
+    const { data } = this.supabase.storage.from(bucket).getPublicUrl(cleanKey);
     return data.publicUrl;
   }
 
@@ -64,16 +85,17 @@ export class StorageService {
       throw new BadRequestException('La clé (key) du fichier est requise pour l\'upload');
     }
 
-    const bucket = this.buckets[bucketType] || bucketType;
+    const { bucket, cleanKey } = this.resolveBucketAndKey(key, bucketType);
+
     const { data, error } = await this.supabase.storage
       .from(bucket)
-      .upload(key, file, {
+      .upload(cleanKey, file, {
         contentType: mimeType,
         upsert: true,
       });
 
     if (error) {
-      this.logger.error(`Failed to upload ${key} to ${bucket}: ${error.message}`);
+      this.logger.error(`Échec de l'upload de ${cleanKey} dans le bucket ${bucket}: ${error.message}`);
       throw new InternalServerErrorException(error.message);
     }
 
@@ -81,18 +103,21 @@ export class StorageService {
   }
 
   async getSignedUrl(key: string, expiresIn: number = 3600, bucketType: string = 'chapters'): Promise<string> {
-    // 🚨 SÉCURITÉ CRITIQUE : Évite le crash crash Supabase (Cannot read properties of undefined reading 'replace')
-    if (!key) {
-      return '';
+    if (!key) return '';
+
+    // Si c'est déjà une URL HTTP/HTTPS complète, inutile de la re-signer
+    if (key.startsWith('http://') || key.startsWith('https://')) {
+      return key;
     }
 
-    const bucket = this.buckets[bucketType] || bucketType;
+    const { bucket, cleanKey } = this.resolveBucketAndKey(key, bucketType);
+
     const { data, error } = await this.supabase.storage
       .from(bucket)
-      .createSignedUrl(key, expiresIn);
+      .createSignedUrl(cleanKey, expiresIn);
 
     if (error) {
-      this.logger.error(`Failed to generate signed URL for ${key}: ${error.message}`);
+      this.logger.error(`Échec de la génération de l'URL signée pour ${cleanKey} dans ${bucket}: ${error.message}`);
       throw new InternalServerErrorException(error.message);
     }
 
@@ -102,13 +127,19 @@ export class StorageService {
   async delete(key: string, bucketType: string = 'chapters'): Promise<void> {
     if (!key) return;
 
-    const bucket = this.buckets[bucketType] || bucketType;
+    // Si c'est une URL complète, pas de suppression directe par clé simple
+    if (key.startsWith('http://') || key.startsWith('https://')) {
+      return;
+    }
+
+    const { bucket, cleanKey } = this.resolveBucketAndKey(key, bucketType);
+
     const { error } = await this.supabase.storage
       .from(bucket)
-      .remove([key]);
+      .remove([cleanKey]);
 
     if (error) {
-      this.logger.error(`Failed to delete ${key} from ${bucket}: ${error.message}`);
+      this.logger.error(`Échec de la suppression de ${cleanKey} depuis ${bucket}: ${error.message}`);
       throw new InternalServerErrorException(error.message);
     }
   }
