@@ -1,101 +1,144 @@
 import {
   IsString,
+  IsOptional,
   IsNumber,
   IsBoolean,
-  IsOptional,
   IsArray,
-  IsEnum,
-  Min,
+  IsIn,
+  IsUUID,
+  IsUrl,
+  ValidateIf,
 } from 'class-validator';
+import { Type } from 'class-transformer';
 
 export enum ChapterMode {
   PHOTOS = 'PHOTOS',
   PDF = 'PDF',
 }
 
-// DTO flexible : supporte à la fois { filenames } ET { mode, count, chapterNumber }
+// ============================================
+// 1. DTO pour la génération des URLs d'upload
+// ============================================
 export class ChapterUploadUrlsDto {
-  @IsEnum(ChapterMode)
   @IsOptional()
+  @IsArray()
+  @IsString({ each: true })
+  filenames?: string[];
+
+  @IsOptional()
+  @IsIn(['PHOTOS', 'PDF'])
   mode?: ChapterMode;
 
-  @IsNumber()
-  @Min(1)
   @IsOptional()
+  @IsNumber()
+  @Type(() => Number)
   count?: number;
 
+  @IsOptional()
   @IsNumber()
-  @IsOptional()
+  @Type(() => Number)
   chapterNumber?: number;
-
-  @IsArray()
-  @IsString({ each: true })
-  @IsOptional()
-  filenames?: string[];
 }
 
+// ============================================
+// 2. DTO pour la finalisation du chapitre
+// ============================================
 export class FinalizeChapterDto {
   @IsNumber()
+  @Type(() => Number)
   number: number;
 
-  @IsString()
   @IsOptional()
+  @IsString()
   title?: string;
-
-  @IsEnum(ChapterMode)
-  mode: ChapterMode;
 
   @IsArray()
   @IsString({ each: true })
-  keys: string[];
+  keys: string[]; // ← Clé unique pour les URLs (PDF ou images)
 
-  @IsOptional()
   @IsString()
-  freePageIndexes?: string;
-
-  @IsOptional()
-  @IsNumber()
-  price?: number;
+  @IsIn(['PHOTOS', 'PDF'])
+  mode: 'PHOTOS' | 'PDF';
 
   @IsOptional()
   @IsBoolean()
   isDraft?: boolean;
+
+  @IsOptional()
+  @IsNumber()
+  @Type(() => Number)
+  price?: number;
+
+  @IsOptional()
+  @IsString()
+  freePageIndexes?: string;
 }
 
+// ============================================
+// 3. DTO pour la création classique (legacy)
+// ============================================
 export class CreateChapterDto {
   @IsNumber()
+  @Type(() => Number)
   number: number;
 
-  @IsString()
   @IsOptional()
+  @IsString()
   title?: string;
 
-  @IsString()
   @IsOptional()
-  pdfUrl?: string;
-
-  @IsArray()
-  @IsString({ each: true })
-  @IsOptional()
-  imagesUrls?: string[];
-
   @IsBoolean()
-  @IsOptional()
   isFree?: boolean;
 
-  @IsNumber()
   @IsOptional()
-  price?: number;
-
-  @IsString()
-  @IsOptional()
-  coverUrl?: string;
-
   @IsBoolean()
-  @IsOptional()
   isDraft?: boolean;
 
-  @IsString()
   @IsOptional()
+  @IsNumber()
+  @Type(() => Number)
+  price?: number;
+
+  @IsOptional()
+  @IsUrl()
+  pdfUrl?: string;
+
+  @IsOptional()
+  @IsArray()
+  @IsString({ each: true })
+  imagesUrls?: string[];
+
+  @IsOptional()
+  @IsUrl()
+  coverUrl?: string;
+
+  @IsOptional()
+  @IsString()
   freePageIndexes?: string;
+
+  @ValidateIf((o) => !o.pdfUrl && (!o.imagesUrls || o.imagesUrls.length === 0))
+  @IsOptional()
+  validation?: never;
+}
+
+// ============================================
+// 4. DTO pour la mise à jour
+// ============================================
+export class UpdateChapterDto {
+  @IsOptional()
+  @IsString()
+  title?: string;
+
+  @IsOptional()
+  @IsBoolean()
+  isFree?: boolean;
+
+  @IsOptional()
+  @IsBoolean()
+  isDraft?: boolean;
+
+  @IsOptional()
+  @IsNumber()
+  @Type(() => Number)
+  price?: number;
 }
