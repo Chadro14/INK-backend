@@ -36,7 +36,7 @@ export class ChaptersService {
     );
   }
 
-  // 1. NOUVEAU : Génération des URLs d'upload d'après le mode (PDF ou PHOTOS)
+  // 1. Génération des URLs d'upload d'après le mode (PDF ou PHOTOS)
   async getChapterUploadUrls(mangaId: string, dto: ChapterUploadUrlsDto) {
     const manga = await this.prisma.manga.findUnique({ where: { id: mangaId } });
     if (!manga) throw new NotFoundException('Manga introuvable.');
@@ -76,7 +76,7 @@ export class ChaptersService {
     };
   }
 
-  // 2. NOUVEAU : Finalisation de la création du chapitre avec validation des règles de prix
+  // 2. Finalisation de la création du chapitre avec validation des règles de prix
   async finalizeChapter(mangaId: string, userId: string, dto: FinalizeChapterDto) {
     const manga = await this.prisma.manga.findUnique({ where: { id: mangaId } });
     if (!manga) throw new NotFoundException('Manga introuvable.');
@@ -170,7 +170,7 @@ export class ChaptersService {
     });
   }
 
-  // Ancien endpoint d'upload signé conservé pour compatibilité
+  // Support compatibilité upload signé direct
   async generateSignedUploadUrls(mangaId: string, filenames: string[]) {
     const results = await Promise.all(
       filenames.map(async (filename) => {
@@ -202,7 +202,7 @@ export class ChaptersService {
     return results;
   }
 
-  // Ancienne méthode create conservée
+  // Ancienne méthode de création
   async create(mangaId: string, userId: string, dto: CreateChapterDto) {
     if (!dto.pdfUrl && (!dto.imagesUrls || dto.imagesUrls.length === 0)) {
       throw new BadRequestException('Fournissez un fichier PDF ou au moins une image.');
