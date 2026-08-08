@@ -36,17 +36,29 @@ export class ChaptersService {
     );
   }
 
-  // 1. Génération des URLs d'upload d'après le mode (PDF ou PHOTOS)
+  // ============================================
+  // 1. GÉNÉRATION DES URLS D'UPLOAD (HYBRIDE / FLEXIBLE)
+  // ============================================
   async getChapterUploadUrls(mangaId: string, dto: ChapterUploadUrlsDto) {
     const manga = await this.prisma.manga.findUnique({ where: { id: mangaId } });
     if (!manga) throw new NotFoundException('Manga introuvable.');
 
+    // CAS A : Le Frontend envoie un tableau de `filenames`
+    if (dto.filenames && dto.filenames.length > 0) {
+      return this.generateSignedUploadUrls(mangaId, dto.filenames);
+    }
+
+    // CAS B : Le Frontend envoie `mode`, `count`, `chapterNumber`
+    const mode = dto.mode || ChapterMode.PHOTOS;
+    const count = dto.count || 1;
+    const chapterNum = dto.chapterNumber || 1;
+
     const files = [];
     const pad = (n: number) => String(n).padStart(3, '0');
 
-    for (let i = 0; i < dto.count; i++) {
-      const ext = dto.mode === ChapterMode.PDF ? 'pdf' : 'jpg';
-      const key = `mangas/${mangaId}/chapters/ch-${dto.chapterNumber}/page-${pad(i + 1)}-${Date.now()}.${ext}`;
+    for (let i = 0; i < count; i++) {
+      const ext = mode === ChapterMode.PDF ? 'pdf' : 'jpg';
+      const key = `mangas/${mangaId}/chapters/ch-${chapterNum}/page-${pad(i + 1)}-${Date.now()}.${ext}`;
 
       const { data, error } = await this.supabase.storage
         .from('chapters')
@@ -71,12 +83,14 @@ export class ChaptersService {
     }
 
     return {
-      mode: dto.mode,
+      mode,
       files,
     };
   }
 
-  // 2. Finalisation de la création du chapitre avec validation des règles de prix
+  // ============================================
+  // 2. FINALISATION DU CHAPITRE
+  // ============================================
   async finalizeChapter(mangaId: string, userId: string, dto: FinalizeChapterDto) {
     const manga = await this.prisma.manga.findUnique({ where: { id: mangaId } });
     if (!manga) throw new NotFoundException('Manga introuvable.');
@@ -100,7 +114,6 @@ export class ChaptersService {
       throw new BadRequestException(`Le chapitre N°${chapterNumber} existe déjà.`);
     }
 
-    // Décodage des index des pages gratuites
     let freeIndexes: number[] = [];
     if (dto.freePageIndexes) {
       try {
@@ -113,19 +126,17 @@ export class ChaptersService {
     let calculatedPrice = dto.price ?? 0;
     const isPdfMode = dto.mode === ChapterMode.PDF;
 
-    // RÈGLES DE PRIX (Mode Photos)
+    // Règles de tarification pour le mode photos
     if (!isPdfMode) {
       const totalPages = dto.keys.length;
       const paidPagesCount = totalPages - freeIndexes.length;
 
-      // Règle : Max 2 pages payantes en mode Photos
       if (paidPagesCount > 2) {
         throw new BadRequestException(
           `Un chapitre en mode photos ne peut contenir que 2 pages payantes maximum. (Actuellement: ${paidPagesCount})`,
         );
       }
 
-      // Règle : 0.55$ par page payante
       calculatedPrice = paidPagesCount > 0 ? paidPagesCount * 0.55 : 0;
     }
 
@@ -147,7 +158,6 @@ export class ChaptersService {
       });
     }
 
-    // Mode IMAGES / PHOTOS
     const pages: ChapterPage[] = dto.keys.map((key, i) => ({
       key,
       order: i + 1,
@@ -170,7 +180,7 @@ export class ChaptersService {
     });
   }
 
-  // Support compatibilité upload signé direct
+  // Helper pour la génération par tableau de filenames
   async generateSignedUploadUrls(mangaId: string, filenames: string[]) {
     const results = await Promise.all(
       filenames.map(async (filename) => {
@@ -202,7 +212,9 @@ export class ChaptersService {
     return results;
   }
 
-  // Ancienne méthode de création
+  // ============================================
+  // 3. ANCIENNE MÉTHODE DE CRÉATION CLASSIQUE
+  // ============================================
   async create(mangaId: string, userId: string, dto: CreateChapterDto) {
     if (!dto.pdfUrl && (!dto.imagesUrls || dto.imagesUrls.length === 0)) {
       throw new BadRequestException('Fournissez un fichier PDF ou au moins une image.');
@@ -276,6 +288,9 @@ export class ChaptersService {
     });
   }
 
+  // ============================================
+  // 4. MISE À JOUR ET LECTURE
+  // ============================================
   async update(chapterId: string, dto: UpdateChapterDto) {
     const chapter = await this.prisma.chapter.findUnique({
       where: { id: chapterId },
