@@ -268,7 +268,7 @@ export class ChaptersService {
           price: dto.isFree ? 0 : (dto.price || 0),
           coverUrl: dto.coverUrl || null,
           publishedAt: !isDraft ? new Date() : null,
-          pageCount: 1, // ✅ AJOUTÉ AUSSI ICI
+          pageCount: 1,
         },
       });
     }
