@@ -59,7 +59,7 @@ export class ChaptersController {
   }
 
   // ============================================
-  // 3. Création classique / directe d'un chapitre
+  // 3. Création classique / directe d'un chapitre (legacy)
   // ============================================
   @Post()
   @UseGuards(JwtAuthGuard)
