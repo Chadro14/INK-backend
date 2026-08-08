@@ -13,20 +13,27 @@ export enum ChapterMode {
   PDF = 'PDF',
 }
 
-// 1. DTO pour la demande d'URLs d'upload
+// DTO flexible : supporte à la fois { filenames } ET { mode, count, chapterNumber }
 export class ChapterUploadUrlsDto {
   @IsEnum(ChapterMode)
-  mode: ChapterMode;
+  @IsOptional()
+  mode?: ChapterMode;
 
   @IsNumber()
   @Min(1)
-  count: number;
+  @IsOptional()
+  count?: number;
 
   @IsNumber()
-  chapterNumber: number;
+  @IsOptional()
+  chapterNumber?: number;
+
+  @IsArray()
+  @IsString({ each: true })
+  @IsOptional()
+  filenames?: string[];
 }
 
-// 2. DTO pour la finalisation (Upload direct S3/Supabase)
 export class FinalizeChapterDto {
   @IsNumber()
   number: number;
@@ -55,7 +62,6 @@ export class FinalizeChapterDto {
   isDraft?: boolean;
 }
 
-// 3. DTO classique CreateChapterDto (supporte toutes les anciennes et nouvelles propriétés)
 export class CreateChapterDto {
   @IsNumber()
   number: number;
