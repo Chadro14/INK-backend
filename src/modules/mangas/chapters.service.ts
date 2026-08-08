@@ -37,13 +37,11 @@ export class ChaptersService {
   }
 
   // ============================================
-  // HELPER : Recherche souple par ID ou par SLUG
+  // HELPER : Recherche de manga par ID
   // ============================================
   private async findMangaByIdOrSlug(identifier: string) {
-    const manga = await this.prisma.manga.findFirst({
-      where: {
-        OR: [{ id: identifier }, { slug: identifier }],
-      },
+    const manga = await this.prisma.manga.findUnique({
+      where: { id: identifier },
     });
 
     if (!manga) {
@@ -57,7 +55,7 @@ export class ChaptersService {
   // 1. GÉNÉRATION DES URLS D'UPLOAD (HYBRIDE / FLEXIBLE)
   // ============================================
   async getChapterUploadUrls(mangaId: string, dto: ChapterUploadUrlsDto) {
-    // 🔍 Recherche par ID ou Slug
+    // 🔍 Recherche par ID
     const manga = await this.findMangaByIdOrSlug(mangaId);
     const realMangaId = manga.id;
 
