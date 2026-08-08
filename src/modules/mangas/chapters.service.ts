@@ -55,16 +55,13 @@ export class ChaptersService {
   // 1. GÉNÉRATION DES URLS D'UPLOAD (HYBRIDE / FLEXIBLE)
   // ============================================
   async getChapterUploadUrls(mangaId: string, dto: ChapterUploadUrlsDto) {
-    // 🔍 Recherche par ID
     const manga = await this.findMangaByIdOrSlug(mangaId);
     const realMangaId = manga.id;
 
-    // CAS A : Le Frontend envoie un tableau de `filenames`
     if (dto.filenames && dto.filenames.length > 0) {
       return this.generateSignedUploadUrls(realMangaId, dto.filenames);
     }
 
-    // CAS B : Le Frontend envoie `mode`, `count`, `chapterNumber`
     const mode = dto.mode || ChapterMode.PHOTOS;
     const count = dto.count || 1;
     const chapterNum = dto.chapterNumber || 1;
@@ -105,7 +102,7 @@ export class ChaptersService {
   }
 
   // ============================================
-  // 2. FINALISATION DU CHAPITRE
+  // 2. FINALISATION DU CHAPITRE (CORRIGÉ)
   // ============================================
   async finalizeChapter(mangaId: string, userId: string, dto: FinalizeChapterDto) {
     const manga = await this.findMangaByIdOrSlug(mangaId);
@@ -142,7 +139,6 @@ export class ChaptersService {
     let calculatedPrice = dto.price ?? 0;
     const isPdfMode = dto.mode === ChapterMode.PDF;
 
-    // Règles de tarification pour le mode photos
     if (!isPdfMode) {
       const totalPages = dto.keys.length;
       const paidPagesCount = totalPages - freeIndexes.length;
@@ -158,6 +154,7 @@ export class ChaptersService {
 
     const isDraft = dto.isDraft ?? false;
 
+    // ✅ CORRECTION : Ajout de pageCount pour les PDF
     if (isPdfMode) {
       return this.prisma.chapter.create({
         data: {
@@ -170,6 +167,7 @@ export class ChaptersService {
           price: calculatedPrice,
           isDraft,
           publishedAt: !isDraft ? new Date() : null,
+          pageCount: 1, // ✅ AJOUTÉ
         },
       });
     }
@@ -196,7 +194,9 @@ export class ChaptersService {
     });
   }
 
+  // ============================================
   // Helper pour la génération par tableau de filenames
+  // ============================================
   async generateSignedUploadUrls(mangaId: string, filenames: string[]) {
     const results = await Promise.all(
       filenames.map(async (filename) => {
@@ -268,6 +268,7 @@ export class ChaptersService {
           price: dto.isFree ? 0 : (dto.price || 0),
           coverUrl: dto.coverUrl || null,
           publishedAt: !isDraft ? new Date() : null,
+          pageCount: 1, // ✅ AJOUTÉ AUSSI ICI
         },
       });
     }
