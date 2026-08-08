@@ -18,7 +18,11 @@ import { ChaptersService } from './chapters.service';
 import { JwtAuthGuard } from '../../common/guards/jwt-auth.guard';
 import { CreateMangaDto } from './dto/create-manga.dto';
 import { UpdateMangaDto } from './dto/update-manga.dto';
-import { CreateChapterDto } from './dto/create-chapter.dto';
+import {
+  CreateChapterDto,
+  ChapterUploadUrlsDto,
+  FinalizeChapterDto,
+} from './dto/create-chapter.dto';
 import { PrismaService } from '../../prisma/prisma.service';
 
 @Controller('mangas')
@@ -101,28 +105,26 @@ export class MangasController {
     return this.mangasService.delete(id, req.user.id);
   }
 
+  // 1. Obtenir les URLs/Tokens de téléversement pour le chapitre (mode photos ou pdf)
   @Post(':id/chapters/upload-urls')
   @UseGuards(JwtAuthGuard)
   async getChapterUploadUrls(
     @Param('id') mangaId: string,
     @Req() req: any,
-    @Body() body: { filenames: string[]; fileNames?: string[] },
+    @Body() dto: ChapterUploadUrlsDto,
   ) {
-    const filenames = body.filenames || body.fileNames || [];
-    if (filenames.length === 0) {
-      throw new BadRequestException('Aucun nom de fichier fourni.');
-    }
-    return this.chaptersService.generateSignedUploadUrls(mangaId, filenames);
+    return this.chaptersService.getChapterUploadUrls(mangaId, dto);
   }
 
+  // 2. Finaliser la création du chapitre avec validation des règles de prix
   @Post(':id/chapters/finalize')
   @UseGuards(JwtAuthGuard)
   async finalizeChapter(
     @Param('id') mangaId: string,
     @Req() req: any,
-    @Body() dto: CreateChapterDto,
+    @Body() dto: FinalizeChapterDto,
   ) {
-    return this.chaptersService.create(mangaId, req.user.id, dto);
+    return this.chaptersService.finalizeChapter(mangaId, req.user.id, dto);
   }
 
   @Post(':id/chapters')
@@ -149,42 +151,6 @@ export class MangasController {
         price: (dto as any).price || 0,
       },
     });
-  }
-
-  @Post(':id/chapters/upload-url')
-  @UseGuards(JwtAuthGuard)
-  async getUploadUrls(
-    @Param('id') mangaId: string,
-    @Req() req: any,
-    @Body() body: { filenames: string[]; fileNames?: string[] },
-  ) {
-    const filenames = body.filenames || body.fileNames;
-
-    if (!filenames || !Array.isArray(filenames) || filenames.length === 0) {
-      throw new BadRequestException('Aucun nom de fichier fourni.');
-    }
-
-    const user = await this.prisma.user.findUnique({
-      where: { id: req.user.id },
-    });
-
-    if (!user) {
-      throw new NotFoundException('Utilisateur non trouvé');
-    }
-
-    const manga = await this.prisma.manga.findUnique({
-      where: { id: mangaId },
-    });
-
-    if (!manga) {
-      throw new NotFoundException('Manga non trouvé');
-    }
-
-    if (manga.authorId !== user.id && user.role !== 'ADMIN') {
-      throw new ForbiddenException("Vous n'êtes pas l'auteur de ce manga");
-    }
-
-    return this.mangasService.getUploadUrls(mangaId, filenames);
   }
 
   @Get(':id/chapters')
