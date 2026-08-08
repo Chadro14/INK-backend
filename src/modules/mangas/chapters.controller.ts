@@ -20,10 +20,14 @@ import {
 } from './dto/create-chapter.dto';
 import { UpdateChapterDto } from './dto/update-chapter.dto';
 import { JwtAuthGuard } from '../../common/guards/jwt-auth.guard';
+import { PrismaService } from '../../prisma/prisma.service';
 
 @Controller('mangas/:mangaId/chapters')
 export class ChaptersController {
-  constructor(private readonly chaptersService: ChaptersService) {}
+  constructor(
+    private readonly chaptersService: ChaptersService,
+    private readonly prisma: PrismaService,
+  ) {}
 
   // ============================================
   // 1. Demande d'URLs d'upload signées pour Supabase Storage
