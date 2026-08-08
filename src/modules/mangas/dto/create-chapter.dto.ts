@@ -1,37 +1,40 @@
 import {
   IsString,
-  IsInt,
-  IsOptional,
-  IsBoolean,
   IsNumber,
-  Min,
+  IsBoolean,
+  IsOptional,
   IsArray,
   IsEnum,
+  Min,
 } from 'class-validator';
-import { Type, Transform } from 'class-transformer';
 
 export enum ChapterMode {
-  PDF = 'pdf',
-  PHOTOS = 'photos',
+  PHOTOS = 'PHOTOS',
+  PDF = 'PDF',
 }
 
-// 1. DTO pour la demande d'URLs d'upload (/upload-urls)
+// 1. DTO pour la demande d'URLs d'upload
 export class ChapterUploadUrlsDto {
   @IsEnum(ChapterMode)
   mode: ChapterMode;
 
   @IsNumber()
   @Min(1)
-  @Type(() => Number)
   count: number;
 
   @IsNumber()
-  @Type(() => Number)
   chapterNumber: number;
 }
 
-// 2. DTO pour la finalisation du chapitre (/finalize)
+// 2. DTO pour la finalisation (Upload direct S3/Supabase)
 export class FinalizeChapterDto {
+  @IsNumber()
+  number: number;
+
+  @IsString()
+  @IsOptional()
+  title?: string;
+
   @IsEnum(ChapterMode)
   mode: ChapterMode;
 
@@ -39,33 +42,54 @@ export class FinalizeChapterDto {
   @IsString({ each: true })
   keys: string[];
 
-  @IsInt()
-  @Type(() => Number)
-  number: number;
-
   @IsOptional()
   @IsString()
-  title?: string;
+  freePageIndexes?: string;
 
   @IsOptional()
   @IsNumber()
-  @Min(0)
-  @Type(() => Number)
   price?: number;
 
   @IsOptional()
   @IsBoolean()
-  @Transform(({ value }) => {
-    if (value === 'true' || value === true) return true;
-    if (value === 'false' || value === false) return false;
-    return value;
-  })
   isDraft?: boolean;
-
-  @IsOptional()
-  @IsString()
-  freePageIndexes?: string;
 }
 
-// Conservé au cas où un autre endroit de ton code l'importe encore
-export class CreateChapterDto extends FinalizeChapterDto {}
+// 3. DTO classique CreateChapterDto (supporte toutes les anciennes et nouvelles propriétés)
+export class CreateChapterDto {
+  @IsNumber()
+  number: number;
+
+  @IsString()
+  @IsOptional()
+  title?: string;
+
+  @IsString()
+  @IsOptional()
+  pdfUrl?: string;
+
+  @IsArray()
+  @IsString({ each: true })
+  @IsOptional()
+  imagesUrls?: string[];
+
+  @IsBoolean()
+  @IsOptional()
+  isFree?: boolean;
+
+  @IsNumber()
+  @IsOptional()
+  price?: number;
+
+  @IsString()
+  @IsOptional()
+  coverUrl?: string;
+
+  @IsBoolean()
+  @IsOptional()
+  isDraft?: boolean;
+
+  @IsString()
+  @IsOptional()
+  freePageIndexes?: string;
+}
