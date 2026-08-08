@@ -11,7 +11,11 @@ import {
   ParseIntPipe,
 } from '@nestjs/common';
 import { ChaptersService } from './chapters.service';
-import { CreateChapterDto } from './dto/create-chapter.dto';
+import {
+  CreateChapterDto,
+  ChapterUploadUrlsDto,
+  FinalizeChapterDto,
+} from './dto/create-chapter.dto';
 import { UpdateChapterDto } from './dto/update-chapter.dto';
 
 // ✅ Chemin exact pointant vers src/common/guards/jwt-auth.guard.ts
@@ -26,22 +30,27 @@ export class ChaptersController {
   @UseGuards(JwtAuthGuard)
   async generateUploadUrls(
     @Param('mangaId') mangaId: string,
-    @Body('filenames') filenames: string[],
+    @Body() dto: ChapterUploadUrlsDto,
   ) {
-    return this.chaptersService.generateSignedUploadUrls(mangaId, filenames);
+    return this.chaptersService.getChapterUploadUrls(mangaId, dto);
   }
 
-  // 2. Finalisation / Création du chapitre dans la BDD
+  // 2. Finalisation du chapitre dans la BDD
   @Post('finalize')
   @UseGuards(JwtAuthGuard)
   async createFinalized(
     @Param('mangaId') mangaId: string,
     @Request() req: any,
-    @Body() createChapterDto: CreateChapterDto,
+    @Body() finalizeChapterDto: FinalizeChapterDto,
   ) {
-    return this.chaptersService.create(mangaId, req.user.id, createChapterDto);
+    return this.chaptersService.finalizeChapter(
+      mangaId,
+      req.user.id,
+      finalizeChapterDto,
+    );
   }
 
+  // 3. Création classique / directe d'un chapitre
   @Post()
   @UseGuards(JwtAuthGuard)
   async create(
@@ -52,13 +61,13 @@ export class ChaptersController {
     return this.chaptersService.create(mangaId, req.user.id, createChapterDto);
   }
 
-  // 3. Récupérer tous les chapitres d'un manga
+  // 4. Récupérer tous les chapitres d'un manga
   @Get()
   async findByManga(@Param('mangaId') mangaId: string) {
     return this.chaptersService.findByManga(mangaId);
   }
 
-  // 4. Récupérer un chapitre par son numéro
+  // 5. Récupérer un chapitre par son numéro
   @Get('number/:number')
   async findByNumber(
     @Param('mangaId') mangaId: string,
@@ -67,13 +76,13 @@ export class ChaptersController {
     return this.chaptersService.findByNumber(mangaId, number);
   }
 
-  // 5. Récupérer un chapitre par son ID
+  // 6. Récupérer un chapitre par son ID
   @Get(':chapterId')
   async findOne(@Param('chapterId') chapterId: string) {
     return this.chaptersService.findOne(chapterId);
   }
 
-  // 6. Mettre à jour un chapitre
+  // 7. Mettre à jour un chapitre
   @Patch(':chapterId')
   @UseGuards(JwtAuthGuard)
   async update(
@@ -83,7 +92,7 @@ export class ChaptersController {
     return this.chaptersService.update(chapterId, updateChapterDto);
   }
 
-  // 7. Supprimer un chapitre
+  // 8. Supprimer un chapitre
   @Delete(':chapterId')
   @UseGuards(JwtAuthGuard)
   async delete(@Param('chapterId') chapterId: string) {
