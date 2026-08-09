@@ -2,25 +2,10 @@ import { Injectable, BadRequestException } from '@nestjs/common';
 
 @Injectable()
 export class AiService {
-  private readonly geminiKey: string;
-  private readonly groqKeys: string[];
-  private currentGroqIndex: number = 0;
-
-  constructor() {
-    this.geminiKey = process.env.GEMINI_API_KEY || '';
-    
-    // ✅ Récupérer toutes les clés Groq
-    const keys = process.env.GROQ_API_KEYS || '';
-    this.groqKeys = keys.split(',').filter(k => k.trim());
-    
-    // Si une seule clé est définie, on la met dans le tableau
-    if (this.groqKeys.length === 0 && process.env.GROQ_API_KEY) {
-      this.groqKeys.push(process.env.GROQ_API_KEY);
-    }
-  }
+  private readonly apiUrl = 'https://gpt-3-5.apis-bj-devs.workers.dev/';
 
   // ============================================
-  // CHAT AVEC IA (Gemini + Groq en fallback)
+  // CHAT AVEC L'API SIMPLE
   // ============================================
   async chat(
     userId: string,
@@ -33,141 +18,58 @@ export class AiService {
       throw new BadRequestException('Message requis');
     }
 
-    const prompt = systemPrompt || this.getSystemPrompt(firstName);
-
-    let reply: string | null = null;
-
-    // 1. TENTATIVE GEMINI
-    if (this.geminiKey) {
-      try {
-        reply = await this.callGemini(prompt, message, history);
-        if (reply) {
-          console.log('✅ Réponse Gemini');
-          return { success: true, reply: this.cleanReply(reply) };
-        }
-      } catch (error) {
-        console.error('Gemini error:', error.message);
+    try {
+      // 1. Construire le prompt avec le contexte
+      let fullPrompt = systemPrompt || this.getSystemPrompt(firstName);
+      
+      // Ajouter l'historique récent
+      if (history && history.length > 0) {
+        const recentHistory = history.slice(-5);
+        const context = recentHistory
+          .map((m) => `${m.role === 'user' ? '👤' : '🤖'}: ${m.content}`)
+          .join('\n');
+        fullPrompt += `\n\n📚 Conversation récente :\n${context}`;
       }
-    }
+      
+      fullPrompt += `\n\n👤 ${firstName || 'Utilisateur'} : ${message}`;
 
-    // 2. TENTATIVE GROQ AVEC ROTATION DES CLÉS
-    if (this.groqKeys.length > 0) {
-      for (let i = 0; i < this.groqKeys.length; i++) {
-        const index = (this.currentGroqIndex + i) % this.groqKeys.length;
-        const key = this.groqKeys[index];
-        
-        try {
-          reply = await this.callGroq(key, prompt, message, history);
-          if (reply) {
-            console.log(`✅ Réponse Groq (clé ${index + 1}/${this.groqKeys.length})`);
-            this.currentGroqIndex = (index + 1) % this.groqKeys.length; // Rotation
-            return { success: true, reply: this.cleanReply(reply) };
-          }
-        } catch (error) {
-          console.error(`Groq error (clé ${index + 1}):`, error.message);
-        }
-      }
-    }
-
-    // 3. RÉPONSE PAR DÉFAUT
-    const defaultReply = `Bonjour ${firstName || 'cher utilisateur'} ! 😊\n\nJe suis XELIRA, ton assistante. Comment puis-je t'aider aujourd'hui ?\n\n— XELIRA ✦`;
-    return { success: true, reply: defaultReply };
-  }
-
-  // ============================================
-  // APPEL GEMINI
-  // ============================================
-  private async callGemini(
-    systemPrompt: string,
-    message: string,
-    history: any[],
-  ): Promise<string | null> {
-    if (!this.geminiKey) return null;
-
-    const url = `https://generativelanguage.googleapis.com/v1beta/models/gemini-2.0-flash:generateContent?key=${this.geminiKey}`;
-
-    const parts = [{ text: systemPrompt }];
-
-    if (history && history.length > 0) {
-      const recentHistory = history.slice(-10);
-      const context = recentHistory
-        .map((m) => `${m.role === 'user' ? '👤' : '🤖'}: ${m.content}`)
-        .join('\n');
-      parts.push({ text: `📚 Conversation :\n${context}` });
-    }
-
-    parts.push({ text: `Message : ${message}` });
-
-    const response = await fetch(url, {
-      method: 'POST',
-      headers: { 'Content-Type': 'application/json' },
-      body: JSON.stringify({
-        contents: [{ parts }],
-        generationConfig: {
-          temperature: 0.7,
-          maxOutputTokens: 1500,
+      // 2. Appel à l'API
+      const url = `${this.apiUrl}?prompt=${encodeURIComponent(fullPrompt)}`;
+      
+      const response = await fetch(url, {
+        method: 'GET',
+        headers: {
+          'Content-Type': 'application/json',
         },
-      }),
-    });
+      });
 
-    if (!response.ok) {
-      throw new Error(`Gemini API error: ${response.status}`);
+      if (!response.ok) {
+        throw new Error(`API error: ${response.status}`);
+      }
+
+      const data = await response.json();
+
+      if (data.status && data.reply) {
+        // Nettoyer la réponse
+        const cleanReply = data.reply
+          .replace(/\{[\s\S]*?\}/g, '')
+          .replace(/\[(Image|Photo|Foto)[^\]]*\]/gi, '')
+          .trim();
+          
+        return { success: true, reply: cleanReply };
+      } else {
+        throw new Error('Réponse invalide de l\'API');
+      }
+
+    } catch (error) {
+      console.error('Erreur API:', error.message);
+      
+      // Réponse par défaut
+      return {
+        success: true,
+        reply: `Bonjour ${firstName || 'cher utilisateur'} ! 😊\n\nJe suis XELIRA, ton assistante. Désolé, je rencontre un problème technique. Réessaie dans un instant !\n\n— XELIRA ✦`
+      };
     }
-
-    const data = await response.json();
-    return data.candidates?.[0]?.content?.parts?.[0]?.text || null;
-  }
-
-  // ============================================
-  // APPEL GROQ
-  // ============================================
-  private async callGroq(
-    apiKey: string,
-    systemPrompt: string,
-    message: string,
-    history: any[],
-  ): Promise<string | null> {
-    const url = 'https://api.groq.com/openai/v1/chat/completions';
-
-    const messages = [
-      { role: 'system', content: systemPrompt },
-      ...(history || []).slice(-10).map((m) => ({
-        role: m.role === 'user' ? 'user' : 'assistant',
-        content: m.content,
-      })),
-      { role: 'user', content: message },
-    ];
-
-    const response = await fetch(url, {
-      method: 'POST',
-      headers: {
-        Authorization: `Bearer ${apiKey}`,
-        'Content-Type': 'application/json',
-      },
-      body: JSON.stringify({
-        model: 'llama-3.3-70b-versatile',
-        messages,
-        temperature: 0.7,
-        max_tokens: 1000,
-      }),
-    });
-
-    if (!response.ok) {
-      throw new Error(`Groq API error: ${response.status}`);
-    }
-
-    const data = await response.json();
-    return data.choices?.[0]?.message?.content || null;
-  }
-
-  // ============================================
-  // NETTOYAGE DES RÉPONSES
-  // ============================================
-  private cleanReply(reply: string): string {
-    return reply
-      .replace(/\{[\s\S]*?\}/g, '')
-      .replace(/\[(Image|Photo|Foto)[^\]]*\]/gi, '')
-      .trim();
   }
 
   // ============================================
