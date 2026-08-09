@@ -1,6 +1,6 @@
 import { Injectable, BadRequestException } from '@nestjs/common';
 import axios from 'axios';
-import * as WebSocket from 'ws';
+import WebSocket from 'ws'; // ✅ IMPORT CORRIGÉ
 
 @Injectable()
 export class AiService {
@@ -21,13 +21,11 @@ export class AiService {
     }
 
     try {
-      // 1. Initialiser la conversation
       const headers = {
         'origin': 'https://copilot.microsoft.com',
         'user-agent': 'Mozilla/5.0 (Linux; Android 15; SM-F958 Build/AP3A.240905.015) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/130.0.6723.86 Mobile Safari/537.36',
       };
 
-      // 2. Créer une conversation
       const { data } = await axios.post(
         `${this.copilotUrl}/c/api/conversations`,
         null,
@@ -36,7 +34,6 @@ export class AiService {
 
       const conversationId = data.id;
 
-      // 3. Modèles disponibles
       const models = {
         default: 'chat',
         'think-deeper': 'reasoning',
@@ -45,7 +42,6 @@ export class AiService {
 
       const mode = models[model] || 'chat';
 
-      // 4. Connexion WebSocket
       const response = await new Promise((resolve, reject) => {
         const ws = new WebSocket(
           `wss://copilot.microsoft.com/c/api/chat?api-version=2&features=-,ncedge,edgepagecontext&setflight=-,ncedge,edgepagecontext&ncedge=1`,
@@ -56,7 +52,6 @@ export class AiService {
         let citations = [];
 
         ws.on('open', () => {
-          // Configurer les options
           ws.send(JSON.stringify({
             event: 'setOptions',
             supportedFeatures: ['partial-generated-images'],
@@ -66,7 +61,6 @@ export class AiService {
             }
           }));
 
-          // Envoyer le message
           ws.send(JSON.stringify({
             event: 'send',
             mode: mode,
@@ -116,7 +110,6 @@ export class AiService {
           reject(new Error(err.message));
         });
 
-        // Timeout de sécurité
         setTimeout(() => {
           ws.close();
           resolve({
@@ -131,7 +124,6 @@ export class AiService {
     } catch (error) {
       console.error('Copilot error:', error.message);
 
-      // Fallback vers une réponse simple
       return {
         success: true,
         reply: `Bonjour ${firstName || 'cher utilisateur'} ! 😊\n\nJe suis XELIRA, ton assistante. Désolé, je rencontre un problème technique. Réessaie dans un instant !\n\n— XELIRA ✦`,
