@@ -3,11 +3,20 @@ import { Injectable, BadRequestException } from '@nestjs/common';
 @Injectable()
 export class AiService {
   private readonly geminiKey: string;
-  private readonly groqKey: string;
+  private readonly groqKeys: string[];
+  private currentGroqIndex: number = 0;
 
   constructor() {
     this.geminiKey = process.env.GEMINI_API_KEY || '';
-    this.groqKey = process.env.GROQ_API_KEY || '';
+    
+    // ✅ Récupérer toutes les clés Groq
+    const keys = process.env.GROQ_API_KEYS || '';
+    this.groqKeys = keys.split(',').filter(k => k.trim());
+    
+    // Si une seule clé est définie, on la met dans le tableau
+    if (this.groqKeys.length === 0 && process.env.GROQ_API_KEY) {
+      this.groqKeys.push(process.env.GROQ_API_KEY);
+    }
   }
 
   // ============================================
@@ -34,36 +43,35 @@ export class AiService {
         reply = await this.callGemini(prompt, message, history);
         if (reply) {
           console.log('✅ Réponse Gemini');
+          return { success: true, reply: this.cleanReply(reply) };
         }
       } catch (error) {
         console.error('Gemini error:', error.message);
       }
     }
 
-    // 2. FALLBACK GROQ
-    if (!reply && this.groqKey) {
-      try {
-        reply = await this.callGroq(prompt, message, history);
-        if (reply) {
-          console.log('✅ Réponse Groq');
+    // 2. TENTATIVE GROQ AVEC ROTATION DES CLÉS
+    if (this.groqKeys.length > 0) {
+      for (let i = 0; i < this.groqKeys.length; i++) {
+        const index = (this.currentGroqIndex + i) % this.groqKeys.length;
+        const key = this.groqKeys[index];
+        
+        try {
+          reply = await this.callGroq(key, prompt, message, history);
+          if (reply) {
+            console.log(`✅ Réponse Groq (clé ${index + 1}/${this.groqKeys.length})`);
+            this.currentGroqIndex = (index + 1) % this.groqKeys.length; // Rotation
+            return { success: true, reply: this.cleanReply(reply) };
+          }
+        } catch (error) {
+          console.error(`Groq error (clé ${index + 1}):`, error.message);
         }
-      } catch (error) {
-        console.error('Groq error:', error.message);
       }
     }
 
     // 3. RÉPONSE PAR DÉFAUT
-    if (!reply) {
-      reply = `Bonjour ${firstName || 'cher utilisateur'} ! 😊\n\nJe suis XELIRA, ton assistante. Comment puis-je t'aider aujourd'hui ?\n\n— XELIRA ✦`;
-    }
-
-    // Nettoyer la réponse
-    const cleanReply = reply
-      .replace(/\{[\s\S]*?\}/g, '')
-      .replace(/\[(Image|Photo|Foto)[^\]]*\]/gi, '')
-      .trim();
-
-    return { success: true, reply: cleanReply };
+    const defaultReply = `Bonjour ${firstName || 'cher utilisateur'} ! 😊\n\nJe suis XELIRA, ton assistante. Comment puis-je t'aider aujourd'hui ?\n\n— XELIRA ✦`;
+    return { success: true, reply: defaultReply };
   }
 
   // ============================================
@@ -111,15 +119,14 @@ export class AiService {
   }
 
   // ============================================
-  // APPEL GROQ (fallback)
+  // APPEL GROQ
   // ============================================
   private async callGroq(
+    apiKey: string,
     systemPrompt: string,
     message: string,
     history: any[],
   ): Promise<string | null> {
-    if (!this.groqKey) return null;
-
     const url = 'https://api.groq.com/openai/v1/chat/completions';
 
     const messages = [
@@ -134,7 +141,7 @@ export class AiService {
     const response = await fetch(url, {
       method: 'POST',
       headers: {
-        Authorization: `Bearer ${this.groqKey}`,
+        Authorization: `Bearer ${apiKey}`,
         'Content-Type': 'application/json',
       },
       body: JSON.stringify({
@@ -151,6 +158,16 @@ export class AiService {
 
     const data = await response.json();
     return data.choices?.[0]?.message?.content || null;
+  }
+
+  // ============================================
+  // NETTOYAGE DES RÉPONSES
+  // ============================================
+  private cleanReply(reply: string): string {
+    return reply
+      .replace(/\{[\s\S]*?\}/g, '')
+      .replace(/\[(Image|Photo|Foto)[^\]]*\]/gi, '')
+      .trim();
   }
 
   // ============================================
