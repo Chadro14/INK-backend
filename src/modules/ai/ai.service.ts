@@ -1,121 +1,141 @@
 import { Injectable, BadRequestException } from '@nestjs/common';
+import axios from 'axios';
+import * as WebSocket from 'ws';
 
 @Injectable()
 export class AiService {
-  private readonly apiKeys: string[] = [
-    'AQ.Ab8RN6LjsLBz-7SPBsOVg-9BNw-LtmLoNqAVgNQYfKsVxLTpdw',
-    'AQ.Ab8RN6JfVpOnX77i8dXc7E3tBNMcY6IYSVsKsgl_CCLj3Pob-g',
-    'AQ.Ab8RN6KPPnWmRvH3RfzOr6b6D7b-9AQeWY7Xc7uB-M0uEha8Iw',
-  ];
-  private currentKeyIndex = 0;
-
-  private readonly apiUrl = 'https://gemini-1-5-flash.bjcoderx.workers.dev/';
+  private readonly copilotUrl = 'https://copilot.microsoft.com';
 
   // ============================================
-  // CHAT AVEC ROTATION DES CLÉS
+  // CHAT AVEC COPILOT (Microsoft)
   // ============================================
   async chat(
     userId: string,
     message: string,
     history: any[] = [],
     firstName: string = '',
-    systemPrompt?: string,
+    model: string = 'default',
   ) {
     if (!message) {
       throw new BadRequestException('Message requis');
     }
 
-    // Construire le prompt complet
-    const prompt = this.buildPrompt(message, history, firstName, systemPrompt);
+    try {
+      // 1. Initialiser la conversation
+      const headers = {
+        'origin': 'https://copilot.microsoft.com',
+        'user-agent': 'Mozilla/5.0 (Linux; Android 15; SM-F958 Build/AP3A.240905.015) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/130.0.6723.86 Mobile Safari/537.36',
+      };
 
-    // Essayer chaque clé jusqu'à obtenir une réponse
-    for (let attempt = 0; attempt < this.apiKeys.length; attempt++) {
-      const key = this.apiKeys[this.currentKeyIndex];
-      this.currentKeyIndex = (this.currentKeyIndex + 1) % this.apiKeys.length;
+      // 2. Créer une conversation
+      const { data } = await axios.post(
+        `${this.copilotUrl}/c/api/conversations`,
+        null,
+        { headers }
+      );
 
-      try {
-        const url = `${this.apiUrl}?text=${encodeURIComponent(prompt)}&key=${key}`;
-        
-        const response = await fetch(url, {
-          method: 'GET',
-          headers: { 'Content-Type': 'application/json' },
+      const conversationId = data.id;
+
+      // 3. Modèles disponibles
+      const models = {
+        default: 'chat',
+        'think-deeper': 'reasoning',
+        'gpt-5': 'smart',
+      };
+
+      const mode = models[model] || 'chat';
+
+      // 4. Connexion WebSocket
+      const response = await new Promise((resolve, reject) => {
+        const ws = new WebSocket(
+          `wss://copilot.microsoft.com/c/api/chat?api-version=2&features=-,ncedge,edgepagecontext&setflight=-,ncedge,edgepagecontext&ncedge=1`,
+          { headers }
+        );
+
+        let reply = '';
+        let citations = [];
+
+        ws.on('open', () => {
+          // Configurer les options
+          ws.send(JSON.stringify({
+            event: 'setOptions',
+            supportedFeatures: ['partial-generated-images'],
+            supportedCards: ['weather', 'local', 'image', 'sports', 'video', 'ads'],
+            ads: {
+              supportedTypes: ['text', 'product', 'multimedia']
+            }
+          }));
+
+          // Envoyer le message
+          ws.send(JSON.stringify({
+            event: 'send',
+            mode: mode,
+            conversationId,
+            content: [{ type: 'text', text: message }],
+            context: {},
+          }));
         });
 
-        if (!response.ok) {
-          console.log(`❌ Clé ${attempt + 1} échouée (${response.status})`);
-          continue;
-        }
+        ws.on('message', (chunk) => {
+          try {
+            const parsed = JSON.parse(chunk.toString());
 
-        const data = await response.json();
-        
-        // Extraction de la réponse (différents formats possibles)
-        const reply = data.reply || data.response || data.text || data.result;
-        
-        if (reply) {
-          console.log(`✅ Réponse avec clé ${attempt + 1}`);
-          return { success: true, reply: this.cleanReply(reply) };
-        }
-      } catch (error) {
-        console.error(`❌ Erreur clé ${attempt + 1}:`, error.message);
-      }
+            switch (parsed.event) {
+              case 'appendText':
+                reply += parsed.text || '';
+                break;
+
+              case 'citation':
+                citations.push({
+                  title: parsed.title,
+                  icon: parsed.iconUrl,
+                  url: parsed.url,
+                });
+                break;
+
+              case 'done':
+                resolve({
+                  success: true,
+                  reply: reply.trim() || 'Désolé, je n\'ai pas pu répondre.',
+                  citations,
+                });
+                ws.close();
+                break;
+
+              case 'error':
+                reject(new Error(parsed.message));
+                ws.close();
+                break;
+            }
+          } catch (err) {
+            // Ignorer les erreurs de parsing
+          }
+        });
+
+        ws.on('error', (err) => {
+          reject(new Error(err.message));
+        });
+
+        // Timeout de sécurité
+        setTimeout(() => {
+          ws.close();
+          resolve({
+            success: true,
+            reply: reply.trim() || '⚠️ La réponse a pris trop de temps. Réessaie !',
+          });
+        }, 30000);
+      });
+
+      return response;
+
+    } catch (error) {
+      console.error('Copilot error:', error.message);
+
+      // Fallback vers une réponse simple
+      return {
+        success: true,
+        reply: `Bonjour ${firstName || 'cher utilisateur'} ! 😊\n\nJe suis XELIRA, ton assistante. Désolé, je rencontre un problème technique. Réessaie dans un instant !\n\n— XELIRA ✦`,
+      };
     }
-
-    // Réponse par défaut si tout échoue
-    return {
-      success: true,
-      reply: `Bonjour ${firstName || 'cher utilisateur'} ! 😊\n\nJe suis XELIRA, ton assistante. Désolé, je rencontre un problème technique. Réessaie dans un instant !\n\n— XELIRA ✦`
-    };
-  }
-
-  // ============================================
-  // CONSTRUCTION DU PROMPT
-  // ============================================
-  private buildPrompt(
-    message: string,
-    history: any[],
-    firstName: string,
-    systemPrompt?: string,
-  ): string {
-    let prompt = systemPrompt || this.getSystemPrompt(firstName);
-
-    if (history && history.length > 0) {
-      const recentHistory = history.slice(-5);
-      const context = recentHistory
-        .map((m) => `${m.role === 'user' ? '👤' : '🤖'}: ${m.content}`)
-        .join('\n');
-      prompt += `\n\n📚 Conversation récente :\n${context}`;
-    }
-
-    prompt += `\n\n👤 ${firstName || 'Utilisateur'} : ${message}`;
-    return prompt;
-  }
-
-  // ============================================
-  // NETTOYAGE DES RÉPONSES
-  // ============================================
-  private cleanReply(reply: string): string {
-    return reply
-      .replace(/\{[\s\S]*?\}/g, '')
-      .replace(/\[(Image|Photo|Foto)[^\]]*\]/gi, '')
-      .trim();
-  }
-
-  // ============================================
-  // PROMPT SYSTÈME
-  // ============================================
-  private getSystemPrompt(firstName: string): string {
-    const name = firstName || 'Cher utilisateur';
-
-    return `Tu es XELIRA, l'assistante IA de INKDROP.
-
-L'utilisateur s'appelle "${name}". Utilise son prénom régulièrement.
-
-RÈGLES :
-- Sois chaleureux, amical et utile 😊
-- Utilise 1 à 3 émojis par message
-- Réponds TOUJOURS en français
-- Pour le code : donne du code commenté en français
-- Pour les explications : sois simple et clair
-- Termine chaque réponse par "— XELIRA ✦"`;
   }
 }
