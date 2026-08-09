@@ -16,6 +16,7 @@ import { EventsModule } from './modules/events/events.module';
 import { AdminModule } from './modules/admin/admin.module';
 import { PrismaModule } from './prisma/prisma.module';
 import { BootstrapModule } from './modules/admin/bootstrap.module';
+import { AiModule } from './modules/ai/ai.module'; // ✅ AJOUT
 
 @Module({
   imports: [
@@ -39,6 +40,7 @@ import { BootstrapModule } from './modules/admin/bootstrap.module';
     EventsModule,
     AdminModule,
     BootstrapModule,
+    AiModule, // ✅ AJOUT
   ],
 })
 export class AppModule {}
