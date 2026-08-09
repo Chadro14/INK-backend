@@ -10,14 +10,14 @@ export class AiController {
   @UseGuards(JwtAuthGuard)
   async chat(
     @Request() req: any,
-    @Body() body: { message: string; history?: any[]; firstName?: string }
+    @Body() body: { message: string; history?: any[]; firstName?: string; model?: string }
   ) {
-    const { message, history = [], firstName = '' } = body;
+    const { message, history = [], firstName = '', model = 'default' } = body;
 
     if (!message) {
       return { error: 'Message requis' };
     }
 
-    return this.aiService.chat(req.user.id, message, history, firstName);
+    return this.aiService.chat(req.user.id, message, history, firstName, model);
   }
 }
