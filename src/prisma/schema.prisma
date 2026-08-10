@@ -91,6 +91,7 @@ model Manga {
   status           Status   @default(ONGOING)
   genre            String[] @default([])
   tags             String[] @default([])
+  aiTags           String[] @default([]) // ✅ TAGS GÉNÉRÉS PAR XELIRA
   viewsCount       Int      @default(0)
   likesCount       Int      @default(0)
   subscribersCount Int      @default(0)
@@ -117,7 +118,7 @@ enum Status {
 }
 
 // ============================================
-// CHAPITRES (AVEC SUMMARY)
+// CHAPITRES
 // ============================================
 model Chapter {
   id          String             @id @default(uuid())
@@ -135,7 +136,7 @@ model Chapter {
   price       Float?
   viewsCount  Int                @default(0)
   coverUrl    String?
-  summary     String?            @db.Text // ✅ RÉSUMÉ DU CHAPITRE
+  summary     String?            @db.Text // ✅ RÉSUMÉ GÉNÉRÉ PAR XELIRA
   publishedAt DateTime?
   createdAt   DateTime           @default(now())
   updatedAt   DateTime           @updatedAt
