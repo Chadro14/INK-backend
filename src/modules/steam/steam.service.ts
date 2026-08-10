@@ -24,24 +24,19 @@ export class SteamService {
 
   async addPoints(userId: string, action: string, value: number = 1) {
     const points = (ACTION_POINTS[action] || 0) * value;
-
     if (points === 0) return;
 
     const user = await this.prisma.user.update({
       where: { id: userId },
-      data: {
-        steamPoints: { increment: points },
-      },
+      data: { steamPoints: { increment: points } },
     });
 
     const newLevel = this.getLevel(user.steamPoints);
-
     if (user.steamLevel !== newLevel) {
       await this.prisma.user.update({
         where: { id: userId },
         data: { steamLevel: newLevel },
       });
-
       await this.prisma.notification.create({
         data: {
           userId,
@@ -58,9 +53,7 @@ export class SteamService {
   getLevel(points: number): number {
     let level = 1;
     for (const lvl of STEAM_LEVELS) {
-      if (points >= lvl.minPoints) {
-        level = lvl.level;
-      }
+      if (points >= lvl.minPoints) level = lvl.level;
     }
     return level;
   }
@@ -73,15 +66,10 @@ export class SteamService {
   async getUserSteam(userId: string) {
     const user = await this.prisma.user.findUnique({
       where: { id: userId },
-      select: {
-        steamPoints: true,
-        steamLevel: true,
-      },
+      select: { steamPoints: true, steamLevel: true },
     });
 
-    if (!user) {
-      throw new Error('Utilisateur non trouvé');
-    }
+    if (!user) throw new Error('Utilisateur non trouvé');
 
     const currentLevel = user.steamLevel || 1;
     const nextLevel = STEAM_LEVELS.find((l) => l.level > currentLevel);
