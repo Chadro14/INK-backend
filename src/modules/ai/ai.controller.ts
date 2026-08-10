@@ -1,25 +1,13 @@
 import { Controller, Post, Body, UseGuards, Request, Get, Param } from '@nestjs/common';
 import { AiService } from './ai.service';
-import { SummaryService } from './summary.service';
-import { TagService } from './tag.service';
-import { AssistantService } from './assistant.service';
-import { SearchService } from './search.service';
-import { CoachService } from './coach.service';
 import { JwtAuthGuard } from '../../common/guards/jwt-auth.guard';
 
 @Controller('ai')
 export class AiController {
-  constructor(
-    private readonly aiService: AiService,
-    private readonly summaryService: SummaryService,
-    private readonly tagService: TagService,
-    private readonly assistantService: AssistantService,
-    private readonly searchService: SearchService,
-    private readonly coachService: CoachService,
-  ) {}
+  constructor(private readonly aiService: AiService) {}
 
   // ============================================
-  // 1. CHAT AVEC XELIRA
+  // 1. CHAT PRINCIPAL AVEC DÉTECTION D'INTENTION
   // ============================================
   @Post('chat')
   @UseGuards(JwtAuthGuard)
@@ -67,7 +55,7 @@ export class AiController {
       contentInfo,
     );
 
-    await this.summaryService.saveSummary(chapterId, summary);
+    await this.aiService.saveSummary(chapterId, summary);
 
     return { success: true, summary };
   }
@@ -78,7 +66,7 @@ export class AiController {
   @Get('summary/:chapterId')
   @UseGuards(JwtAuthGuard)
   async getChapterSummary(@Param('chapterId') chapterId: string) {
-    const summary = await this.summaryService.getSummary(chapterId);
+    const summary = await this.aiService.getSummary(chapterId);
     return { summary };
   }
 
@@ -102,7 +90,7 @@ export class AiController {
       return { error: 'mangaId et title requis' };
     }
 
-    const tags = await this.tagService.generateTags(
+    const tags = await this.aiService.generateTags(
       req.user.id,
       mangaId,
       title,
@@ -119,7 +107,7 @@ export class AiController {
   @Get('tags/:mangaId')
   @UseGuards(JwtAuthGuard)
   async getMangaTags(@Param('mangaId') mangaId: string) {
-    const tags = await this.tagService.getTags(mangaId);
+    const tags = await this.aiService.getTags(mangaId);
     return { tags };
   }
 
@@ -142,7 +130,7 @@ export class AiController {
       return { error: 'Le contexte est requis' };
     }
 
-    const ideas = await this.assistantService.suggestIdeas(
+    const ideas = await this.aiService.suggestIdeas(
       req.user.id,
       context,
       characters,
@@ -171,7 +159,7 @@ export class AiController {
       return { error: 'character1, character2 et situation sont requis' };
     }
 
-    const dialogue = await this.assistantService.suggestDialogue(
+    const dialogue = await this.aiService.suggestDialogue(
       req.user.id,
       character1,
       character2,
@@ -200,7 +188,7 @@ export class AiController {
       return { error: 'sceneType et mood sont requis' };
     }
 
-    const description = await this.assistantService.describeScene(
+    const description = await this.aiService.describeScene(
       req.user.id,
       sceneType,
       mood,
@@ -228,7 +216,7 @@ export class AiController {
       return { error: 'text et style sont requis' };
     }
 
-    const rewritten = await this.assistantService.rewriteText(
+    const rewritten = await this.aiService.rewriteText(
       req.user.id,
       text,
       style,
@@ -255,7 +243,7 @@ export class AiController {
       return { error: 'La recherche doit contenir au moins 2 caractères' };
     }
 
-    const results = await this.searchService.intelligentSearch(
+    const results = await this.aiService.intelligentSearch(
       req.user.id,
       query,
       limit,
@@ -279,7 +267,7 @@ export class AiController {
       return { error: 'La recherche doit contenir au moins 2 caractères' };
     }
 
-    const tags = await this.searchService.suggestSearchTags(req.user.id, query);
+    const tags = await this.aiService.suggestSearchTags(req.user.id, query);
     return { success: true, tags };
   }
 
@@ -299,7 +287,7 @@ export class AiController {
     }
 
     try {
-      const analysis = await this.coachService.analyzeManga(req.user.id, mangaId);
+      const analysis = await this.aiService.analyzeManga(req.user.id, mangaId);
       return { success: true, analysis };
     } catch (error) {
       return { error: error.message };
@@ -325,7 +313,7 @@ export class AiController {
       return { error: 'title requis' };
     }
 
-    const improvements = await this.coachService.suggestImprovements(
+    const improvements = await this.aiService.suggestImprovements(
       req.user.id,
       title,
       description,
@@ -351,7 +339,7 @@ export class AiController {
     }
 
     try {
-      const advice = await this.coachService.growthAdvice(req.user.id, mangaId);
+      const advice = await this.aiService.growthAdvice(req.user.id, mangaId);
       return { success: true, advice };
     } catch (error) {
       return { error: error.message };
