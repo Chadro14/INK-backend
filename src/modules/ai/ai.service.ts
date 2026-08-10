@@ -1,4 +1,5 @@
 import { Injectable, BadRequestException } from '@nestjs/common';
+import { PrismaService } from '../../prisma/prisma.service';
 
 @Injectable()
 export class AiService {
@@ -13,6 +14,11 @@ export class AiService {
   private currentKeyIndex = 0;
   private readonly apiUrl = 'https://api.groq.com/openai/v1/chat/completions';
 
+  constructor(private prisma: PrismaService) {}
+
+  // ============================================
+  // CHAT AVEC GROQ (rotation des clés)
+  // ============================================
   async chat(
     userId: string,
     message: string,
@@ -23,6 +29,24 @@ export class AiService {
       throw new BadRequestException('Message requis');
     }
 
+    // ✅ Récupérer le nom depuis la BDD si non fourni
+    let userName = firstName;
+    if (!userName || userName === '') {
+      try {
+        const user = await this.prisma.user.findUnique({
+          where: { id: userId },
+          select: { username: true },
+        });
+        userName = user?.username || 'Utilisateur';
+      } catch (error) {
+        userName = 'Utilisateur';
+      }
+    }
+
+    // ✅ Nettoyer le nom (enlever @ si présent)
+    userName = userName.replace(/^@/, '');
+
+    // ✅ Vérifier les clés
     if (this.groqKeys.length === 0) {
       return {
         success: true,
@@ -30,7 +54,7 @@ export class AiService {
       };
     }
 
-    // ✅ NOUVEAU PROMPT SYSTÈME
+    // ✅ Construction du prompt système (sans répétition de "Bonjour")
     const systemPrompt = `Tu es XELIRA, le modérateur et guide officiel de INKDROP.
 
 🎯 TON RÔLE :
@@ -90,13 +114,11 @@ export class AiService {
 - Termine par "— XELIRA ✦"
 
 ⚠️ RÈGLES STRICTES :
-1. Si un utilisateur pose une question hors INKDROP, réponds :
+1. L'utilisateur s'appelle "${userName}". Utilise son nom UNIQUEMENT en début de première réponse de la conversation si nécessaire. Ensuite, arrête de répéter son nom à chaque message. Sois naturel et va droit au but.
+2. Si un utilisateur pose une question hors INKDROP, réponds :
    "Désolé, je suis uniquement dédié à INKDROP. Pose-moi une question sur la plateforme !"
-2. Si un utilisateur est perdu, guide-le vers les bonnes fonctionnalités
-3. Utilise TOUJOURS le prénom de l'utilisateur
-4. Sois UTILE avant d'être amical
-
-L'utilisateur s'appelle "${firstName || 'Cher utilisateur'}". Utilise son prénom.`;
+3. Sois UTILE avant d'être amical.
+4. N'utilise JAMAIS "Bonjour", "Salut" ou "Coucou" dans tes réponses sauf si l'utilisateur te le demande explicitement. Commence directement par le contenu utile.`;
 
     const messages = [
       { role: 'system', content: systemPrompt },
@@ -107,12 +129,14 @@ L'utilisateur s'appelle "${firstName || 'Cher utilisateur'}". Utilise son préno
       { role: 'user', content: message },
     ];
 
-    // Rotation des clés
+    // ✅ Rotation des clés
     for (let attempt = 0; attempt < this.groqKeys.length; attempt++) {
       const key = this.groqKeys[this.currentKeyIndex];
       this.currentKeyIndex = (this.currentKeyIndex + 1) % this.groqKeys.length;
 
       try {
+        console.log(`🔄 Tentative avec clé ${attempt + 1}/${this.groqKeys.length}`);
+
         const response = await fetch(this.apiUrl, {
           method: 'POST',
           headers: {
@@ -130,27 +154,32 @@ L'utilisateur s'appelle "${firstName || 'Cher utilisateur'}". Utilise son préno
         const data = await response.json();
 
         if (!response.ok) {
+          console.log(`❌ Clé ${attempt + 1} échouée:`, data.error?.message || response.status);
           continue;
         }
 
         const reply = data.choices?.[0]?.message?.content;
         
         if (reply) {
+          console.log(`✅ Réponse avec clé ${attempt + 1}`);
           return { success: true, reply: this.cleanReply(reply) };
         }
 
       } catch (error) {
-        continue;
+        console.error(`❌ Erreur clé ${attempt + 1}:`, error.message);
       }
     }
 
-    // Fallback
+    // ✅ Fallback
     return {
       success: true,
-      reply: `Bonjour ${firstName || 'cher utilisateur'} ! 😊\n\nJe suis XELIRA, le modérateur de INKDROP. Comment puis-je t'aider aujourd'hui ?\n\n— XELIRA ✦`,
+      reply: `Bonjour ${userName} ! 😊\n\nJe suis XELIRA, le modérateur de INKDROP. Comment puis-je t'aider aujourd'hui ?\n\n— XELIRA ✦`,
     };
   }
 
+  // ============================================
+  // NETTOYAGE DES RÉPONSES
+  // ============================================
   private cleanReply(reply: string): string {
     return reply
       .replace(/\{[\s\S]*?\}/g, '')
