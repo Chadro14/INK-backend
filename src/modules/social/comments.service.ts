@@ -55,6 +55,7 @@ export class CommentsService {
             avatarUrl: true,
             avatarColor: true,
             isCertified: true,
+            badgeColor: true, // ✅ AJOUT
           },
         },
       },
@@ -94,6 +95,7 @@ export class CommentsService {
               avatarUrl: true,
               avatarColor: true,
               isCertified: true,
+              badgeColor: true, // ✅ AJOUT
             },
           },
           _count: {
@@ -131,6 +133,7 @@ export class CommentsService {
             avatarUrl: true,
             avatarColor: true,
             isCertified: true,
+            badgeColor: true, // ✅ AJOUT
           },
         },
       },
@@ -182,6 +185,7 @@ export class CommentsService {
               avatarUrl: true,
               avatarColor: true,
               isCertified: true,
+              badgeColor: true, // ✅ AJOUT
             },
           },
         },
@@ -239,6 +243,7 @@ export class CommentsService {
             avatarUrl: true,
             avatarColor: true,
             isCertified: true,
+            badgeColor: true, // ✅ AJOUT
           },
         },
       },
