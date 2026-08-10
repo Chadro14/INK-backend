@@ -178,6 +178,35 @@ export class AiService {
   }
 
   // ============================================
+  // GÉNÉRER UN RÉSUMÉ DE CHAPITRE (pour l'IA)
+  // ============================================
+  async generateSummary(
+    userId: string,
+    chapterTitle: string,
+    mangaTitle: string,
+    chapterNumber: number,
+    contentInfo: string,
+  ): Promise<string> {
+    const prompt = `Résume ce chapitre de manga en 3-4 phrases courtes et accrocheuses.
+
+Titre du manga : ${mangaTitle}
+Numéro du chapitre : ${chapterNumber}
+Titre du chapitre : ${chapterTitle || 'Sans titre'}
+${contentInfo}
+
+Le résumé doit :
+- Être concis (50-80 mots maximum)
+- Donner envie de lire
+- Ne pas révéler la fin
+- Être en français
+
+Résumé :`;
+
+    const result = await this.chat(userId, prompt, [], 'Système');
+    return result.reply;
+  }
+
+  // ============================================
   // NETTOYAGE DES RÉPONSES
   // ============================================
   private cleanReply(reply: string): string {
