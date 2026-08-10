@@ -1,10 +1,10 @@
 import { Module } from '@nestjs/common';
-import { SteamService } from './steam.service';
-import { SteamController } from './steam.controller';
+import { InkstreamService } from './inkstream.service';
+import { InkstreamController } from './inkstream.controller';
 
 @Module({
-  controllers: [SteamController],
-  providers: [SteamService],
-  exports: [SteamService],
+  controllers: [InkstreamController],
+  providers: [InkstreamService],
+  exports: [InkstreamService],
 })
-export class SteamModule {}
+export class InkstreamModule {}
