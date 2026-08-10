@@ -1,6 +1,7 @@
 import { Controller, Post, Body, UseGuards, Request, Get, Param } from '@nestjs/common';
 import { AiService } from './ai.service';
 import { SummaryService } from './summary.service';
+import { TagService } from './tag.service';
 import { JwtAuthGuard } from '../../common/guards/jwt-auth.guard';
 
 @Controller('ai')
@@ -8,10 +9,11 @@ export class AiController {
   constructor(
     private readonly aiService: AiService,
     private readonly summaryService: SummaryService,
+    private readonly tagService: TagService,
   ) {}
 
   // ============================================
-  // CHAT AVEC XELIRA
+  // 1. CHAT AVEC XELIRA
   // ============================================
   @Post('chat')
   @UseGuards(JwtAuthGuard)
@@ -29,7 +31,7 @@ export class AiController {
   }
 
   // ============================================
-  // GÉNÉRER UN RÉSUMÉ DE CHAPITRE
+  // 2. GÉNÉRER UN RÉSUMÉ DE CHAPITRE
   // ============================================
   @Post('summarize-chapter')
   @UseGuards(JwtAuthGuard)
@@ -59,19 +61,60 @@ export class AiController {
       contentInfo,
     );
 
-    // Sauvegarder le résumé dans la BDD via SummaryService
+    // Sauvegarder le résumé dans la BDD
     await this.summaryService.saveSummary(chapterId, summary);
 
     return { success: true, summary };
   }
 
   // ============================================
-  // RÉCUPÉRER LE RÉSUMÉ D'UN CHAPITRE
+  // 3. RÉCUPÉRER LE RÉSUMÉ D'UN CHAPITRE
   // ============================================
   @Get('summary/:chapterId')
   @UseGuards(JwtAuthGuard)
   async getChapterSummary(@Param('chapterId') chapterId: string) {
     const summary = await this.summaryService.getSummary(chapterId);
     return { summary };
+  }
+
+  // ============================================
+  // 4. GÉNÉRER DES TAGS POUR UN MANGA
+  // ============================================
+  @Post('generate-tags')
+  @UseGuards(JwtAuthGuard)
+  async generateTags(
+    @Request() req: any,
+    @Body() body: {
+      mangaId: string;
+      title: string;
+      description?: string;
+      genres?: string[];
+    }
+  ) {
+    const { mangaId, title, description = '', genres = [] } = body;
+
+    if (!mangaId || !title) {
+      return { error: 'mangaId et title requis' };
+    }
+
+    const tags = await this.tagService.generateTags(
+      req.user.id,
+      mangaId,
+      title,
+      description,
+      genres,
+    );
+
+    return { success: true, tags };
+  }
+
+  // ============================================
+  // 5. RÉCUPÉRER LES TAGS D'UN MANGA
+  // ============================================
+  @Get('tags/:mangaId')
+  @UseGuards(JwtAuthGuard)
+  async getMangaTags(@Param('mangaId') mangaId: string) {
+    const tags = await this.tagService.getTags(mangaId);
+    return { tags };
   }
 }
