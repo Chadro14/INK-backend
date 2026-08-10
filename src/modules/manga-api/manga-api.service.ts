@@ -1,15 +1,13 @@
 import { Injectable, HttpException, HttpStatus } from '@nestjs/common';
-import { createClient, MangaProvider } from 'nyora-sdk';
+import { Manga } from '@consumet/extensions';
 
 @Injectable()
 export class MangaApiService {
-  private client: any;
+  private mangaProvider: any;
 
   constructor() {
-    // ✅ Initialiser le client avec la source MangaDex
-    this.client = createClient({
-      provider: MangaProvider.MANGADEX,
-    });
+    // ✅ Utiliser MangaDex via Consumet
+    this.mangaProvider = new Manga.MangaDex();
   }
 
   // ============================================
@@ -17,16 +15,13 @@ export class MangaApiService {
   // ============================================
   async getPopularManga(limit: number = 20) {
     try {
-      const result = await this.client.manga.fetchPopular({
-        limit: limit,
-        language: 'fr', // ✅ FORCER LE FRANÇAIS
-      });
+      const result = await this.mangaProvider.fetchPopularManga(limit);
 
-      return result.data.map((manga: any) => ({
+      return result.results.map((manga: any) => ({
         id: manga.id,
         title: manga.title || 'Titre inconnu',
         description: manga.description || 'Aucune description disponible.',
-        coverImage: manga.cover || manga.image || null,
+        coverImage: manga.image || manga.cover || null,
         author: manga.author ? {
           id: manga.author.id,
           name: manga.author.name || 'Inconnu',
@@ -37,7 +32,7 @@ export class MangaApiService {
         genres: manga.genres || [],
       }));
     } catch (error) {
-      console.error('Erreur nyora-sdk:', error.message);
+      console.error('Erreur Consumet:', error.message);
       throw new HttpException(
         'Erreur lors de la récupération des mangas populaires',
         HttpStatus.BAD_GATEWAY,
@@ -50,16 +45,13 @@ export class MangaApiService {
   // ============================================
   async searchManga(query: string, limit: number = 20) {
     try {
-      const result = await this.client.manga.search(query, {
-        limit: limit,
-        language: 'fr', // ✅ FORCER LE FRANÇAIS
-      });
+      const result = await this.mangaProvider.search(query, limit);
 
-      return result.data.map((manga: any) => ({
+      return result.results.map((manga: any) => ({
         id: manga.id,
         title: manga.title || 'Titre inconnu',
         description: manga.description || 'Aucune description disponible.',
-        coverImage: manga.cover || manga.image || null,
+        coverImage: manga.image || manga.cover || null,
         author: manga.author ? {
           id: manga.author.id,
           name: manga.author.name || 'Inconnu',
@@ -70,7 +62,7 @@ export class MangaApiService {
         genres: manga.genres || [],
       }));
     } catch (error) {
-      console.error('Erreur recherche nyora-sdk:', error.message);
+      console.error('Erreur recherche Consumet:', error.message);
       throw new HttpException(
         'Erreur lors de la recherche',
         HttpStatus.BAD_GATEWAY,
@@ -83,15 +75,13 @@ export class MangaApiService {
   // ============================================
   async getMangaDetails(mangaId: string) {
     try {
-      const manga = await this.client.manga.fetchInfo(mangaId, {
-        language: 'fr', // ✅ FORCER LE FRANÇAIS
-      });
+      const manga = await this.mangaProvider.fetchMangaInfo(mangaId);
 
       return {
         id: manga.id,
         title: manga.title || 'Titre inconnu',
         description: manga.description || 'Aucune description disponible.',
-        coverImage: manga.cover || manga.image || null,
+        coverImage: manga.image || manga.cover || null,
         author: manga.author ? {
           id: manga.author.id,
           name: manga.author.name || 'Inconnu',
@@ -104,7 +94,7 @@ export class MangaApiService {
         createdAt: manga.createdAt || null,
       };
     } catch (error) {
-      console.error('Erreur détails nyora-sdk:', error.message);
+      console.error('Erreur détails Consumet:', error.message);
       throw new HttpException(
         'Manga non trouvé',
         HttpStatus.NOT_FOUND,
@@ -117,12 +107,9 @@ export class MangaApiService {
   // ============================================
   async getMangaChapters(mangaId: string, limit: number = 100) {
     try {
-      const chapters = await this.client.manga.fetchChapters(mangaId, {
-        limit: limit,
-        language: 'fr', // ✅ FORCER LE FRANÇAIS
-      });
+      const chapters = await this.mangaProvider.fetchChapterList(mangaId);
 
-      return chapters.map((chapter: any) => ({
+      return chapters.slice(0, limit).map((chapter: any) => ({
         id: chapter.id,
         chapter: chapter.number || '0',
         title: chapter.title || `Chapitre ${chapter.number || '0'}`,
@@ -130,7 +117,7 @@ export class MangaApiService {
         publishedAt: chapter.publishedAt || new Date(),
       }));
     } catch (error) {
-      console.error('Erreur chapitres nyora-sdk:', error.message);
+      console.error('Erreur chapitres Consumet:', error.message);
       throw new HttpException(
         'Erreur lors de la récupération des chapitres',
         HttpStatus.BAD_GATEWAY,
@@ -143,15 +130,15 @@ export class MangaApiService {
   // ============================================
   async getChapterPages(chapterId: string) {
     try {
-      const pages = await this.client.manga.fetchPages(chapterId);
+      const pages = await this.mangaProvider.fetchChapterPages(chapterId);
 
       return {
         pages: pages.map((page: any) => ({
-          url: page.url || page.image || page.img,
+          url: page.img || page.image || page.url,
         })),
       };
     } catch (error) {
-      console.error('Erreur pages nyora-sdk:', error.message);
+      console.error('Erreur pages Consumet:', error.message);
       throw new HttpException(
         'Erreur lors de la récupération des pages',
         HttpStatus.BAD_GATEWAY,
