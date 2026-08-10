@@ -4,6 +4,7 @@ import {
   Put,
   Patch,
   Post,
+  Delete, // ✅ AJOUTER Delete
   Body,
   Param,
   UseGuards,
@@ -19,7 +20,7 @@ import { UsersService } from './users.service';
 import { JwtAuthGuard } from '../../common/guards/jwt-auth.guard';
 import { StorageService } from '../../common/services/storage.service';
 import { PrismaService } from '../../prisma/prisma.service';
-import * as sharp from 'sharp';
+import sharp from 'sharp'; // ✅ CORRECTION : import par défaut
 
 export class UpdateBadgeColorDto {
   @IsString({ message: 'La couleur du badge doit être une chaîne de caractères' })
@@ -174,7 +175,6 @@ export class UsersController {
     const user = await this.usersService.findById(userId);
     if (user && user.avatarUrl) {
       try {
-        // Extraire la clé de l'ancienne URL
         const oldKey = user.avatarUrl.split('/').pop();
         if (oldKey) {
           await this.storage.delete(`user/${userId}/${oldKey}`, 'chapters');
@@ -218,19 +218,16 @@ export class UsersController {
   async deleteAvatar(@Req() req: any) {
     const userId = req.user?.id || req.user?.sub;
 
-    // Récupérer l'utilisateur
     const user = await this.usersService.findById(userId);
     if (!user || !user.avatarUrl) {
       throw new BadRequestException('Aucun avatar à supprimer');
     }
 
-    // Extraire la clé de l'URL
     const oldKey = user.avatarUrl.split('/').pop();
     if (oldKey) {
       await this.storage.delete(`user/${userId}/${oldKey}`, 'chapters');
     }
 
-    // Supprimer l'URL de la BDD
     await this.usersService.updateAvatar(userId, null);
 
     return { message: 'Avatar supprimé avec succès' };
