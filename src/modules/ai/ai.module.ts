@@ -9,11 +9,11 @@ import { PrismaModule } from '../../prisma/prisma.module';
   controllers: [AiController],
   providers: [
     AiService,
-    SummaryService, // ✅ AJOUT
+    SummaryService,
   ],
   exports: [
     AiService,
-    SummaryService, // ✅ AJOUT
+    SummaryService,
   ],
 })
 export class AiModule {}
