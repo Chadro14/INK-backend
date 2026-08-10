@@ -28,7 +28,7 @@ export class AiService {
       throw new BadRequestException('Message requis');
     }
 
-    // 1. Récupérer le nom (priorité au firstName envoyé par le frontend)
+    // 1. Récupérer le nom
     let userName = firstName;
     if (!userName || userName === '' || userName === 'Utilisateur') {
       try {
@@ -120,7 +120,7 @@ export class AiService {
 5. Fonctionnalités : likes, commentaires, abonnements, profil, Découverte, InkStream
 
 ⚠️ RÈGLES STRICTES :
-1. L'utilisateur s'appelle "${userName}". Utilise son prénom à CHAQUE message, pas juste au début. Dis "Bonjour ${userName}", "Merci ${userName}", etc.
+1. L'utilisateur s'appelle "${userName}". Utilise son prénom à CHAQUE message.
 2. Si une question est hors INKDROP, réponds : "Désolé, je suis uniquement dédié à INKDROP."
 3. Sois UTILE avant d'être amical.
 4. Termine chaque réponse par "— XELIRA ✦"`;
@@ -134,105 +134,80 @@ export class AiService {
       { role: 'user', content: message },
     ];
 
-    return this.callGroq(messages);
+    return this.callGroq(messages, userName);
   }
 
   // ============================================
-  // 2. RÉSUMÉ DE CHAPITRE
+  // 2. RÉSUMÉ
   // ============================================
   private async handleSummarize(userName: string, topic: string): Promise<string> {
-    const prompt = `Tu es XELIRA, l'assistant de INKDROP.
+    const prompt = `L'utilisateur ${userName} a demandé un résumé pour : "${topic}".
 
-L'utilisateur ${userName} a demandé un résumé pour : "${topic}".
-
-Génère un résumé court et accrocheur (3-4 phrases) pour ce manga/chapitre.
-Le résumé doit donner envie de lire sans révéler la fin.
+Génère un résumé court (3-4 phrases), accrocheur, sans révéler la fin.
 Utilise le prénom ${userName} dans ta réponse.
 
 Résumé :`;
-
-    return this.callGroq([{ role: 'user', content: prompt }]);
+    return this.callGroq([{ role: 'user', content: prompt }], userName);
   }
 
   // ============================================
-  // 3. TAGS AUTOMATIQUES
+  // 3. TAGS
   // ============================================
   private async handleTags(userName: string, context: string): Promise<string> {
-    const prompt = `Tu es XELIRA, l'assistant de INKDROP.
+    const prompt = `L'utilisateur ${userName} a demandé des tags pour : "${context}".
 
-L'utilisateur ${userName} a demandé des tags pour : "${context}".
-
-Propose 5 tags courts (1-2 mots) et pertinents pour ce manga.
-Sépare les tags par des virgules.
+Propose 5 tags courts (1-2 mots), séparés par des virgules.
 Utilise le prénom ${userName} dans ta réponse.
 
 Tags :`;
-
-    const reply = await this.callGroq([{ role: 'user', content: prompt }]);
-
-    const tags = reply.split(',')
-      .map(tag => tag.trim())
-      .filter(tag => tag.length > 0)
-      .slice(0, 5);
-
-    return `🏷️ ${userName}, voici 5 tags pertinents pour ton manga :\n\n${tags.map((tag, i) => `• ${tag}`).join('\n')}\n\n— XELIRA ✦`;
+    const reply = await this.callGroq([{ role: 'user', content: prompt }], userName);
+    const tags = reply.split(',').map(t => t.trim()).filter(t => t.length > 0).slice(0, 5);
+    return `🏷️ ${userName}, voici 5 tags pertinents :\n\n${tags.map((t, i) => `• ${t}`).join('\n')}\n\n— XELIRA ✦`;
   }
 
   // ============================================
-  // 4. ASSISTANT ÉDITEUR
+  // 4. ASSISTANT
   // ============================================
   private async handleAssistant(userName: string, context: string): Promise<string> {
-    const prompt = `Tu es XELIRA, l'assistant d'écriture de INKDROP.
+    const prompt = `L'utilisateur ${userName} a demandé : "${context}".
 
-L'utilisateur ${userName} a demandé : "${context}".
-
-Donne 3 suggestions concrètes (idées, dialogues, améliorations) pour l'aider dans son écriture.
-Chaque suggestion doit être courte (1-2 phrases).
+Donne 3 suggestions concrètes (idées, dialogues, améliorations) courtes.
 Utilise le prénom ${userName} dans ta réponse.
 
 Suggestions :`;
-
-    return this.callGroq([{ role: 'user', content: prompt }]);
+    return this.callGroq([{ role: 'user', content: prompt }], userName);
   }
 
   // ============================================
-  // 5. COACH DE CRÉATION
+  // 5. COACH
   // ============================================
   private async handleCoach(userName: string, context: string): Promise<string> {
-    const prompt = `Tu es XELIRA, le coach de création de INKDROP.
+    const prompt = `L'utilisateur ${userName} a demandé : "${context}".
 
-L'utilisateur ${userName} a demandé : "${context}".
-
-Donne 3 conseils concrets pour améliorer son travail (titre, description, stratégie, engagement).
-Chaque conseil doit être précis et applicable.
+Donne 3 conseils concrets pour améliorer son travail.
 Utilise le prénom ${userName} dans ta réponse.
 
 Conseils :`;
-
-    return this.callGroq([{ role: 'user', content: prompt }]);
+    return this.callGroq([{ role: 'user', content: prompt }], userName);
   }
 
   // ============================================
-  // 6. RECHERCHE INTELLIGENTE
+  // 6. RECHERCHE
   // ============================================
   private async handleSearch(userName: string, query: string): Promise<string> {
-    const prompt = `Tu es XELIRA, le guide de INKDROP.
+    const prompt = `L'utilisateur ${userName} cherche : "${query}".
 
-L'utilisateur ${userName} cherche : "${query}".
-
-Propose 3 mangas (fictifs ou réels) qui correspondent à cette recherche.
-Pour chaque manga, donne un titre et une courte description (1-2 phrases).
+Propose 3 mangas correspondant à sa recherche, avec titre et description courte.
 Utilise le prénom ${userName} dans ta réponse.
 
 Résultats :`;
-
-    return this.callGroq([{ role: 'user', content: prompt }]);
+    return this.callGroq([{ role: 'user', content: prompt }], userName);
   }
 
   // ============================================
   // APPEL GROQ
   // ============================================
-  private async callGroq(messages: any[]): Promise<string> {
+  private async callGroq(messages: any[], userName: string = 'Utilisateur'): Promise<string> {
     for (let attempt = 0; attempt < this.groqKeys.length; attempt++) {
       const key = this.groqKeys[this.currentKeyIndex];
       this.currentKeyIndex = (this.currentKeyIndex + 1) % this.groqKeys.length;
@@ -267,7 +242,7 @@ Résultats :`;
       }
     }
 
-    return `Bonjour ${userName || 'cher utilisateur'} ! 😊\n\nJe suis XELIRA, le modérateur de INKDROP. Comment puis-je t'aider aujourd'hui ?\n\n— XELIRA ✦`;
+    return `Bonjour ${userName} ! 😊\n\nJe suis XELIRA, le modérateur de INKDROP. Comment puis-je t'aider aujourd'hui ?\n\n— XELIRA ✦`;
   }
 
   // ============================================
