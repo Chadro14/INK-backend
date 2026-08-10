@@ -2,6 +2,9 @@ import { Controller, Post, Body, UseGuards, Request, Get, Param } from '@nestjs/
 import { AiService } from './ai.service';
 import { SummaryService } from './summary.service';
 import { TagService } from './tag.service';
+import { AssistantService } from './assistant.service';
+import { SearchService } from './search.service';
+import { CoachService } from './coach.service';
 import { JwtAuthGuard } from '../../common/guards/jwt-auth.guard';
 
 @Controller('ai')
@@ -10,6 +13,9 @@ export class AiController {
     private readonly aiService: AiService,
     private readonly summaryService: SummaryService,
     private readonly tagService: TagService,
+    private readonly assistantService: AssistantService,
+    private readonly searchService: SearchService,
+    private readonly coachService: CoachService,
   ) {}
 
   // ============================================
@@ -61,7 +67,6 @@ export class AiController {
       contentInfo,
     );
 
-    // Sauvegarder le résumé dans la BDD
     await this.summaryService.saveSummary(chapterId, summary);
 
     return { success: true, summary };
@@ -116,5 +121,240 @@ export class AiController {
   async getMangaTags(@Param('mangaId') mangaId: string) {
     const tags = await this.tagService.getTags(mangaId);
     return { tags };
+  }
+
+  // ============================================
+  // 6. ASSISTANT ÉDITEUR - SUGGESTIONS D'IDÉES
+  // ============================================
+  @Post('assistant/ideas')
+  @UseGuards(JwtAuthGuard)
+  async suggestIdeas(
+    @Request() req: any,
+    @Body() body: {
+      context: string;
+      characters?: string[];
+      genre?: string;
+    }
+  ) {
+    const { context, characters = [], genre = '' } = body;
+
+    if (!context) {
+      return { error: 'Le contexte est requis' };
+    }
+
+    const ideas = await this.assistantService.suggestIdeas(
+      req.user.id,
+      context,
+      characters,
+      genre,
+    );
+
+    return { success: true, ideas };
+  }
+
+  // ============================================
+  // 7. ASSISTANT ÉDITEUR - DIALOGUE
+  // ============================================
+  @Post('assistant/dialogue')
+  @UseGuards(JwtAuthGuard)
+  async suggestDialogue(
+    @Request() req: any,
+    @Body() body: {
+      character1: string;
+      character2: string;
+      situation: string;
+    }
+  ) {
+    const { character1, character2, situation } = body;
+
+    if (!character1 || !character2 || !situation) {
+      return { error: 'character1, character2 et situation sont requis' };
+    }
+
+    const dialogue = await this.assistantService.suggestDialogue(
+      req.user.id,
+      character1,
+      character2,
+      situation,
+    );
+
+    return { success: true, dialogue };
+  }
+
+  // ============================================
+  // 8. ASSISTANT ÉDITEUR - DESCRIPTION DE SCÈNE
+  // ============================================
+  @Post('assistant/describe')
+  @UseGuards(JwtAuthGuard)
+  async describeScene(
+    @Request() req: any,
+    @Body() body: {
+      sceneType: string;
+      mood: string;
+      elements?: string[];
+    }
+  ) {
+    const { sceneType, mood, elements = [] } = body;
+
+    if (!sceneType || !mood) {
+      return { error: 'sceneType et mood sont requis' };
+    }
+
+    const description = await this.assistantService.describeScene(
+      req.user.id,
+      sceneType,
+      mood,
+      elements,
+    );
+
+    return { success: true, description };
+  }
+
+  // ============================================
+  // 9. ASSISTANT ÉDITEUR - RÉÉCRITURE
+  // ============================================
+  @Post('assistant/rewrite')
+  @UseGuards(JwtAuthGuard)
+  async rewriteText(
+    @Request() req: any,
+    @Body() body: {
+      text: string;
+      style: 'plus dynamique' | 'plus poétique' | 'plus simple' | 'plus sérieux';
+    }
+  ) {
+    const { text, style } = body;
+
+    if (!text || !style) {
+      return { error: 'text et style sont requis' };
+    }
+
+    const rewritten = await this.assistantService.rewriteText(
+      req.user.id,
+      text,
+      style,
+    );
+
+    return { success: true, rewritten };
+  }
+
+  // ============================================
+  // 10. RECHERCHE INTELLIGENTE
+  // ============================================
+  @Post('search')
+  @UseGuards(JwtAuthGuard)
+  async intelligentSearch(
+    @Request() req: any,
+    @Body() body: {
+      query: string;
+      limit?: number;
+    }
+  ) {
+    const { query, limit = 10 } = body;
+
+    if (!query || query.length < 2) {
+      return { error: 'La recherche doit contenir au moins 2 caractères' };
+    }
+
+    const results = await this.searchService.intelligentSearch(
+      req.user.id,
+      query,
+      limit,
+    );
+
+    return { success: true, results, count: results.length };
+  }
+
+  // ============================================
+  // 11. SUGGESTIONS DE TAGS POUR RECHERCHE
+  // ============================================
+  @Post('search/tags')
+  @UseGuards(JwtAuthGuard)
+  async suggestSearchTags(
+    @Request() req: any,
+    @Body() body: { query: string }
+  ) {
+    const { query } = body;
+
+    if (!query || query.length < 2) {
+      return { error: 'La recherche doit contenir au moins 2 caractères' };
+    }
+
+    const tags = await this.searchService.suggestSearchTags(req.user.id, query);
+    return { success: true, tags };
+  }
+
+  // ============================================
+  // 12. COACH - ANALYSE D'UN MANGA
+  // ============================================
+  @Post('coach/analyze')
+  @UseGuards(JwtAuthGuard)
+  async analyzeManga(
+    @Request() req: any,
+    @Body() body: { mangaId: string }
+  ) {
+    const { mangaId } = body;
+
+    if (!mangaId) {
+      return { error: 'mangaId requis' };
+    }
+
+    try {
+      const analysis = await this.coachService.analyzeManga(req.user.id, mangaId);
+      return { success: true, analysis };
+    } catch (error) {
+      return { error: error.message };
+    }
+  }
+
+  // ============================================
+  // 13. COACH - SUGGESTIONS D'AMÉLIORATION
+  // ============================================
+  @Post('coach/improve')
+  @UseGuards(JwtAuthGuard)
+  async suggestImprovements(
+    @Request() req: any,
+    @Body() body: {
+      title: string;
+      description?: string;
+      genres?: string[];
+    }
+  ) {
+    const { title, description = '', genres = [] } = body;
+
+    if (!title) {
+      return { error: 'title requis' };
+    }
+
+    const improvements = await this.coachService.suggestImprovements(
+      req.user.id,
+      title,
+      description,
+      genres,
+    );
+
+    return { success: true, improvements };
+  }
+
+  // ============================================
+  // 14. COACH - CONSEILS DE CROISSANCE
+  // ============================================
+  @Post('coach/growth')
+  @UseGuards(JwtAuthGuard)
+  async growthAdvice(
+    @Request() req: any,
+    @Body() body: { mangaId: string }
+  ) {
+    const { mangaId } = body;
+
+    if (!mangaId) {
+      return { error: 'mangaId requis' };
+    }
+
+    try {
+      const advice = await this.coachService.growthAdvice(req.user.id, mangaId);
+      return { success: true, advice };
+    } catch (error) {
+      return { error: error.message };
+    }
   }
 }
