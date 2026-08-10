@@ -19,6 +19,7 @@ import { UsersService } from './users.service';
 import { JwtAuthGuard } from '../../common/guards/jwt-auth.guard';
 import { StorageService } from '../../common/services/storage.service';
 import { PrismaService } from '../../prisma/prisma.service';
+import * as sharp from 'sharp';
 
 export class UpdateBadgeColorDto {
   @IsString({ message: 'La couleur du badge doit être une chaîne de caractères' })
@@ -149,7 +150,7 @@ export class UsersController {
   }
 
   // ============================================
-  // UPLOADER UN AVATAR (CORRIGÉ)
+  // UPLOADER UN AVATAR (AVEC COMPRESSION ET NETTOYAGE)
   // ============================================
   @Post('avatar')
   @UseGuards(JwtAuthGuard)
@@ -168,18 +169,71 @@ export class UsersController {
     }
 
     const userId = req.user?.id || req.user?.sub;
+
+    // ✅ 1. Récupérer l'ancien avatar pour le supprimer
+    const user = await this.usersService.findById(userId);
+    if (user && user.avatarUrl) {
+      try {
+        // Extraire la clé de l'ancienne URL
+        const oldKey = user.avatarUrl.split('/').pop();
+        if (oldKey) {
+          await this.storage.delete(`user/${userId}/${oldKey}`, 'chapters');
+        }
+      } catch (error) {
+        console.log('Suppression ancien avatar échouée:', error.message);
+      }
+    }
+
+    // ✅ 2. Compresser l'image avec Sharp
+    const compressedBuffer = await sharp(file.buffer)
+      .resize(300, 300, {
+        fit: 'cover',
+        position: 'centre',
+      })
+      .webp({ quality: 80 })
+      .toBuffer();
+
     const key = `user/${userId}/avatar-${Date.now()}.webp`;
     
-    // ✅ Upload vers Supabase - bucket 'chapters'
-    await this.storage.upload(key, file.buffer, file.mimetype, 'chapters');
+    // ✅ 3. Upload vers Supabase - bucket 'chapters'
+    await this.storage.upload(key, compressedBuffer, 'image/webp', 'chapters');
 
-    // ✅ URL PUBLIQUE PERMANENTE - bucket 'chapters'
+    // ✅ 4. URL PUBLIQUE PERMANENTE - bucket 'chapters'
     const publicUrl = this.storage.getPublicUrl(key, 'chapters');
     
-    // ✅ Sauvegarder l'URL publique en BDD
+    // ✅ 5. Sauvegarder l'URL publique en BDD
     await this.usersService.updateAvatar(userId, publicUrl);
 
-    return { avatarUrl: publicUrl };
+    return { 
+      avatarUrl: publicUrl,
+      message: 'Avatar mis à jour avec succès',
+    };
+  }
+
+  // ============================================
+  // SUPPRIMER L'AVATAR
+  // ============================================
+  @Delete('avatar')
+  @UseGuards(JwtAuthGuard)
+  async deleteAvatar(@Req() req: any) {
+    const userId = req.user?.id || req.user?.sub;
+
+    // Récupérer l'utilisateur
+    const user = await this.usersService.findById(userId);
+    if (!user || !user.avatarUrl) {
+      throw new BadRequestException('Aucun avatar à supprimer');
+    }
+
+    // Extraire la clé de l'URL
+    const oldKey = user.avatarUrl.split('/').pop();
+    if (oldKey) {
+      await this.storage.delete(`user/${userId}/${oldKey}`, 'chapters');
+    }
+
+    // Supprimer l'URL de la BDD
+    await this.usersService.updateAvatar(userId, null);
+
+    return { message: 'Avatar supprimé avec succès' };
   }
 
   // ============================================
