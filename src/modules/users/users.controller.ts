@@ -114,7 +114,6 @@ export class UsersController {
       );
     }
 
-    // Met à jour la couleur du badge dans Prisma
     const updatedUser = await this.prisma.user.update({
       where: { id: userId },
       data: { badgeColor: selectedColor },
@@ -150,7 +149,7 @@ export class UsersController {
   }
 
   // ============================================
-  // UPLOADER UN AVATAR
+  // UPLOADER UN AVATAR (CORRIGÉ)
   // ============================================
   @Post('avatar')
   @UseGuards(JwtAuthGuard)
@@ -170,12 +169,17 @@ export class UsersController {
 
     const userId = req.user?.id || req.user?.sub;
     const key = `user/${userId}/avatar-${Date.now()}.webp`;
+    
+    // ✅ Upload vers Supabase (bucket 'avatars')
     await this.storage.upload(key, file.buffer, file.mimetype, 'avatars');
 
-    const avatarUrl = await this.storage.getSignedUrl(key, 86400, 'avatars');
-    await this.usersService.updateAvatar(userId, avatarUrl);
+    // ✅ URL PUBLIQUE PERMANENTE (au lieu de signed URL qui expire)
+    const publicUrl = `${process.env.SUPABASE_URL}/storage/v1/object/public/avatars/${key}`;
+    
+    // ✅ Sauvegarder l'URL publique en BDD
+    await this.usersService.updateAvatar(userId, publicUrl);
 
-    return { avatarUrl };
+    return { avatarUrl: publicUrl };
   }
 
   // ============================================
