@@ -6,7 +6,6 @@ export class MangaApiService {
   private mangaProvider: any;
 
   constructor() {
-    // ✅ Utiliser MangaDex via Consumet
     this.mangaProvider = new Manga.MangaDex();
   }
 
