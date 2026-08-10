@@ -77,12 +77,22 @@ export class UsersService {
   }
 
   // ============================================
-  // METTRE À JOUR L'AVATAR
+  // METTRE À JOUR L'AVATAR (AVEC NULL POSSIBLE)
   // ============================================
-  async updateAvatar(userId: string, avatarUrl: string) {
+  async updateAvatar(userId: string, avatarUrl: string | null) {
     return this.prisma.user.update({
       where: { id: userId },
       data: { avatarUrl },
+    });
+  }
+
+  // ============================================
+  // METTRE À JOUR LA COULEUR D'AVATAR
+  // ============================================
+  async updateAvatarColor(userId: string, avatarColor: string) {
+    return this.prisma.user.update({
+      where: { id: userId },
+      data: { avatarColor },
     });
   }
 
@@ -129,5 +139,34 @@ export class UsersService {
     return this.prisma.user.delete({
       where: { id: userId },
     });
+  }
+
+  // ============================================
+  // RÉCUPÉRER LES STATISTIQUES D'UN UTILISATEUR
+  // ============================================
+  async getStats(userId: string) {
+    const user = await this.prisma.user.findUnique({
+      where: { id: userId },
+      select: {
+        manas: true,
+        steamPoints: true,
+        steamLevel: true,
+        _count: {
+          select: {
+            mangas: true,
+            followers: true,
+            following: true,
+            likes: true,
+            subscriptions: true,
+          },
+        },
+      },
+    });
+
+    if (!user) {
+      throw new NotFoundException('Utilisateur non trouvé');
+    }
+
+    return user;
   }
 }
