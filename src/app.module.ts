@@ -16,7 +16,8 @@ import { EventsModule } from './modules/events/events.module';
 import { AdminModule } from './modules/admin/admin.module';
 import { PrismaModule } from './prisma/prisma.module';
 import { BootstrapModule } from './modules/admin/bootstrap.module';
-import { AiModule } from './modules/ai/ai.module'; // ✅ AJOUT
+import { AiModule } from './modules/ai/ai.module';
+import { MangaApiModule } from './modules/manga-api/manga-api.module'; // ✅ AJOUTER CETTE LIGNE
 
 @Module({
   imports: [
@@ -40,7 +41,8 @@ import { AiModule } from './modules/ai/ai.module'; // ✅ AJOUT
     EventsModule,
     AdminModule,
     BootstrapModule,
-    AiModule, // ✅ AJOUT
+    AiModule,
+    MangaApiModule, // ✅ AJOUTER CETTE LIGNE
   ],
 })
 export class AppModule {}
