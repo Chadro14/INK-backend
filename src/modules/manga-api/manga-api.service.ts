@@ -8,9 +8,6 @@ export class MangaApiService {
 
   constructor(private readonly httpService: HttpService) {}
 
-  // ============================================
-  // RÉCUPÉRER LES MANGAS POPULAIRES
-  // ============================================
   async getPopularManga(limit: number = 20) {
     const url = `${this.mangaDexApiUrl}/manga`;
     const params = {
@@ -36,9 +33,6 @@ export class MangaApiService {
     }
   }
 
-  // ============================================
-  // RECHERCHER DES MANGAS
-  // ============================================
   async searchManga(query: string, limit: number = 20) {
     const url = `${this.mangaDexApiUrl}/manga`;
     const params = {
@@ -64,9 +58,6 @@ export class MangaApiService {
     }
   }
 
-  // ============================================
-  // RÉCUPÉRER LES DÉTAILS D'UN MANGA
-  // ============================================
   async getMangaDetails(mangaId: string) {
     const url = `${this.mangaDexApiUrl}/manga/${mangaId}`;
     const params = {
@@ -88,9 +79,6 @@ export class MangaApiService {
     }
   }
 
-  // ============================================
-  // RÉCUPÉRER LES CHAPITRES D'UN MANGA
-  // ============================================
   async getMangaChapters(mangaId: string, limit: number = 100) {
     const url = `${this.mangaDexApiUrl}/manga/${mangaId}/feed`;
     const params = {
@@ -120,9 +108,6 @@ export class MangaApiService {
     }
   }
 
-  // ============================================
-  // RÉCUPÉRER LES PAGES D'UN CHAPITRE
-  // ============================================
   async getChapterPages(chapterId: string) {
     const url = `${this.mangaDexApiUrl}/at-home/server/${chapterId}`;
 
@@ -149,20 +134,26 @@ export class MangaApiService {
     }
   }
 
-  // ============================================
-  // FORMATER UN MANGA
-  // ============================================
+  // ✅ FORMATAGE CORRIGÉ
   private formatManga(manga: any, details: boolean = false) {
-    const title = manga.attributes.title?.en || manga.attributes.title?.fr || 'Sans titre';
-    const description = manga.attributes.description?.en || manga.attributes.description?.fr || '';
+    // Titre prioritaire : anglais, puis français, puis japonais
+    const title = manga.attributes.title?.en 
+      || manga.attributes.title?.fr 
+      || manga.attributes.title?.ja 
+      || manga.attributes.title?.ro 
+      || 'Sans titre';
+    
+    const description = manga.attributes.description?.en 
+      || manga.attributes.description?.fr 
+      || '';
     
     // Récupérer l'URL de la couverture
     const coverArt = manga.relationships?.find((rel: any) => rel.type === 'cover_art');
-    const coverUrl = coverArt 
-      ? `https://uploads.mangadex.org/covers/${manga.id}/${coverArt.attributes.fileName}`
-      : null;
+    let coverUrl = null;
+    if (coverArt && coverArt.attributes?.fileName) {
+      coverUrl = `https://uploads.mangadex.org/covers/${manga.id}/${coverArt.attributes.fileName}`;
+    }
 
-    // Récupérer l'auteur
     const author = manga.relationships?.find((rel: any) => rel.type === 'author');
 
     return {
@@ -177,7 +168,9 @@ export class MangaApiService {
       rating: manga.attributes?.rating || null,
       status: manga.attributes?.status || 'unknown',
       year: manga.attributes?.year || null,
-      genres: manga.attributes?.tags?.map((tag: any) => tag.attributes?.name?.en || tag.attributes?.name?.fr) || [],
+      genres: manga.attributes?.tags?.map((tag: any) => {
+        return tag.attributes?.name?.en || tag.attributes?.name?.fr || tag.attributes?.name?.ja || 'Inconnu';
+      }) || [],
       ...(details && {
         chapters: manga.attributes?.chapters || 0,
         createdAt: manga.attributes?.createdAt || null,
