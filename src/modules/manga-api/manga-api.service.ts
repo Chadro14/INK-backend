@@ -1,12 +1,12 @@
 import { Injectable, HttpException, HttpStatus } from '@nestjs/common';
-import { Manga } from '@consumet/extensions';
+import { MANGA } from '@consumet/extensions';
 
 @Injectable()
 export class MangaApiService {
   private mangaProvider: any;
 
   constructor() {
-    this.mangaProvider = new Manga.MangaDex();
+    this.mangaProvider = new MANGA.MangaDex();
   }
 
   // ============================================
