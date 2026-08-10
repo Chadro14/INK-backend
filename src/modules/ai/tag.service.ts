@@ -75,4 +75,14 @@ Tags proposés :`;
 
     return manga?.aiTags || [];
   }
+
+  // ============================================
+  // SUPPRIMER LES TAGS D'UN MANGA
+  // ============================================
+  async deleteTags(mangaId: string): Promise<void> {
+    await this.prisma.manga.update({
+      where: { id: mangaId },
+      data: { aiTags: [] },
+    });
+  }
 }
