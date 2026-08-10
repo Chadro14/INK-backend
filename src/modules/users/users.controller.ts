@@ -168,13 +168,13 @@ export class UsersController {
     }
 
     const userId = req.user?.id || req.user?.sub;
-    const key = `user/${userId}/avatar-${Date.now()}.webp`;
+    const key = `avatars/user/${userId}/avatar-${Date.now()}.webp`;
     
-    // ✅ Upload vers Supabase (bucket 'avatars')
+    // ✅ Upload vers Supabase
     await this.storage.upload(key, file.buffer, file.mimetype, 'avatars');
 
-    // ✅ URL PUBLIQUE PERMANENTE (au lieu de signed URL qui expire)
-    const publicUrl = `${process.env.SUPABASE_URL}/storage/v1/object/public/avatars/${key}`;
+    // ✅ URL PUBLIQUE PERMANENTE
+    const publicUrl = this.storage.getPublicUrl(key, 'avatars');
     
     // ✅ Sauvegarder l'URL publique en BDD
     await this.usersService.updateAvatar(userId, publicUrl);
