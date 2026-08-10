@@ -28,9 +28,9 @@ export class AiService {
       throw new BadRequestException('Message requis');
     }
 
-    // 1. Récupérer le nom
+    // 1. Récupérer le nom (priorité au firstName envoyé par le frontend)
     let userName = firstName;
-    if (!userName) {
+    if (!userName || userName === '' || userName === 'Utilisateur') {
       try {
         const user = await this.prisma.user.findUnique({
           where: { id: userId },
@@ -106,12 +106,24 @@ export class AiService {
   private async handleChat(userName: string, message: string, history: any[]): Promise<string> {
     const systemPrompt = `Tu es XELIRA, le modérateur et guide officiel de INKDROP.
 
-L'utilisateur s'appelle "${userName}". Utilise son prénom.
+🎯 TON RÔLE :
+- Tu connais tout sur INKDROP
+- Tu réponds uniquement en français
+- Tu es professionnel, précis et concis
+- Tu n'abordes jamais de sujets hors INKDROP
 
-RÈGLES :
-- Réponds en français, professionnel et concis
-- Si une question est hors INKDROP, réponds : "Désolé, je suis uniquement dédié à INKDROP."
-- Termine par "— XELIRA ✦"`;
+📚 CE QUE TU DOIS CONNAÎTRE :
+1. Publication : tout le monde peut publier, chapitres 1-9 gratuits, 10+ payant (0.55$)
+2. Monétisation : 80% ventes chapitres, 70% publicité, 70% Premium, 90% pourboires
+3. Premium : 2$/mois, sans pub, accès illimité
+4. Certification : 1000 abonnés + 5000 vues
+5. Fonctionnalités : likes, commentaires, abonnements, profil, Découverte, InkStream
+
+⚠️ RÈGLES STRICTES :
+1. L'utilisateur s'appelle "${userName}". Utilise son prénom à CHAQUE message, pas juste au début. Dis "Bonjour ${userName}", "Merci ${userName}", etc.
+2. Si une question est hors INKDROP, réponds : "Désolé, je suis uniquement dédié à INKDROP."
+3. Sois UTILE avant d'être amical.
+4. Termine chaque réponse par "— XELIRA ✦"`;
 
     const messages = [
       { role: 'system', content: systemPrompt },
@@ -126,64 +138,94 @@ RÈGLES :
   }
 
   // ============================================
-  // 2. RÉSUMÉ
+  // 2. RÉSUMÉ DE CHAPITRE
   // ============================================
   private async handleSummarize(userName: string, topic: string): Promise<string> {
-    const prompt = `L'utilisateur ${userName} a demandé un résumé pour : "${topic}".
+    const prompt = `Tu es XELIRA, l'assistant de INKDROP.
 
-Génère un résumé court (3-4 phrases), accrocheur, sans révéler la fin.
+L'utilisateur ${userName} a demandé un résumé pour : "${topic}".
+
+Génère un résumé court et accrocheur (3-4 phrases) pour ce manga/chapitre.
+Le résumé doit donner envie de lire sans révéler la fin.
+Utilise le prénom ${userName} dans ta réponse.
 
 Résumé :`;
+
     return this.callGroq([{ role: 'user', content: prompt }]);
   }
 
   // ============================================
-  // 3. TAGS
+  // 3. TAGS AUTOMATIQUES
   // ============================================
   private async handleTags(userName: string, context: string): Promise<string> {
-    const prompt = `L'utilisateur ${userName} a demandé des tags pour : "${context}".
+    const prompt = `Tu es XELIRA, l'assistant de INKDROP.
 
-Propose 5 tags courts (1-2 mots), séparés par des virgules.
+L'utilisateur ${userName} a demandé des tags pour : "${context}".
+
+Propose 5 tags courts (1-2 mots) et pertinents pour ce manga.
+Sépare les tags par des virgules.
+Utilise le prénom ${userName} dans ta réponse.
 
 Tags :`;
+
     const reply = await this.callGroq([{ role: 'user', content: prompt }]);
-    const tags = reply.split(',').map(t => t.trim()).filter(t => t.length > 0).slice(0, 5);
-    return `🏷️ Voici 5 tags pertinents :\n\n${tags.map((t, i) => `• ${t}`).join('\n')}\n\n— XELIRA ✦`;
+
+    const tags = reply.split(',')
+      .map(tag => tag.trim())
+      .filter(tag => tag.length > 0)
+      .slice(0, 5);
+
+    return `🏷️ ${userName}, voici 5 tags pertinents pour ton manga :\n\n${tags.map((tag, i) => `• ${tag}`).join('\n')}\n\n— XELIRA ✦`;
   }
 
   // ============================================
-  // 4. ASSISTANT
+  // 4. ASSISTANT ÉDITEUR
   // ============================================
   private async handleAssistant(userName: string, context: string): Promise<string> {
-    const prompt = `L'utilisateur ${userName} a demandé : "${context}".
+    const prompt = `Tu es XELIRA, l'assistant d'écriture de INKDROP.
 
-Donne 3 suggestions concrètes (idées, dialogues, améliorations) courtes.
+L'utilisateur ${userName} a demandé : "${context}".
+
+Donne 3 suggestions concrètes (idées, dialogues, améliorations) pour l'aider dans son écriture.
+Chaque suggestion doit être courte (1-2 phrases).
+Utilise le prénom ${userName} dans ta réponse.
 
 Suggestions :`;
+
     return this.callGroq([{ role: 'user', content: prompt }]);
   }
 
   // ============================================
-  // 5. COACH
+  // 5. COACH DE CRÉATION
   // ============================================
   private async handleCoach(userName: string, context: string): Promise<string> {
-    const prompt = `L'utilisateur ${userName} a demandé : "${context}".
+    const prompt = `Tu es XELIRA, le coach de création de INKDROP.
 
-Donne 3 conseils concrets pour améliorer son travail.
+L'utilisateur ${userName} a demandé : "${context}".
+
+Donne 3 conseils concrets pour améliorer son travail (titre, description, stratégie, engagement).
+Chaque conseil doit être précis et applicable.
+Utilise le prénom ${userName} dans ta réponse.
 
 Conseils :`;
+
     return this.callGroq([{ role: 'user', content: prompt }]);
   }
 
   // ============================================
-  // 6. RECHERCHE
+  // 6. RECHERCHE INTELLIGENTE
   // ============================================
   private async handleSearch(userName: string, query: string): Promise<string> {
-    const prompt = `L'utilisateur ${userName} cherche : "${query}".
+    const prompt = `Tu es XELIRA, le guide de INKDROP.
 
-Propose 3 mangas correspondant à sa recherche, avec titre et description courte.
+L'utilisateur ${userName} cherche : "${query}".
+
+Propose 3 mangas (fictifs ou réels) qui correspondent à cette recherche.
+Pour chaque manga, donne un titre et une courte description (1-2 phrases).
+Utilise le prénom ${userName} dans ta réponse.
 
 Résultats :`;
+
     return this.callGroq([{ role: 'user', content: prompt }]);
   }
 
@@ -211,16 +253,21 @@ Résultats :`;
         });
 
         const data = await response.json();
-        if (response.ok) {
-          const reply = data.choices?.[0]?.message?.content;
-          if (reply) return reply;
+
+        if (!response.ok) {
+          continue;
+        }
+
+        const reply = data.choices?.[0]?.message?.content;
+        if (reply) {
+          return reply;
         }
       } catch (error) {
         continue;
       }
     }
 
-    return `Bonjour ! Je suis XELIRA. Comment puis-je t'aider ?\n\n— XELIRA ✦`;
+    return `Bonjour ${userName || 'cher utilisateur'} ! 😊\n\nJe suis XELIRA, le modérateur de INKDROP. Comment puis-je t'aider aujourd'hui ?\n\n— XELIRA ✦`;
   }
 
   // ============================================
