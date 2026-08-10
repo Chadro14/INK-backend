@@ -117,7 +117,7 @@ enum Status {
 }
 
 // ============================================
-// CHAPITRES
+// CHAPITRES (AVEC SUMMARY)
 // ============================================
 model Chapter {
   id          String             @id @default(uuid())
@@ -135,6 +135,7 @@ model Chapter {
   price       Float?
   viewsCount  Int                @default(0)
   coverUrl    String?
+  summary     String?            @db.Text // ✅ RÉSUMÉ DU CHAPITRE
   publishedAt DateTime?
   createdAt   DateTime           @default(now())
   updatedAt   DateTime           @updatedAt
