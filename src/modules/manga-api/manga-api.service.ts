@@ -8,6 +8,9 @@ export class MangaApiService {
 
   constructor(private readonly httpService: HttpService) {}
 
+  // ============================================
+  // RÉCUPÉRER LES MANGAS POPULAIRES
+  // ============================================
   async getPopularManga(limit: number = 20) {
     const url = `${this.mangaDexApiUrl}/manga`;
     const params = {
@@ -33,6 +36,9 @@ export class MangaApiService {
     }
   }
 
+  // ============================================
+  // RECHERCHER DES MANGAS
+  // ============================================
   async searchManga(query: string, limit: number = 20) {
     const url = `${this.mangaDexApiUrl}/manga`;
     const params = {
@@ -58,6 +64,9 @@ export class MangaApiService {
     }
   }
 
+  // ============================================
+  // RÉCUPÉRER LES DÉTAILS D'UN MANGA
+  // ============================================
   async getMangaDetails(mangaId: string) {
     const url = `${this.mangaDexApiUrl}/manga/${mangaId}`;
     const params = {
@@ -79,6 +88,9 @@ export class MangaApiService {
     }
   }
 
+  // ============================================
+  // RÉCUPÉRER LES CHAPITRES D'UN MANGA
+  // ============================================
   async getMangaChapters(mangaId: string, limit: number = 100) {
     const url = `${this.mangaDexApiUrl}/manga/${mangaId}/feed`;
     const params = {
@@ -108,6 +120,9 @@ export class MangaApiService {
     }
   }
 
+  // ============================================
+  // RÉCUPÉRER LES PAGES D'UN CHAPITRE
+  // ============================================
   async getChapterPages(chapterId: string) {
     const url = `${this.mangaDexApiUrl}/at-home/server/${chapterId}`;
 
@@ -134,27 +149,44 @@ export class MangaApiService {
     }
   }
 
-  // ✅ FORMATAGE CORRIGÉ
+  // ============================================
+  // FORMATER UN MANGA (CORRIGÉ)
+  // ============================================
   private formatManga(manga: any, details: boolean = false) {
-    // Titre prioritaire : anglais, puis français, puis japonais
+    // ✅ TITRE : priorité aux langues disponibles
     const title = manga.attributes.title?.en 
       || manga.attributes.title?.fr 
       || manga.attributes.title?.ja 
       || manga.attributes.title?.ro 
-      || 'Sans titre';
+      || 'Titre inconnu';
     
-    const description = manga.attributes.description?.en 
-      || manga.attributes.description?.fr 
-      || '';
+    // ✅ DESCRIPTION : en français ou anglais
+    let description = manga.attributes.description?.fr 
+      || manga.attributes.description?.en 
+      || 'Aucune description disponible.';
     
-    // Récupérer l'URL de la couverture
+    // ✅ Si la description fait plus de 300 caractères, la couper
+    if (description.length > 300) {
+      description = description.slice(0, 300) + '...';
+    }
+    
+    // ✅ COUVERTURE : vérifier si l'image existe
     const coverArt = manga.relationships?.find((rel: any) => rel.type === 'cover_art');
     let coverUrl = null;
     if (coverArt && coverArt.attributes?.fileName) {
       coverUrl = `https://uploads.mangadex.org/covers/${manga.id}/${coverArt.attributes.fileName}`;
     }
 
+    // ✅ AUTEUR
     const author = manga.relationships?.find((rel: any) => rel.type === 'author');
+
+    // ✅ STATUT en français
+    const statusMap: Record<string, string> = {
+      'ongoing': 'En cours',
+      'completed': 'Terminé',
+      'hiatus': 'En pause',
+      'cancelled': 'Annulé',
+    };
 
     return {
       id: manga.id,
@@ -165,8 +197,8 @@ export class MangaApiService {
         id: author.id,
         name: author.attributes?.name || 'Inconnu',
       } : null,
-      rating: manga.attributes?.rating || null,
-      status: manga.attributes?.status || 'unknown',
+      rating: manga.attributes?.rating ? (manga.attributes.rating / 10).toFixed(1) : null,
+      status: statusMap[manga.attributes?.status] || manga.attributes?.status || 'Inconnu',
       year: manga.attributes?.year || null,
       genres: manga.attributes?.tags?.map((tag: any) => {
         return tag.attributes?.name?.en || tag.attributes?.name?.fr || tag.attributes?.name?.ja || 'Inconnu';
