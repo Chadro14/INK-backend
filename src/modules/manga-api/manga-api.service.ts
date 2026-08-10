@@ -6,7 +6,8 @@ export class MangaApiService {
   private mangaProvider: any;
 
   constructor() {
-    this.mangaProvider = new MANGA.MangaDex();
+    // ✅ UTILISER MANGAREADER (plus stable que MangaDex sur Vercel)
+    this.mangaProvider = new MANGA.Mangareader();
   }
 
   // ============================================
