@@ -16,7 +16,7 @@ export class AiService {
   constructor(private prisma: PrismaService) {}
 
   // ============================================
-  // CHAT PRINCIPAL AVEC DÉTECTION D'INTENTION
+  // CHAT PRINCIPAL - TOUTES LES FONCTIONNALITÉS
   // ============================================
   async chat(
     userId: string,
@@ -28,7 +28,7 @@ export class AiService {
       throw new BadRequestException('Message requis');
     }
 
-    // 1. Récupérer le nom de l'utilisateur
+    // 1. Récupérer le nom
     let userName = firstName;
     if (!userName) {
       try {
@@ -43,48 +43,76 @@ export class AiService {
     }
     userName = userName.replace(/^@/, '');
 
-    // 2. Détecter l'intention
+    // 2. Analyser le message pour détecter l'intention
     const lowerMessage = message.toLowerCase();
     let intent = 'chat';
     let extractedData: any = {};
 
     // --- Détection des intentions ---
-    
-    // Résumé
+
+    // 🔹 RÉSUMÉ
     if (lowerMessage.includes('résumé') || 
         lowerMessage.includes('synopsis') || 
         lowerMessage.includes('summarize') ||
-        lowerMessage.includes('raccourci')) {
+        lowerMessage.includes('raccourci') ||
+        lowerMessage.includes('résume')) {
       intent = 'summarize';
-      extractedData.topic = message.replace(/résumé|synopsis|summarize|raccourci/gi, '').trim() || 'ton manga';
+      extractedData.topic = message.replace(/résumé|synopsis|summarize|raccourci|résume/gi, '').trim() || 'ton manga';
     }
 
-    // Assistant éditeur
+    // 🔹 TAGS AUTOMATIQUES
+    else if (lowerMessage.includes('tag') || 
+             lowerMessage.includes('étiquette') || 
+             lowerMessage.includes('catégorie') ||
+             lowerMessage.includes('suggestion de tag')) {
+      intent = 'tags';
+      extractedData.context = message;
+    }
+
+    // 🔹 ASSISTANT ÉDITEUR
     else if (lowerMessage.includes('idée') || 
              lowerMessage.includes('suggestion') || 
              lowerMessage.includes('dialogue') || 
              lowerMessage.includes('écrire') ||
-             lowerMessage.includes('améliorer')) {
+             lowerMessage.includes('améliorer') ||
+             lowerMessage.includes('réécrire') ||
+             lowerMessage.includes('conseil d\'écriture')) {
       intent = 'assistant';
       extractedData.context = message;
     }
 
-    // Coach
+    // 🔹 COACH DE CRÉATION
     else if (lowerMessage.includes('analyse') || 
              lowerMessage.includes('conseil') || 
              lowerMessage.includes('amélioration') ||
-             lowerMessage.includes('croissance')) {
+             lowerMessage.includes('croissance') ||
+             lowerMessage.includes('stratégie') ||
+             lowerMessage.includes('statistique')) {
       intent = 'coach';
       extractedData.context = message;
     }
 
-    // Recherche
+    // 🔹 RECHERCHE INTELLIGENTE
     else if (lowerMessage.includes('cherche') || 
              lowerMessage.includes('trouve') || 
              lowerMessage.includes('recherche') ||
-             lowerMessage.includes('manga')) {
+             lowerMessage.includes('manga') ||
+             lowerMessage.includes('histoire') ||
+             lowerMessage.includes('recommande')) {
       intent = 'search';
-      extractedData.query = message.replace(/cherche|trouve|recherche|manga/gi, '').trim() || message;
+      extractedData.query = message.replace(/cherche|trouve|recherche|manga|histoire|recommande/gi, '').trim() || message;
+    }
+
+    // 🔹 DÉTECTION GÉNÉRALE
+    else {
+      // Si le message contient "comment" ou "pourquoi" ou "c'est quoi" → chat général
+      if (lowerMessage.includes('comment') || 
+          lowerMessage.includes('pourquoi') || 
+          lowerMessage.includes('c\'est quoi') || 
+          lowerMessage.includes('qu\'est-ce que') ||
+          lowerMessage.includes('aide moi')) {
+        intent = 'chat';
+      }
     }
 
     // 3. Exécuter l'intention
@@ -93,6 +121,10 @@ export class AiService {
     switch (intent) {
       case 'summarize':
         reply = await this.handleSummarize(userName, extractedData.topic);
+        break;
+      
+      case 'tags':
+        reply = await this.handleTags(userName, extractedData.context);
         break;
       
       case 'assistant':
@@ -111,6 +143,7 @@ export class AiService {
         reply = await this.handleChat(userName, message, history);
     }
 
+    // 4. Nettoyer et retourner
     return { success: true, reply: this.cleanReply(reply) };
   }
 
@@ -118,8 +151,27 @@ export class AiService {
   // 1. CHAT GÉNÉRAL
   // ============================================
   private async handleChat(userName: string, message: string, history: any[]): Promise<string> {
-    const systemPrompt = this.getSystemPrompt(userName);
-    
+    const systemPrompt = `Tu es XELIRA, le modérateur et guide officiel de INKDROP.
+
+🎯 TON RÔLE :
+- Tu connais tout sur INKDROP
+- Tu réponds uniquement en français
+- Tu es professionnel, précis et concis
+- Tu n'abordes jamais de sujets hors INKDROP
+
+📚 CE QUE TU DOIS CONNAÎTRE :
+1. Publication : tout le monde peut publier, chapitres 1-9 gratuits, 10+ payant (0.55$)
+2. Monétisation : 80% ventes chapitres, 70% publicité, 70% Premium, 90% pourboires
+3. Premium : 2$/mois, sans pub, accès illimité
+4. Certification : 1000 abonnés + 5000 vues
+5. Fonctionnalités : likes, commentaires, abonnements, profil, Découverte, InkStream
+
+⚠️ RÈGLES :
+1. L'utilisateur s'appelle "${userName}". Utilise son prénom.
+2. Si une question est hors INKDROP, réponds : "Désolé, je suis uniquement dédié à INKDROP."
+3. Sois UTILE avant d'être amical.
+4. Termine par "— XELIRA ✦"`;
+
     const messages = [
       { role: 'system', content: systemPrompt },
       ...history.slice(-10).map(m => ({
@@ -149,7 +201,31 @@ Résumé :`;
   }
 
   // ============================================
-  // 3. ASSISTANT ÉDITEUR
+  // 3. TAGS AUTOMATIQUES
+  // ============================================
+  private async handleTags(userName: string, context: string): Promise<string> {
+    const prompt = `Tu es XELIRA, l'assistant de INKDROP.
+
+L'utilisateur ${userName} a demandé des tags pour : "${context}".
+
+Propose 5 tags courts (1-2 mots) et pertinents pour ce manga.
+Sépare les tags par des virgules.
+
+Tags :`;
+
+    const reply = await this.callGroq([{ role: 'user', content: prompt }]);
+    
+    // Formater les tags en une liste
+    const tags = reply.split(',')
+      .map(tag => tag.trim())
+      .filter(tag => tag.length > 0)
+      .slice(0, 5);
+    
+    return `🏷️ Voici 5 tags pertinents pour ton manga :\n\n${tags.map((tag, i) => `• ${tag}`).join('\n')}\n\n— XELIRA ✦`;
+  }
+
+  // ============================================
+  // 4. ASSISTANT ÉDITEUR
   // ============================================
   private async handleAssistant(userName: string, context: string): Promise<string> {
     const prompt = `Tu es XELIRA, l'assistant d'écriture de INKDROP.
@@ -165,7 +241,7 @@ Suggestions :`;
   }
 
   // ============================================
-  // 4. COACH DE CRÉATION
+  // 5. COACH DE CRÉATION
   // ============================================
   private async handleCoach(userName: string, context: string): Promise<string> {
     const prompt = `Tu es XELIRA, le coach de création de INKDROP.
@@ -181,7 +257,7 @@ Conseils :`;
   }
 
   // ============================================
-  // 5. RECHERCHE INTELLIGENTE
+  // 6. RECHERCHE INTELLIGENTE
   // ============================================
   private async handleSearch(userName: string, query: string): Promise<string> {
     const prompt = `Tu es XELIRA, le guide de INKDROP.
@@ -245,33 +321,5 @@ Résultats :`;
       .replace(/\{[\s\S]*?\}/g, '')
       .replace(/\[(Image|Photo|Foto)[^\]]*\]/gi, '')
       .trim();
-  }
-
-  // ============================================
-  // PROMPT SYSTÈME
-  // ============================================
-  private getSystemPrompt(firstName: string): string {
-    const name = firstName || 'Cher utilisateur';
-
-    return `Tu es XELIRA, le modérateur et guide officiel de INKDROP.
-
-🎯 TON RÔLE :
-- Tu connais tout sur INKDROP
-- Tu réponds uniquement en français
-- Tu es professionnel, précis et concis
-- Tu n'abordes jamais de sujets hors INKDROP
-
-📚 CE QUE TU DOIS CONNAÎTRE :
-1. Publication : tout le monde peut publier, chapitres 1-9 gratuits, 10+ payant (0.55$)
-2. Monétisation : 80% ventes chapitres, 70% publicité, 70% Premium, 90% pourboires
-3. Premium : 2$/mois, sans pub, accès illimité
-4. Certification : 1000 abonnés + 5000 vues
-5. Fonctionnalités : likes, commentaires, abonnements, profil, Découverte, InkStream
-
-⚠️ RÈGLES STRICTES :
-1. L'utilisateur s'appelle "${name}". Utilise son prénom.
-2. Si une question est hors INKDROP, réponds : "Désolé, je suis uniquement dédié à INKDROP."
-3. Sois UTILE avant d'être amical.
-4. Termine chaque réponse par "— XELIRA ✦"`;
   }
 }
