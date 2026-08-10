@@ -1,10 +1,5 @@
 import { Injectable, BadRequestException } from '@nestjs/common';
 import { PrismaService } from '../../prisma/prisma.service';
-import { SummaryService } from './summary.service';
-import { TagService } from './tag.service';
-import { AssistantService } from './assistant.service';
-import { SearchService } from './search.service';
-import { CoachService } from './coach.service';
 
 @Injectable()
 export class AiService {
@@ -18,17 +13,10 @@ export class AiService {
   private currentKeyIndex = 0;
   private readonly apiUrl = 'https://api.groq.com/openai/v1/chat/completions';
 
-  constructor(
-    private prisma: PrismaService,
-    private summaryService: SummaryService,
-    private tagService: TagService,
-    private assistantService: AssistantService,
-    private searchService: SearchService,
-    private coachService: CoachService,
-  ) {}
+  constructor(private prisma: PrismaService) {}
 
   // ============================================
-  // CHAT INTELLIGENT - DÉTECTE AUTOMATIQUEMENT L'INTENTION
+  // CHAT PRINCIPAL AVEC DÉTECTION D'INTENTION
   // ============================================
   async chat(
     userId: string,
@@ -40,77 +28,98 @@ export class AiService {
       throw new BadRequestException('Message requis');
     }
 
-    const lowerMessage = message.toLowerCase();
-
-    // 1. Détecter l'intention
-    const intent = this.detectIntent(lowerMessage);
-
-    // 2. Exécuter l'action appropriée
-    switch (intent) {
-      case 'summarize':
-        return this.handleSummarize(userId, message, firstName);
-      
-      case 'assistant':
-        return this.handleAssistant(userId, message, firstName);
-      
-      case 'coach':
-        return this.handleCoach(userId, message, firstName);
-      
-      case 'search':
-        return this.handleSearch(userId, message, firstName);
-      
-      default:
-        return this.handleChat(userId, message, history, firstName);
-    }
-  }
-
-  // ============================================
-  // DÉTECTION D'INTENTION
-  // ============================================
-  private detectIntent(message: string): string {
-    // Mots-clés pour le résumé
-    const summaryKeywords = ['résume', 'résumé', 'summarize', 'synthèse', 'raccourci'];
-    if (summaryKeywords.some(k => message.includes(k))) {
-      return 'summarize';
-    }
-
-    // Mots-clés pour l'assistant
-    const assistantKeywords = ['idée', 'suggestion', 'dialogue', 'écrire', 'réécrire', 'améliorer'];
-    if (assistantKeywords.some(k => message.includes(k))) {
-      return 'assistant';
-    }
-
-    // Mots-clés pour le coach
-    const coachKeywords = ['analyse', 'conseil', 'amélioration', 'croissance', 'statistique'];
-    if (coachKeywords.some(k => message.includes(k))) {
-      return 'coach';
-    }
-
-    // Mots-clés pour la recherche
-    const searchKeywords = ['cherche', 'trouve', 'recherche', 'manga', 'histoire'];
-    if (searchKeywords.some(k => message.includes(k)) && message.length > 10) {
-      return 'search';
-    }
-
-    return 'chat';
-  }
-
-  // ============================================
-  // GESTION DES INTENTIONS
-  // ============================================
-
-  private async handleChat(userId: string, message: string, history: any[], firstName: string) {
-    // Récupérer le nom
+    // 1. Récupérer le nom de l'utilisateur
     let userName = firstName;
     if (!userName) {
-      const user = await this.prisma.user.findUnique({
-        where: { id: userId },
-        select: { username: true },
-      });
-      userName = user?.username || 'Utilisateur';
+      try {
+        const user = await this.prisma.user.findUnique({
+          where: { id: userId },
+          select: { username: true },
+        });
+        userName = user?.username || 'Utilisateur';
+      } catch {
+        userName = 'Utilisateur';
+      }
+    }
+    userName = userName.replace(/^@/, '');
+
+    // 2. Détecter l'intention
+    const lowerMessage = message.toLowerCase();
+    let intent = 'chat';
+    let extractedData: any = {};
+
+    // --- Détection des intentions ---
+    
+    // Résumé
+    if (lowerMessage.includes('résumé') || 
+        lowerMessage.includes('synopsis') || 
+        lowerMessage.includes('summarize') ||
+        lowerMessage.includes('raccourci')) {
+      intent = 'summarize';
+      extractedData.topic = message.replace(/résumé|synopsis|summarize|raccourci/gi, '').trim() || 'ton manga';
     }
 
+    // Assistant éditeur
+    else if (lowerMessage.includes('idée') || 
+             lowerMessage.includes('suggestion') || 
+             lowerMessage.includes('dialogue') || 
+             lowerMessage.includes('écrire') ||
+             lowerMessage.includes('améliorer')) {
+      intent = 'assistant';
+      extractedData.context = message;
+    }
+
+    // Coach
+    else if (lowerMessage.includes('analyse') || 
+             lowerMessage.includes('conseil') || 
+             lowerMessage.includes('amélioration') ||
+             lowerMessage.includes('croissance')) {
+      intent = 'coach';
+      extractedData.context = message;
+    }
+
+    // Recherche
+    else if (lowerMessage.includes('cherche') || 
+             lowerMessage.includes('trouve') || 
+             lowerMessage.includes('recherche') ||
+             lowerMessage.includes('manga')) {
+      intent = 'search';
+      extractedData.query = message.replace(/cherche|trouve|recherche|manga/gi, '').trim() || message;
+    }
+
+    // 3. Exécuter l'intention
+    let reply: string;
+
+    switch (intent) {
+      case 'summarize':
+        reply = await this.handleSummarize(userName, extractedData.topic);
+        break;
+      
+      case 'assistant':
+        reply = await this.handleAssistant(userName, extractedData.context);
+        break;
+      
+      case 'coach':
+        reply = await this.handleCoach(userName, extractedData.context);
+        break;
+      
+      case 'search':
+        reply = await this.handleSearch(userName, extractedData.query);
+        break;
+      
+      default:
+        reply = await this.handleChat(userName, message, history);
+    }
+
+    return { success: true, reply: this.cleanReply(reply) };
+  }
+
+  // ============================================
+  // 1. CHAT GÉNÉRAL
+  // ============================================
+  private async handleChat(userName: string, message: string, history: any[]): Promise<string> {
     const systemPrompt = this.getSystemPrompt(userName);
+    
     const messages = [
       { role: 'system', content: systemPrompt },
       ...history.slice(-10).map(m => ({
@@ -120,49 +129,71 @@ export class AiService {
       { role: 'user', content: message },
     ];
 
-    const reply = await this.callGroq(messages);
-    return { success: true, reply: this.cleanReply(reply) };
+    return this.callGroq(messages);
   }
 
-  private async handleSummarize(userId: string, message: string, firstName: string) {
-    // Extraire le titre du manga si mentionné
-    const mangaTitle = message.replace(/résume|résumé|summarize|synthèse|raccourci/gi, '').trim() || 'le manga';
-    
-    const prompt = `L'utilisateur ${firstName || 'cher utilisateur'} a demandé un résumé pour "${mangaTitle}".
+  // ============================================
+  // 2. RÉSUMÉ DE CHAPITRE
+  // ============================================
+  private async handleSummarize(userName: string, topic: string): Promise<string> {
+    const prompt = `Tu es XELIRA, l'assistant de INKDROP.
 
-Règle : Génère un court résumé (3-4 phrases) de ce manga fictif pour donner envie de le lire.
+L'utilisateur ${userName} a demandé un résumé pour : "${topic}".
+
+Génère un résumé court et accrocheur (3-4 phrases) pour ce manga/chapitre.
+Le résumé doit donner envie de lire sans révéler la fin.
 
 Résumé :`;
-    
-    const reply = await this.callGroq([{ role: 'user', content: prompt }]);
-    return { success: true, reply: this.cleanReply(reply) };
+
+    return this.callGroq([{ role: 'user', content: prompt }]);
   }
 
-  private async handleAssistant(userId: string, message: string, firstName: string) {
-    const prompt = `L'utilisateur ${firstName || 'cher utilisateur'} a demandé de l'aide pour écrire : "${message}".
+  // ============================================
+  // 3. ASSISTANT ÉDITEUR
+  // ============================================
+  private async handleAssistant(userName: string, context: string): Promise<string> {
+    const prompt = `Tu es XELIRA, l'assistant d'écriture de INKDROP.
 
-Propose 3 suggestions d'amélioration ou d'idées pour l'aider.`;
-    
-    const reply = await this.callGroq([{ role: 'user', content: prompt }]);
-    return { success: true, reply: this.cleanReply(reply) };
+L'utilisateur ${userName} a demandé : "${context}".
+
+Donne 3 suggestions concrètes (idées, dialogues, améliorations) pour l'aider dans son écriture.
+Chaque suggestion doit être courte (1-2 phrases).
+
+Suggestions :`;
+
+    return this.callGroq([{ role: 'user', content: prompt }]);
   }
 
-  private async handleCoach(userId: string, message: string, firstName: string) {
-    const prompt = `L'utilisateur ${firstName || 'cher utilisateur'} a demandé une analyse : "${message}".
+  // ============================================
+  // 4. COACH DE CRÉATION
+  // ============================================
+  private async handleCoach(userName: string, context: string): Promise<string> {
+    const prompt = `Tu es XELIRA, le coach de création de INKDROP.
 
-Donne 3 conseils concrets pour améliorer son travail et sa stratégie.`;
-    
-    const reply = await this.callGroq([{ role: 'user', content: prompt }]);
-    return { success: true, reply: this.cleanReply(reply) };
+L'utilisateur ${userName} a demandé : "${context}".
+
+Donne 3 conseils concrets pour améliorer son travail (titre, description, stratégie, engagement).
+Chaque conseil doit être précis et applicable.
+
+Conseils :`;
+
+    return this.callGroq([{ role: 'user', content: prompt }]);
   }
 
-  private async handleSearch(userId: string, message: string, firstName: string) {
-    const prompt = `L'utilisateur ${firstName || 'cher utilisateur'} cherche des mangas sur : "${message}".
+  // ============================================
+  // 5. RECHERCHE INTELLIGENTE
+  // ============================================
+  private async handleSearch(userName: string, query: string): Promise<string> {
+    const prompt = `Tu es XELIRA, le guide de INKDROP.
 
-Propose 3 mangas (fictifs ou existants) qui correspondent à sa recherche, avec une courte description pour chacun.`;
-    
-    const reply = await this.callGroq([{ role: 'user', content: prompt }]);
-    return { success: true, reply: this.cleanReply(reply) };
+L'utilisateur ${userName} cherche : "${query}".
+
+Propose 3 mangas (fictifs ou réels) qui correspondent à cette recherche.
+Pour chaque manga, donne un titre et une courte description (1-2 phrases).
+
+Résultats :`;
+
+    return this.callGroq([{ role: 'user', content: prompt }]);
   }
 
   // ============================================
@@ -189,15 +220,21 @@ Propose 3 mangas (fictifs ou existants) qui correspondent à sa recherche, avec 
         });
 
         const data = await response.json();
-        if (response.ok) {
-          return data.choices?.[0]?.message?.content || 'Désolé, je n\'ai pas pu répondre.';
+
+        if (!response.ok) {
+          continue;
+        }
+
+        const reply = data.choices?.[0]?.message?.content;
+        if (reply) {
+          return reply;
         }
       } catch (error) {
         continue;
       }
     }
 
-    return 'Désolé, tous mes services sont occupés. Réessaie dans un instant !';
+    return `Bonjour ${userName || 'cher utilisateur'} ! 😊\n\nJe suis XELIRA, le modérateur de INKDROP. Comment puis-je t'aider aujourd'hui ?\n\n— XELIRA ✦`;
   }
 
   // ============================================
@@ -215,16 +252,26 @@ Propose 3 mangas (fictifs ou existants) qui correspondent à sa recherche, avec 
   // ============================================
   private getSystemPrompt(firstName: string): string {
     const name = firstName || 'Cher utilisateur';
+
     return `Tu es XELIRA, le modérateur et guide officiel de INKDROP.
 
-Tu connais tout sur INKDROP : comment publier, les revenus, la certification, le Premium.
+🎯 TON RÔLE :
+- Tu connais tout sur INKDROP
+- Tu réponds uniquement en français
+- Tu es professionnel, précis et concis
+- Tu n'abordes jamais de sujets hors INKDROP
 
-L'utilisateur s'appelle "${name}".
+📚 CE QUE TU DOIS CONNAÎTRE :
+1. Publication : tout le monde peut publier, chapitres 1-9 gratuits, 10+ payant (0.55$)
+2. Monétisation : 80% ventes chapitres, 70% publicité, 70% Premium, 90% pourboires
+3. Premium : 2$/mois, sans pub, accès illimité
+4. Certification : 1000 abonnés + 5000 vues
+5. Fonctionnalités : likes, commentaires, abonnements, profil, Découverte, InkStream
 
-RÈGLES :
-- Réponds en français
-- Sois professionnel et concis
-- Si une question est hors INKDROP, réponds : "Désolé, je suis uniquement dédié à INKDROP."
-- Termine par "— XELIRA ✦"`;
+⚠️ RÈGLES STRICTES :
+1. L'utilisateur s'appelle "${name}". Utilise son prénom.
+2. Si une question est hors INKDROP, réponds : "Désolé, je suis uniquement dédié à INKDROP."
+3. Sois UTILE avant d'être amical.
+4. Termine chaque réponse par "— XELIRA ✦"`;
   }
 }
