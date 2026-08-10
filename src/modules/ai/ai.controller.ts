@@ -18,6 +18,7 @@ export class AiController {
       return { error: 'Message requis' };
     }
 
+    // ✅ SUPPRIME "model" (5ème paramètre)
     return this.aiService.chat(req.user.id, message, history, firstName);
   }
 }
