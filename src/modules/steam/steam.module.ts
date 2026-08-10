@@ -1,14 +1,12 @@
-import { Controller, Get, UseGuards, Req } from '@nestjs/common';
-import { SteamService } from './steam.service'; // ✅ Correction : importer SteamService
-import { JwtAuthGuard } from '../../common/guards/jwt-auth.guard';
+import { Module } from '@nestjs/common';
+import { SteamService } from './steam.service';
+import { SteamController } from './steam.controller';
+import { PrismaModule } from '../../prisma/prisma.module';
 
-@Controller('steam')
-export class SteamController {
-  constructor(private readonly steamService: SteamService) {}
-
-  @Get('me')
-  @UseGuards(JwtAuthGuard)
-  async getSteam(@Req() req: any) {
-    return this.steamService.getUserSteam(req.user.id);
-  }
-}
+@Module({
+  imports: [PrismaModule],
+  controllers: [SteamController],
+  providers: [SteamService],
+  exports: [SteamService],
+})
+export class SteamModule {}
