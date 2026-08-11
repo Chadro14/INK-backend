@@ -5,13 +5,51 @@ import { firstValueFrom } from 'rxjs';
 @Injectable()
 export class MangaApiService {
   private readonly mangaDexApiUrl = 'https://api.mangadex.org';
+  private readonly kitsuApiUrl = 'https://kitsu.app/api/edge';
 
   constructor(private readonly httpService: HttpService) {}
 
   // ============================================
-  // RECHERCHER DES MANGAS PAR TITRE (avec MangaDex)
+  // RÉCUPÉRER LES MANGAS POPULAIRES VIA KITSU
   // ============================================
-  async searchMangaByTitle(query: string, limit: number = 20) {
+  async getPopularMangaKitsu(limit: number = 20) {
+    try {
+      const { data } = await firstValueFrom(
+        this.httpService.get(`${this.kitsuApiUrl}/manga`, {
+          params: {
+            'sort': '-averageRating',
+            'limit': limit,
+            'filter[subtype]': 'manga',
+          },
+        })
+      );
+
+      return data.data.map((item: any) => ({
+        id: item.id,
+        title: item.attributes.canonicalTitle || item.attributes.titles?.en || 'Titre inconnu',
+        description: item.attributes.synopsis || 'Aucune description disponible.',
+        coverImage: item.attributes.coverImage?.original || item.attributes.posterImage?.original || null,
+        author: item.attributes.authors?.[0]?.name || 'Inconnu',
+        rating: item.attributes.averageRating ? (parseFloat(item.attributes.averageRating) / 10).toFixed(1) : null,
+        status: item.attributes.status || 'unknown',
+        year: item.attributes.startDate ? new Date(item.attributes.startDate).getFullYear() : null,
+        genres: item.attributes.categories?.map((cat: any) => cat.attributes.title) || [],
+        chapters: item.attributes.chapterCount || 0,
+        source: 'kitsu',
+      }));
+    } catch (error) {
+      console.error('Erreur Kitsu:', error.message);
+      throw new HttpException(
+        'Erreur lors de la récupération des mangas populaires',
+        HttpStatus.BAD_GATEWAY,
+      );
+    }
+  }
+
+  // ============================================
+  // RECHERCHER DES MANGAS VIA MANGADEX
+  // ============================================
+  async searchMangaDex(query: string, limit: number = 20) {
     const url = `${this.mangaDexApiUrl}/manga`;
     const params = {
       'title': query,
@@ -26,7 +64,7 @@ export class MangaApiService {
         this.httpService.get(url, { params })
       );
       
-      return data.data.map((manga: any) => this.formatManga(manga));
+      return data.data.map((manga: any) => this.formatMangaDex(manga));
     } catch (error) {
       console.error('Erreur MangaDex:', error.message);
       throw new HttpException(
@@ -37,7 +75,7 @@ export class MangaApiService {
   }
 
   // ============================================
-  // RÉCUPÉRER UN MANGA PAR SON ID
+  // RÉCUPÉRER UN MANGA PAR ID VIA MANGADEX
   // ============================================
   async getMangaById(id: string) {
     const url = `${this.mangaDexApiUrl}/manga/${id}`;
@@ -50,7 +88,7 @@ export class MangaApiService {
         this.httpService.get(url, { params })
       );
       
-      return this.formatManga(data.data, true);
+      return this.formatMangaDex(data.data, true);
     } catch (error) {
       console.error('Erreur MangaDex:', error.message);
       throw new HttpException(
@@ -61,7 +99,7 @@ export class MangaApiService {
   }
 
   // ============================================
-  // RÉCUPÉRER LES CHAPITRES D'UN MANGA
+  // RÉCUPÉRER LES CHAPITRES D'UN MANGA VIA MANGADEX
   // ============================================
   async getMangaChapters(mangaId: string, limit: number = 100) {
     const url = `${this.mangaDexApiUrl}/manga/${mangaId}/feed`;
@@ -93,7 +131,7 @@ export class MangaApiService {
   }
 
   // ============================================
-  // RÉCUPÉRER LES PAGES D'UN CHAPITRE
+  // RÉCUPÉRER LES PAGES D'UN CHAPITRE VIA MANGADEX
   // ============================================
   async getChapterPages(chapterId: string) {
     const url = `${this.mangaDexApiUrl}/at-home/server/${chapterId}`;
@@ -129,16 +167,14 @@ export class MangaApiService {
   }
 
   // ============================================
-  // FORMATER UN MANGA (avec priorité au français)
+  // FORMATER UN MANGA MANGADEX (avec proxy CORS)
   // ============================================
-  private formatManga(manga: any, details: boolean = false) {
-    // ✅ Titre : priorité au français, sinon anglais
+  private formatMangaDex(manga: any, details: boolean = false) {
     const title = manga.attributes.title?.fr 
       || manga.attributes.title?.en 
       || manga.attributes.title?.ja 
       || 'Titre inconnu';
     
-    // ✅ Description : priorité au français
     let description = manga.attributes.description?.fr 
       || manga.attributes.description?.en 
       || 'Aucune description disponible.';
@@ -147,17 +183,16 @@ export class MangaApiService {
       description = description.slice(0, 300) + '...';
     }
     
-    // ✅ Couverture
+    // ✅ Couverture avec proxy CORS
     const coverArt = manga.relationships?.find((rel: any) => rel.type === 'cover_art');
     let coverUrl = null;
     if (coverArt && coverArt.attributes?.fileName) {
-      coverUrl = `https://uploads.mangadex.org/covers/${manga.id}/${coverArt.attributes.fileName}`;
+      const originalUrl = `https://uploads.mangadex.org/covers/${manga.id}/${coverArt.attributes.fileName}`;
+      coverUrl = `https://corsproxy.io/?${encodeURIComponent(originalUrl)}`;
     }
 
-    // ✅ Auteur
     const author = manga.relationships?.find((rel: any) => rel.type === 'author');
 
-    // ✅ Statut en français
     const statusMap: Record<string, string> = {
       'ongoing': 'En cours',
       'completed': 'Terminé',
@@ -165,12 +200,10 @@ export class MangaApiService {
       'cancelled': 'Annulé',
     };
 
-    // ✅ Genres en français
     const genres = manga.attributes?.tags?.map((tag: any) => {
       return tag.attributes?.name?.fr || tag.attributes?.name?.en || 'Inconnu';
     }) || [];
 
-    // ✅ Rating
     const rating = manga.attributes?.rating ? (manga.attributes.rating / 10).toFixed(1) : null;
 
     return {
@@ -186,6 +219,7 @@ export class MangaApiService {
       status: statusMap[manga.attributes?.status] || manga.attributes?.status || 'Inconnu',
       year: manga.attributes?.year || null,
       genres: genres,
+      source: 'mangadex',
       ...(details && {
         chapters: manga.attributes?.chapters || 0,
         createdAt: manga.attributes?.createdAt || null,
