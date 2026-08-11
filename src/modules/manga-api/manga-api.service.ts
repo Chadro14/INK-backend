@@ -5,46 +5,8 @@ import { firstValueFrom } from 'rxjs';
 @Injectable()
 export class MangaApiService {
   private readonly mangaDexApiUrl = 'https://api.mangadex.org';
-  private readonly kitsuApiUrl = 'https://kitsu.app/api/edge';
 
   constructor(private readonly httpService: HttpService) {}
-
-  // ============================================
-  // RÉCUPÉRER LES MANGAS POPULAIRES VIA KITSU
-  // ============================================
-  async getPopularMangaKitsu(limit: number = 20) {
-    try {
-      const { data } = await firstValueFrom(
-        this.httpService.get(`${this.kitsuApiUrl}/manga`, {
-          params: {
-            'sort': '-averageRating',
-            'limit': limit,
-            'filter[subtype]': 'manga',
-          },
-        })
-      );
-
-      return data.data.map((item: any) => ({
-        id: `kitsu_${item.id}`, // ✅ Préfixe pour identifier la source
-        title: item.attributes.canonicalTitle || item.attributes.titles?.en || 'Titre inconnu',
-        description: item.attributes.synopsis || 'Aucune description disponible.',
-        coverImage: item.attributes.coverImage?.original || item.attributes.posterImage?.original || null,
-        author: item.attributes.authors?.[0]?.name || 'Inconnu',
-        rating: item.attributes.averageRating ? (parseFloat(item.attributes.averageRating) / 10).toFixed(1) : null,
-        status: item.attributes.status || 'unknown',
-        year: item.attributes.startDate ? new Date(item.attributes.startDate).getFullYear() : null,
-        genres: item.attributes.categories?.map((cat: any) => cat.attributes.title) || [],
-        chapters: item.attributes.chapterCount || 0,
-        source: 'kitsu',
-      }));
-    } catch (error) {
-      console.error('Erreur Kitsu:', error.message);
-      throw new HttpException(
-        'Erreur lors de la récupération des mangas populaires',
-        HttpStatus.BAD_GATEWAY,
-      );
-    }
-  }
 
   // ============================================
   // RECHERCHER DES MANGAS VIA MANGADEX
@@ -64,7 +26,7 @@ export class MangaApiService {
         this.httpService.get(url, { params })
       );
       
-      return data.data.map((manga: any) => this.formatMangaDex(manga));
+      return data.data.map((manga: any) => this.formatManga(manga));
     } catch (error) {
       console.error('Erreur MangaDex:', error.message);
       throw new HttpException(
@@ -75,20 +37,9 @@ export class MangaApiService {
   }
 
   // ============================================
-  // RÉCUPÉRER UN MANGA PAR ID (MangaDex ou Kitsu)
+  // RÉCUPÉRER UN MANGA PAR ID
   // ============================================
   async getMangaById(id: string) {
-    // ✅ Détecter la source
-    if (id.startsWith('kitsu_')) {
-      return this.getKitsuManga(id.replace('kitsu_', ''));
-    }
-    return this.getMangaDexById(id);
-  }
-
-  // ============================================
-  // RÉCUPÉRER UN MANGA PAR ID (MangaDex)
-  // ============================================
-  async getMangaDexById(id: string) {
     const url = `${this.mangaDexApiUrl}/manga/${id}`;
     const params = {
       'includes[]': ['cover_art', 'author', 'artist'],
@@ -99,7 +50,7 @@ export class MangaApiService {
         this.httpService.get(url, { params })
       );
       
-      return this.formatMangaDex(data.data, true);
+      return this.formatManga(data.data, true);
     } catch (error) {
       console.error('Erreur MangaDex:', error.message);
       throw new HttpException(
@@ -110,39 +61,7 @@ export class MangaApiService {
   }
 
   // ============================================
-  // RÉCUPÉRER UN MANGA PAR ID (Kitsu)
-  // ============================================
-  async getKitsuManga(id: string) {
-    try {
-      const { data } = await firstValueFrom(
-        this.httpService.get(`${this.kitsuApiUrl}/manga/${id}`)
-      );
-
-      const item = data.data;
-      return {
-        id: `kitsu_${item.id}`,
-        title: item.attributes.canonicalTitle || item.attributes.titles?.en || 'Titre inconnu',
-        description: item.attributes.synopsis || 'Aucune description disponible.',
-        coverImage: item.attributes.coverImage?.original || item.attributes.posterImage?.original || null,
-        author: item.attributes.authors?.[0]?.name || 'Inconnu',
-        rating: item.attributes.averageRating ? (parseFloat(item.attributes.averageRating) / 10).toFixed(1) : null,
-        status: item.attributes.status || 'unknown',
-        year: item.attributes.startDate ? new Date(item.attributes.startDate).getFullYear() : null,
-        genres: item.attributes.categories?.map((cat: any) => cat.attributes.title) || [],
-        chapters: item.attributes.chapterCount || 0,
-        source: 'kitsu',
-      };
-    } catch (error) {
-      console.error('Erreur Kitsu:', error.message);
-      throw new HttpException(
-        'Manga Kitsu non trouvé',
-        HttpStatus.NOT_FOUND,
-      );
-    }
-  }
-
-  // ============================================
-  // RÉCUPÉRER LES CHAPITRES D'UN MANGA (MangaDex)
+  // RÉCUPÉRER LES CHAPITRES D'UN MANGA
   // ============================================
   async getMangaChapters(mangaId: string, limit: number = 100) {
     const url = `${this.mangaDexApiUrl}/manga/${mangaId}/feed`;
@@ -174,7 +93,7 @@ export class MangaApiService {
   }
 
   // ============================================
-  // RÉCUPÉRER LES PAGES D'UN CHAPITRE (MangaDex)
+  // RÉCUPÉRER LES PAGES D'UN CHAPITRE (AVEC PROXY)
   // ============================================
   async getChapterPages(chapterId: string) {
     const url = `${this.mangaDexApiUrl}/at-home/server/${chapterId}`;
@@ -195,10 +114,12 @@ export class MangaApiService {
         );
       }
 
+      // ✅ Utilisation de AllOrigins comme proxy CORS
+      const proxyUrl = 'https://api.allorigins.win/raw?url=';
+      
       return {
         pages: filenames.map((filename: string) => ({
-          // ✅ Utiliser le proxy AllOrigins pour contourner CORS
-          url: `https://api.allorigins.win/raw?url=${encodeURIComponent(`${baseUrl}/data/${chapterHash}/${filename}`)}`,
+          url: `${proxyUrl}${encodeURIComponent(`${baseUrl}/data/${chapterHash}/${filename}`)}`,
         })),
       };
     } catch (error) {
@@ -211,9 +132,9 @@ export class MangaApiService {
   }
 
   // ============================================
-  // FORMATER UN MANGA MANGADEX (avec proxy CORS)
+  // FORMATER UN MANGA (avec proxy pour les images)
   // ============================================
-  private formatMangaDex(manga: any, details: boolean = false) {
+  private formatManga(manga: any, details: boolean = false) {
     const title = manga.attributes.title?.fr 
       || manga.attributes.title?.en 
       || manga.attributes.title?.ja 
@@ -227,12 +148,13 @@ export class MangaApiService {
       description = description.slice(0, 300) + '...';
     }
     
-    // ✅ Couverture avec proxy AllOrigins
+    // ✅ Proxy CORS pour les couvertures
+    const proxyUrl = 'https://api.allorigins.win/raw?url=';
     const coverArt = manga.relationships?.find((rel: any) => rel.type === 'cover_art');
     let coverUrl = null;
     if (coverArt && coverArt.attributes?.fileName) {
       const originalUrl = `https://uploads.mangadex.org/covers/${manga.id}/${coverArt.attributes.fileName}`;
-      coverUrl = `https://api.allorigins.win/raw?url=${encodeURIComponent(originalUrl)}`;
+      coverUrl = `${proxyUrl}${encodeURIComponent(originalUrl)}`;
     }
 
     const author = manga.relationships?.find((rel: any) => rel.type === 'author');
