@@ -5,11 +5,8 @@ import { firstValueFrom } from 'rxjs';
 @Injectable()
 export class MangaApiService {
   private readonly mangaDexApiUrl = 'https://api.mangadex.org';
-  private readonly proxyUrls = [
-    'https://api.allorigins.win/raw?url=',
-    'https://corsproxy.io/?',
-    'https://proxy.cors.sh/?',
-  ];
+  // ✅ Utiliser corsproxy.io (plus stable)
+  private readonly proxyUrl = 'https://corsproxy.io/?';
 
   constructor(private readonly httpService: HttpService) {}
 
@@ -98,7 +95,7 @@ export class MangaApiService {
   }
 
   // ============================================
-  // RÉCUPÉRER LES PAGES D'UN CHAPITRE (AVEC PROXY FALLBACK)
+  // RÉCUPÉRER LES PAGES D'UN CHAPITRE
   // ============================================
   async getChapterPages(chapterId: string) {
     const url = `${this.mangaDexApiUrl}/at-home/server/${chapterId}`;
@@ -119,12 +116,10 @@ export class MangaApiService {
         );
       }
 
-      // ✅ Générer les URLs avec différents proxies pour plus de robustesse
+      // ✅ Utiliser corsproxy.io pour les pages
       const pages = filenames.map((filename: string) => {
         const originalUrl = `${baseUrl}/data/${chapterHash}/${filename}`;
-        // Utiliser le premier proxy disponible
-        const proxyUrl = `${this.proxyUrls[0]}${encodeURIComponent(originalUrl)}`;
-        return { url: proxyUrl };
+        return { url: `${this.proxyUrl}${encodeURIComponent(originalUrl)}` };
       });
 
       return { pages };
@@ -138,14 +133,16 @@ export class MangaApiService {
   }
 
   // ============================================
-  // FORMATER UN MANGA (avec proxy et chapitres)
+  // FORMATER UN MANGA
   // ============================================
   private formatManga(manga: any, details: boolean = false) {
+    // ✅ Titre
     const title = manga.attributes.title?.fr 
       || manga.attributes.title?.en 
       || manga.attributes.title?.ja 
       || 'Titre inconnu';
     
+    // ✅ Description
     let description = manga.attributes.description?.fr 
       || manga.attributes.description?.en 
       || 'Aucune description disponible.';
@@ -154,16 +151,18 @@ export class MangaApiService {
       description = description.slice(0, 300) + '...';
     }
     
-    // ✅ Couverture avec proxy
+    // ✅ Couverture avec corsproxy.io
     const coverArt = manga.relationships?.find((rel: any) => rel.type === 'cover_art');
     let coverUrl = null;
     if (coverArt && coverArt.attributes?.fileName) {
       const originalUrl = `https://uploads.mangadex.org/covers/${manga.id}/${coverArt.attributes.fileName}`;
-      coverUrl = `${this.proxyUrls[0]}${encodeURIComponent(originalUrl)}`;
+      coverUrl = `${this.proxyUrl}${encodeURIComponent(originalUrl)}`;
     }
 
+    // ✅ Auteur
     const author = manga.relationships?.find((rel: any) => rel.type === 'author');
 
+    // ✅ Statut en français
     const statusMap: Record<string, string> = {
       'ongoing': 'En cours',
       'completed': 'Terminé',
@@ -171,13 +170,15 @@ export class MangaApiService {
       'cancelled': 'Annulé',
     };
 
+    // ✅ Genres
     const genres = manga.attributes?.tags?.map((tag: any) => {
       return tag.attributes?.name?.fr || tag.attributes?.name?.en || 'Inconnu';
     }) || [];
 
+    // ✅ Note
     const rating = manga.attributes?.rating ? (manga.attributes.rating / 10).toFixed(1) : null;
 
-    // ✅ RÉCUPÉRER LE NOMBRE DE CHAPITRES
+    // ✅ Nombre de chapitres (IMPORTANT)
     const chaptersCount = manga.attributes?.chapters || 0;
 
     return {
@@ -193,7 +194,7 @@ export class MangaApiService {
       status: statusMap[manga.attributes?.status] || manga.attributes?.status || 'Inconnu',
       year: manga.attributes?.year || null,
       genres: genres,
-      chapters: chaptersCount, // ✅ AJOUTÉ
+      chapters: chaptersCount,
       source: 'mangadex',
       ...(details && {
         chapters: chaptersCount,
