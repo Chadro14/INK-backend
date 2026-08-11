@@ -5,6 +5,11 @@ import { firstValueFrom } from 'rxjs';
 @Injectable()
 export class MangaApiService {
   private readonly mangaDexApiUrl = 'https://api.mangadex.org';
+  private readonly proxyUrls = [
+    'https://api.allorigins.win/raw?url=',
+    'https://corsproxy.io/?',
+    'https://proxy.cors.sh/?',
+  ];
 
   constructor(private readonly httpService: HttpService) {}
 
@@ -93,7 +98,7 @@ export class MangaApiService {
   }
 
   // ============================================
-  // RÉCUPÉRER LES PAGES D'UN CHAPITRE (AVEC PROXY)
+  // RÉCUPÉRER LES PAGES D'UN CHAPITRE (AVEC PROXY FALLBACK)
   // ============================================
   async getChapterPages(chapterId: string) {
     const url = `${this.mangaDexApiUrl}/at-home/server/${chapterId}`;
@@ -114,14 +119,15 @@ export class MangaApiService {
         );
       }
 
-      // ✅ Utilisation de AllOrigins comme proxy CORS
-      const proxyUrl = 'https://api.allorigins.win/raw?url=';
-      
-      return {
-        pages: filenames.map((filename: string) => ({
-          url: `${proxyUrl}${encodeURIComponent(`${baseUrl}/data/${chapterHash}/${filename}`)}`,
-        })),
-      };
+      // ✅ Générer les URLs avec différents proxies pour plus de robustesse
+      const pages = filenames.map((filename: string) => {
+        const originalUrl = `${baseUrl}/data/${chapterHash}/${filename}`;
+        // Utiliser le premier proxy disponible
+        const proxyUrl = `${this.proxyUrls[0]}${encodeURIComponent(originalUrl)}`;
+        return { url: proxyUrl };
+      });
+
+      return { pages };
     } catch (error) {
       console.error('Erreur pages MangaDex:', error.message);
       throw new HttpException(
@@ -132,7 +138,7 @@ export class MangaApiService {
   }
 
   // ============================================
-  // FORMATER UN MANGA (avec proxy pour les images)
+  // FORMATER UN MANGA (avec proxy et chapitres)
   // ============================================
   private formatManga(manga: any, details: boolean = false) {
     const title = manga.attributes.title?.fr 
@@ -148,13 +154,12 @@ export class MangaApiService {
       description = description.slice(0, 300) + '...';
     }
     
-    // ✅ Proxy CORS pour les couvertures
-    const proxyUrl = 'https://api.allorigins.win/raw?url=';
+    // ✅ Couverture avec proxy
     const coverArt = manga.relationships?.find((rel: any) => rel.type === 'cover_art');
     let coverUrl = null;
     if (coverArt && coverArt.attributes?.fileName) {
       const originalUrl = `https://uploads.mangadex.org/covers/${manga.id}/${coverArt.attributes.fileName}`;
-      coverUrl = `${proxyUrl}${encodeURIComponent(originalUrl)}`;
+      coverUrl = `${this.proxyUrls[0]}${encodeURIComponent(originalUrl)}`;
     }
 
     const author = manga.relationships?.find((rel: any) => rel.type === 'author');
@@ -172,6 +177,9 @@ export class MangaApiService {
 
     const rating = manga.attributes?.rating ? (manga.attributes.rating / 10).toFixed(1) : null;
 
+    // ✅ RÉCUPÉRER LE NOMBRE DE CHAPITRES
+    const chaptersCount = manga.attributes?.chapters || 0;
+
     return {
       id: manga.id,
       title: title,
@@ -185,9 +193,10 @@ export class MangaApiService {
       status: statusMap[manga.attributes?.status] || manga.attributes?.status || 'Inconnu',
       year: manga.attributes?.year || null,
       genres: genres,
+      chapters: chaptersCount, // ✅ AJOUTÉ
       source: 'mangadex',
       ...(details && {
-        chapters: manga.attributes?.chapters || 0,
+        chapters: chaptersCount,
         createdAt: manga.attributes?.createdAt || null,
       }),
     };
