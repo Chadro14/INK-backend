@@ -20,9 +20,15 @@ export class ImagesController {
         timeout: 10000,
       });
 
-      const contentType = response.headers['content-type'] || 'image/jpeg';
-      res.set('Content-Type', contentType);
-      res.set('Cache-Control', 'public, max-age=86400'); // Cache 24h
+      // ✅ Correction : vérifier que contentType est une string
+      const contentType = response.headers['content-type'];
+      if (contentType && typeof contentType === 'string') {
+        res.set('Content-Type', contentType);
+      } else {
+        res.set('Content-Type', 'image/jpeg');
+      }
+      
+      res.set('Cache-Control', 'public, max-age=86400');
       res.send(response.data);
     } catch (error) {
       console.error('Erreur proxy image:', error.message);
