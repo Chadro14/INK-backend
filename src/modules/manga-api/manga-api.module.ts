@@ -2,6 +2,7 @@ import { Module } from '@nestjs/common';
 import { HttpModule } from '@nestjs/axios';
 import { MangaApiService } from './manga-api.service';
 import { MangaApiController } from './manga-api.controller';
+import { ImagesController } from './images.controller';
 
 @Module({
   imports: [
@@ -10,7 +11,7 @@ import { MangaApiController } from './manga-api.controller';
       maxRedirects: 5,
     }),
   ],
-  controllers: [MangaApiController],
+  controllers: [MangaApiController, ImagesController],
   providers: [MangaApiService],
   exports: [MangaApiService],
 })
