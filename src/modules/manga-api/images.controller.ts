@@ -20,7 +20,6 @@ export class ImagesController {
         timeout: 10000,
       });
 
-      // ✅ Correction : vérifier que contentType est une string
       const contentType = response.headers['content-type'];
       if (contentType && typeof contentType === 'string') {
         res.set('Content-Type', contentType);
