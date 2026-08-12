@@ -5,8 +5,8 @@ import { firstValueFrom } from 'rxjs';
 @Injectable()
 export class MangaApiService {
   private readonly mangaDexApiUrl = 'https://api.mangadex.org';
-  // ✅ Utiliser corsproxy.io (plus stable)
-  private readonly proxyUrl = 'https://corsproxy.io/?';
+  // ✅ Utiliser AllOrigins (gratuit et stable)
+  private readonly proxyUrl = 'https://api.allorigins.win/raw?url=';
 
   constructor(private readonly httpService: HttpService) {}
 
@@ -116,7 +116,7 @@ export class MangaApiService {
         );
       }
 
-      // ✅ Utiliser corsproxy.io pour les pages
+      // ✅ Utiliser AllOrigins comme proxy
       const pages = filenames.map((filename: string) => {
         const originalUrl = `${baseUrl}/data/${chapterHash}/${filename}`;
         return { url: `${this.proxyUrl}${encodeURIComponent(originalUrl)}` };
@@ -151,7 +151,7 @@ export class MangaApiService {
       description = description.slice(0, 300) + '...';
     }
     
-    // ✅ Couverture avec corsproxy.io
+    // ✅ Couverture avec AllOrigins
     const coverArt = manga.relationships?.find((rel: any) => rel.type === 'cover_art');
     let coverUrl = null;
     if (coverArt && coverArt.attributes?.fileName) {
@@ -178,8 +178,9 @@ export class MangaApiService {
     // ✅ Note
     const rating = manga.attributes?.rating ? (manga.attributes.rating / 10).toFixed(1) : null;
 
-    // ✅ Nombre de chapitres (IMPORTANT)
-    const chaptersCount = manga.attributes?.chapters || 0;
+    // ✅ Nombre de chapitres (utiliser lastChapter si disponible)
+    const lastChapter = manga.attributes?.lastChapter || '0';
+    const chaptersCount = parseInt(lastChapter) || 0;
 
     return {
       id: manga.id,
