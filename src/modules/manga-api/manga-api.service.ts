@@ -62,13 +62,13 @@ export class MangaApiService {
   }
 
   // ============================================
-  // RÉCUPÉRER LES CHAPITRES
+  // RÉCUPÉRER LES CHAPITRES (AVEC MULTI-LANGUES)
   // ============================================
   async getMangaChapters(mangaId: string, limit: number = 100) {
     const url = `${this.mangaDexApiUrl}/manga/${mangaId}/feed`;
     const params = {
       'limit': limit,
-      'translatedLanguage[]': ['fr', 'en'],
+      'translatedLanguage[]': ['fr', 'en', 'es', 'pt-br', 'id'],
       'order[chapter]': 'desc',
     };
 
@@ -97,6 +97,8 @@ export class MangaApiService {
   // RÉCUPÉRER LES PAGES D'UN CHAPITRE
   // ============================================
   async getChapterPages(chapterId: string) {
+    console.log(`📖 Récupération des pages pour le chapitre: ${chapterId}`);
+    
     const url = `${this.mangaDexApiUrl}/at-home/server/${chapterId}`;
 
     try {
@@ -104,26 +106,32 @@ export class MangaApiService {
         this.httpService.get(url)
       );
       
+      console.log(`✅ Réponse MangaDex reçue pour le chapitre ${chapterId}`);
+
       const baseUrl = data.baseUrl;
       const chapterHash = data.chapter.hash;
       const filenames = data.chapter.data;
 
+      console.log(`📄 Nombre de pages: ${filenames?.length || 0}`);
+
       if (!filenames || filenames.length === 0) {
+        console.warn(`⚠️ Aucune page pour le chapitre ${chapterId}`);
         throw new HttpException(
           'Aucune page disponible pour ce chapitre',
           HttpStatus.NOT_FOUND,
         );
       }
 
-      // ✅ Utiliser le proxy du backend
       const pages = filenames.map((filename: string) => {
         const originalUrl = `${baseUrl}/data/${chapterHash}/${filename}`;
-        return { url: `${this.baseUrl}/manga-image?url=${encodeURIComponent(originalUrl)}` };
+        const proxiedUrl = `${this.baseUrl}/manga-image?url=${encodeURIComponent(originalUrl)}`;
+        console.log(`🖼️ Page: ${proxiedUrl}`);
+        return { url: proxiedUrl };
       });
 
       return { pages };
     } catch (error) {
-      console.error('Erreur pages:', error.message);
+      console.error(`❌ Erreur pages chapitre ${chapterId}:`, error.message);
       throw new HttpException(
         'Erreur lors de la récupération des pages',
         HttpStatus.BAD_GATEWAY,
@@ -148,7 +156,6 @@ export class MangaApiService {
       description = description.slice(0, 300) + '...';
     }
     
-    // ✅ Couverture via le proxy du backend
     const coverArt = manga.relationships?.find((rel: any) => rel.type === 'cover_art');
     let coverUrl = null;
     if (coverArt && coverArt.attributes?.fileName) {
@@ -171,7 +178,6 @@ export class MangaApiService {
 
     const rating = manga.attributes?.rating ? (manga.attributes.rating / 10).toFixed(1) : null;
 
-    // ✅ Nombre de chapitres
     const lastChapter = manga.attributes?.lastChapter || '0';
     const chaptersCount = parseInt(lastChapter) || 0;
 
