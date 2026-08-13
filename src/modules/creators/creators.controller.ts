@@ -1,4 +1,5 @@
-import { Controller, Get, Query, UseGuards } from '@nestjs/common';
+import { Controller, Get, Query, UseGuards, Param } from '@nestjs/common';
+//                                            ↑ AJOUTÉ : Param
 import { CreatorsService } from './creators.service';
 import { JwtAuthGuard } from '../../common/guards/jwt-auth.guard';
 
@@ -10,7 +11,7 @@ export class CreatorsController {
   // RÉCUPÉRER LES CRÉATEURS CERTIFIÉS (TOP)
   // ============================================
   @Get('top')
-  @UseGuards(JwtAuthGuard)
+  // @UseGuards(JwtAuthGuard)  // ← COMMENTÉ : Rendre public pour la vitrine
   async getTopCreators(@Query('limit') limit: string = '6') {
     const creators = await this.creatorsService.getTopCreators(parseInt(limit));
     return { success: true, data: creators };
