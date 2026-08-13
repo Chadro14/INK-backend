@@ -172,12 +172,14 @@ export class UsersService {
 
   // ============================================
   // RÉCUPÉRER LES CRÉATEURS CERTIFIÉS (TOP)
+  // ✅ CORRIGÉ : NE FILTRE PLUS PAR ROLE
   // ============================================
   async getTopCreators(limit: number = 6) {
     return this.prisma.user.findMany({
       where: {
         isCertified: true,
-        role: 'CREATOR',
+        // ✅ SUPPRESSION DE `role: 'CREATOR'`
+        // Pour inclure ADMIN, READER, etc.
       },
       select: {
         id: true,
