@@ -17,7 +17,8 @@ import { AdminModule } from './modules/admin/admin.module';
 import { PrismaModule } from './prisma/prisma.module';
 import { BootstrapModule } from './modules/admin/bootstrap.module';
 import { AiModule } from './modules/ai/ai.module';
-import { MangaApiModule } from './modules/manga-api/manga-api.module'; // ✅ AJOUTER CETTE LIGNE
+import { MangaApiModule } from './modules/manga-api/manga-api.module';
+import { CreatorsModule } from './modules/creators/creators.module'; // ✅ AJOUTE CETTE LIGNE
 
 @Module({
   imports: [
@@ -42,7 +43,8 @@ import { MangaApiModule } from './modules/manga-api/manga-api.module'; // ✅ AJ
     AdminModule,
     BootstrapModule,
     AiModule,
-    MangaApiModule, // ✅ AJOUTER CETTE LIGNE
+    MangaApiModule,
+    CreatorsModule, 
   ],
 })
 export class AppModule {}
