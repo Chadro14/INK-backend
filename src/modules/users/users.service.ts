@@ -169,4 +169,35 @@ export class UsersService {
 
     return user;
   }
+
+  // ============================================
+  // RÉCUPÉRER LES CRÉATEURS CERTIFIÉS (TOP)
+  // ============================================
+  async getTopCreators(limit: number = 6) {
+    return this.prisma.user.findMany({
+      where: {
+        isCertified: true,
+        role: 'CREATOR',
+      },
+      select: {
+        id: true,
+        username: true,
+        avatarUrl: true,
+        isCertified: true,
+        badgeColor: true,
+        _count: {
+          select: {
+            mangas: true,
+            followers: true,
+          },
+        },
+      },
+      orderBy: {
+        followers: {
+          _count: 'desc',
+        },
+      },
+      take: limit,
+    });
+  }
 }
