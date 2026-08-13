@@ -4,9 +4,10 @@ import {
   Put,
   Patch,
   Post,
-  Delete, // ✅ AJOUTER Delete
+  Delete,
   Body,
   Param,
+  Query, // ✅ AJOUTER QUERY
   UseGuards,
   Req,
   UseInterceptors,
@@ -20,7 +21,7 @@ import { UsersService } from './users.service';
 import { JwtAuthGuard } from '../../common/guards/jwt-auth.guard';
 import { StorageService } from '../../common/services/storage.service';
 import { PrismaService } from '../../prisma/prisma.service';
-import sharp from 'sharp'; // ✅ CORRECTION : import par défaut
+import sharp from 'sharp';
 
 export class UpdateBadgeColorDto {
   @IsString({ message: 'La couleur du badge doit être une chaîne de caractères' })
@@ -35,16 +36,16 @@ export class UpdateBadgeColorDto {
 @Controller('users')
 export class UsersController {
   private readonly AVAILABLE_COLORS = [
-    '#3B82F6', // Bleu Électrique
-    '#EC4899', // Rose Magique
-    '#10B981', // Vert Émeraude
-    '#EF4444', // Rouge Feu
-    '#FFD700', // Or Royal
-    '#8B5CF6', // Violet
-    '#F97316', // Orange
-    '#111827', // Obsidian Dark
-    '#00FF66', // Cyber Green
-    '#A5F3FC', // Glace Éternelle
+    '#3B82F6',
+    '#EC4899',
+    '#10B981',
+    '#EF4444',
+    '#FFD700',
+    '#8B5CF6',
+    '#F97316',
+    '#111827',
+    '#00FF66',
+    '#A5F3FC',
     'gradient-rainbow',
     'gradient-fire',
     'holo-shimmer',
@@ -69,6 +70,16 @@ export class UsersController {
       delete (user as any).passwordHash;
     }
     return user;
+  }
+
+  // ============================================
+  // RÉCUPÉRER LES CRÉATEURS CERTIFIÉS (TOP)
+  // ============================================
+  @Get('top-creators')
+  @UseGuards(JwtAuthGuard)
+  async getTopCreators(@Query('limit') limit: string = '6') {
+    const creators = await this.usersService.getTopCreators(parseInt(limit));
+    return { success: true, data: creators };
   }
 
   // ============================================
@@ -151,7 +162,7 @@ export class UsersController {
   }
 
   // ============================================
-  // UPLOADER UN AVATAR (AVEC COMPRESSION ET NETTOYAGE)
+  // UPLOADER UN AVATAR
   // ============================================
   @Post('avatar')
   @UseGuards(JwtAuthGuard)
@@ -171,7 +182,6 @@ export class UsersController {
 
     const userId = req.user?.id || req.user?.sub;
 
-    // ✅ 1. Récupérer l'ancien avatar pour le supprimer
     const user = await this.usersService.findById(userId);
     if (user && user.avatarUrl) {
       try {
@@ -184,7 +194,6 @@ export class UsersController {
       }
     }
 
-    // ✅ 2. Compresser l'image avec Sharp
     const compressedBuffer = await sharp(file.buffer)
       .resize(300, 300, {
         fit: 'cover',
@@ -194,14 +203,11 @@ export class UsersController {
       .toBuffer();
 
     const key = `user/${userId}/avatar-${Date.now()}.webp`;
-    
-    // ✅ 3. Upload vers Supabase - bucket 'chapters'
+
     await this.storage.upload(key, compressedBuffer, 'image/webp', 'chapters');
 
-    // ✅ 4. URL PUBLIQUE PERMANENTE - bucket 'chapters'
     const publicUrl = this.storage.getPublicUrl(key, 'chapters');
-    
-    // ✅ 5. Sauvegarder l'URL publique en BDD
+
     await this.usersService.updateAvatar(userId, publicUrl);
 
     return { 
