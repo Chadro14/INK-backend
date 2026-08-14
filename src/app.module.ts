@@ -1,5 +1,7 @@
+// src/app.module.ts
 import { Module } from '@nestjs/common';
 import { ConfigModule } from '@nestjs/config';
+import { CommonModule } from './common/common.module';
 import { AuthModule } from './modules/auth/auth.module';
 import { UsersModule } from './modules/users/users.module';
 import { MangasModule } from './modules/mangas/mangas.module';
@@ -19,7 +21,7 @@ import { BootstrapModule } from './modules/admin/bootstrap.module';
 import { AiModule } from './modules/ai/ai.module';
 import { MangaApiModule } from './modules/manga-api/manga-api.module';
 import { CreatorsModule } from './modules/creators/creators.module';
-import { SecurityModule } from './modules/security/security.module'; // ✅ AJOUT
+import { SecurityModule } from './modules/security/security.module';
 
 @Module({
   imports: [
@@ -27,6 +29,7 @@ import { SecurityModule } from './modules/security/security.module'; // ✅ AJOU
       isGlobal: true,
       envFilePath: '.env',
     }),
+    CommonModule,
     PrismaModule,
     AuthModule,
     UsersModule,
@@ -46,7 +49,7 @@ import { SecurityModule } from './modules/security/security.module'; // ✅ AJOU
     AiModule,
     MangaApiModule,
     CreatorsModule,
-    SecurityModule, // ✅ AJOUT
+    SecurityModule,
   ],
 })
 export class AppModule {}
