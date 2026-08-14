@@ -7,7 +7,7 @@ import {
   Delete,
   Body,
   Param,
-  Query, // ✅ AJOUTER QUERY
+  Query,
   UseGuards,
   Req,
   UseInterceptors,
@@ -264,5 +264,27 @@ export class UsersController {
       delete (user as any).passwordHash;
     }
     return user;
+  }
+
+  // ============================================
+  // ✅ AJOUT : SAUVEGARDER L'ÉTAT
+  // ============================================
+  @Post('save-state')
+  @UseGuards(JwtAuthGuard)
+  async saveState(@Req() req: any, @Body() body: any) {
+    const userId = req.user?.id || req.user?.sub;
+    await this.usersService.saveState(userId, body);
+    return { success: true };
+  }
+
+  // ============================================
+  // ✅ AJOUT : CHARGER L'ÉTAT
+  // ============================================
+  @Get('load-state')
+  @UseGuards(JwtAuthGuard)
+  async loadState(@Req() req: any) {
+    const userId = req.user?.id || req.user?.sub;
+    const state = await this.usersService.loadState(userId);
+    return { data: state };
   }
 }
