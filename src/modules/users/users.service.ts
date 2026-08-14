@@ -172,7 +172,6 @@ export class UsersService {
 
   // ============================================
   // RÉCUPÉRER LES CRÉATEURS CERTIFIÉS (TOP)
-  // ✅ CORRIGÉ : NE FILTRE PLUS PAR ROLE
   // ============================================
   async getTopCreators(limit: number = 6) {
     return this.prisma.user.findMany({
