@@ -178,8 +178,6 @@ export class UsersService {
     return this.prisma.user.findMany({
       where: {
         isCertified: true,
-        // ✅ SUPPRESSION DE `role: 'CREATOR'`
-        // Pour inclure ADMIN, READER, etc.
       },
       select: {
         id: true,
@@ -201,5 +199,27 @@ export class UsersService {
       },
       take: limit,
     });
+  }
+
+  // ============================================
+  // ✅ AJOUT : SAUVEGARDER L'ÉTAT
+  // ============================================
+  async saveState(userId: string, state: any) {
+    return this.prisma.user.update({
+      where: { id: userId },
+      data: { appState: state },
+    });
+  }
+
+  // ============================================
+  // ✅ AJOUT : CHARGER L'ÉTAT
+  // ============================================
+  async loadState(userId: string) {
+    const user = await this.prisma.user.findUnique({
+      where: { id: userId },
+      select: { appState: true },
+    });
+
+    return user?.appState || null;
   }
 }
