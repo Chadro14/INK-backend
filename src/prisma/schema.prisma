@@ -34,6 +34,13 @@ model User {
   // ✅ AJOUT : Stockage de l'état de l'application
   appState           Json?
 
+  // ✅ AJOUT : SÉCURITÉ DU COMPTE
+  failedLoginAttempts Int     @default(0)
+  isLocked            Boolean @default(false)
+  lastLoginAt         DateTime?
+  lastLoginIP         String?
+
+  // RELATIONS
   mangas             Manga[]
   comments           Comment[]
   commentLikes       CommentLike[]
@@ -61,12 +68,16 @@ model User {
   // EVENTS
   eventParticipations EventParticipation[]
 
+  // PASSWORD RESET
+  passwordResets     PasswordReset[]
+
   createdAt          DateTime  @default(now())
   updatedAt          DateTime  @updatedAt
 
   @@index([username])
   @@index([email])
   @@index([role])
+  @@index([isLocked])
 }
 
 enum Role {
@@ -79,6 +90,23 @@ enum Role {
 enum PremiumPlan {
   MONTHLY
   YEARLY
+}
+
+// ============================================
+// RÉINITIALISATION DE MOT DE PASSE
+// ============================================
+model PasswordReset {
+  id        String   @id @default(uuid())
+  userId    String
+  user      User     @relation(fields: [userId], references: [id], onDelete: Cascade)
+  token     String   @unique
+  expiresAt DateTime
+  createdAt DateTime @default(now())
+  usedAt    DateTime?
+
+  @@index([token])
+  @@index([expiresAt])
+  @@index([userId])
 }
 
 // ============================================
