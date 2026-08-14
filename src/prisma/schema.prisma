@@ -31,6 +31,9 @@ model User {
   premiumPlan        PremiumPlan?
   lastUsernameChange DateTime?
 
+  // ✅ AJOUT : Stockage de l'état de l'application
+  appState           Json?
+
   mangas             Manga[]
   comments           Comment[]
   commentLikes       CommentLike[]
@@ -91,7 +94,7 @@ model Manga {
   status           Status   @default(ONGOING)
   genre            String[] @default([])
   tags             String[] @default([])
-  aiTags           String[] @default([]) // ✅ TAGS GÉNÉRÉS PAR XELIRA
+  aiTags           String[] @default([])
   viewsCount       Int      @default(0)
   likesCount       Int      @default(0)
   subscribersCount Int      @default(0)
@@ -136,7 +139,7 @@ model Chapter {
   price       Float?
   viewsCount  Int                @default(0)
   coverUrl    String?
-  summary     String?            @db.Text // ✅ RÉSUMÉ GÉNÉRÉ PAR XELIRA
+  summary     String?            @db.Text
   publishedAt DateTime?
   createdAt   DateTime           @default(now())
   updatedAt   DateTime           @updatedAt
