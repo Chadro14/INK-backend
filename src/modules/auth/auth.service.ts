@@ -1,27 +1,29 @@
 // src/modules/auth/auth.service.ts
-import { Injectable, ConflictException, UnauthorizedException, BadRequestException } from '@nestjs/common';
+import { Injectable, ConflictException, UnauthorizedException, NotFoundException, BadRequestException } from '@nestjs/common';
 import { JwtService } from '@nestjs/jwt';
 import * as bcrypt from 'bcrypt';
 import { PrismaService } from '../../prisma/prisma.service';
-import { RegisterDto, LoginDto } from './dto/auth.dto';
+import { RegisterDto, LoginDto, Gender } from './dto/auth.dto';
+import { SecurityService } from '../security/security.service';
+import { EmailService } from '../../common/services/email.service';
 
 @Injectable()
 export class AuthService {
   constructor(
     private prisma: PrismaService,
     private jwt: JwtService,
+    private securityService: SecurityService,
+    private emailService: EmailService,
   ) {}
 
   // ============================================
-  // INSCRIPTION AVEC NOUVEAUX CHAMPS
+  // INSCRIPTION
   // ============================================
   async register(dto: RegisterDto) {
-    // Vérifier que les mots de passe correspondent
     if (dto.password !== dto.confirmPassword) {
       throw new BadRequestException('Les mots de passe ne correspondent pas.');
     }
 
-    // Vérifier si l'utilisateur existe déjà
     const existingUser = await this.prisma.user.findFirst({
       where: {
         OR: [{ email: dto.email }, { username: dto.username }],
@@ -32,10 +34,8 @@ export class AuthService {
       throw new ConflictException('Email ou nom d\'utilisateur déjà utilisé');
     }
 
-    // Hacher le mot de passe
     const passwordHash = await bcrypt.hash(dto.password, 10);
 
-    // ✅ CRÉER L'UTILISATEUR AVEC LES NOUVEAUX CHAMPS
     const user = await this.prisma.user.create({
       data: {
         email: dto.email,
@@ -45,11 +45,19 @@ export class AuthService {
         lastName: dto.lastName,
         birthDate: new Date(dto.birthDate),
         gender: dto.gender,
+        mobileNumber: dto.mobileNumber,
         avatarColor: this.generateAvatarColor(dto.username),
       },
     });
 
     const token = this.jwt.sign({ sub: user.id, email: user.email });
+
+    // ✅ ENVOYER L'EMAIL DE BIENVENUE
+    try {
+      await this.emailService.sendWelcomeEmail(user.email, user.username);
+    } catch (error) {
+      console.error('❌ Erreur envoi email de bienvenue:', error);
+    }
 
     await this.prisma.notification.create({
       data: {
@@ -75,9 +83,9 @@ export class AuthService {
   }
 
   // ============================================
-  // CONNEXION (inchangée)
+  // CONNEXION
   // ============================================
-  async login(dto: LoginDto) {
+  async login(dto: LoginDto, ip: string) {
     const user = await this.prisma.user.findUnique({
       where: { email: dto.email },
     });
@@ -86,10 +94,20 @@ export class AuthService {
       throw new UnauthorizedException('Email ou mot de passe incorrect');
     }
 
+    // Vérifier si le compte est verrouillé
+    if (user.isLocked) {
+      throw new UnauthorizedException(
+        'Compte verrouillé. Utilisez "Mot de passe oublié" pour le déverrouiller.'
+      );
+    }
+
     const isPasswordValid = await bcrypt.compare(dto.password, user.passwordHash);
     if (!isPasswordValid) {
+      await this.securityService.handleFailedLogin(dto.email);
       throw new UnauthorizedException('Email ou mot de passe incorrect');
     }
+
+    await this.securityService.handleSuccessfulLogin(user.id, ip);
 
     const token = this.jwt.sign({ sub: user.id, email: user.email });
 
@@ -108,6 +126,42 @@ export class AuthService {
       },
       token,
     };
+  }
+
+  // ============================================
+  // RÉCUPÉRER UN UTILISATEUR PAR ID
+  // ============================================
+  async getUserById(id: string) {
+    const user = await this.prisma.user.findUnique({
+      where: { id },
+      select: {
+        id: true,
+        email: true,
+        username: true,
+        firstName: true,
+        lastName: true,
+        avatarUrl: true,
+        avatarColor: true,
+        bio: true,
+        role: true,
+        isCertified: true,
+        premiumActive: true,
+        createdAt: true,
+        _count: {
+          select: {
+            mangas: true,
+            followers: true,
+            following: true,
+          },
+        },
+      },
+    });
+
+    if (!user) {
+      throw new NotFoundException('Utilisateur non trouvé');
+    }
+
+    return user;
   }
 
   // ============================================
