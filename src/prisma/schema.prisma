@@ -17,6 +17,13 @@ model User {
   email              String    @unique
   username           String    @unique
   passwordHash       String?
+  
+  // ✅ NOUVEAUX CHAMPS PROFIL
+  firstName          String?
+  lastName           String?
+  birthDate          DateTime?
+  gender             Gender?
+  
   avatarUrl          String?
   avatarColor        String?
   bio                String?   @db.Text
@@ -31,10 +38,10 @@ model User {
   premiumPlan        PremiumPlan?
   lastUsernameChange DateTime?
 
-  // ✅ AJOUT : Stockage de l'état de l'application
+  // Stockage de l'état de l'application
   appState           Json?
 
-  // ✅ AJOUT : SÉCURITÉ DU COMPTE
+  // SÉCURITÉ DU COMPTE
   failedLoginAttempts Int     @default(0)
   isLocked            Boolean @default(false)
   lastLoginAt         DateTime?
@@ -80,6 +87,9 @@ model User {
   @@index([isLocked])
 }
 
+// ============================================
+// ENUMS
+// ============================================
 enum Role {
   READER
   CREATOR
@@ -90,6 +100,12 @@ enum Role {
 enum PremiumPlan {
   MONTHLY
   YEARLY
+}
+
+enum Gender {
+  MALE
+  FEMALE
+  OTHER
 }
 
 // ============================================
