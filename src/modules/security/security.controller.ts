@@ -6,9 +6,6 @@ import { SecurityService } from './security.service';
 export class SecurityController {
   constructor(private securityService: SecurityService) {}
 
-  // ============================================
-  // DEMANDER LA RÉINITIALISATION
-  // ============================================
   @Post('forgot-password')
   async forgotPassword(@Body('email') email: string) {
     if (!email) {
@@ -17,17 +14,11 @@ export class SecurityController {
     return this.securityService.requestPasswordReset(email);
   }
 
-  // ============================================
-  // VÉRIFIER LE TOKEN
-  // ============================================
   @Get('verify-reset-token/:token')
   async verifyToken(@Param('token') token: string) {
     return this.securityService.verifyResetToken(token);
   }
 
-  // ============================================
-  // RÉINITIALISER LE MOT DE PASSE
-  // ============================================
   @Post('reset-password')
   async resetPassword(
     @Body('token') token: string,
