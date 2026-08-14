@@ -3,7 +3,7 @@ import { Injectable, ConflictException, UnauthorizedException, NotFoundException
 import { JwtService } from '@nestjs/jwt';
 import * as bcrypt from 'bcrypt';
 import { PrismaService } from '../../prisma/prisma.service';
-import { RegisterDto, LoginDto, Gender } from './dto/auth.dto';
+import { RegisterDto, LoginDto } from './dto/auth.dto';
 import { SecurityService } from '../security/security.service';
 import { EmailService } from '../../common/services/email.service';
 
@@ -16,9 +16,6 @@ export class AuthService {
     private emailService: EmailService,
   ) {}
 
-  // ============================================
-  // INSCRIPTION
-  // ============================================
   async register(dto: RegisterDto) {
     if (dto.password !== dto.confirmPassword) {
       throw new BadRequestException('Les mots de passe ne correspondent pas.');
@@ -52,7 +49,6 @@ export class AuthService {
 
     const token = this.jwt.sign({ sub: user.id, email: user.email });
 
-    // ✅ ENVOYER L'EMAIL DE BIENVENUE
     try {
       await this.emailService.sendWelcomeEmail(user.email, user.username);
     } catch (error) {
@@ -82,9 +78,6 @@ export class AuthService {
     };
   }
 
-  // ============================================
-  // CONNEXION
-  // ============================================
   async login(dto: LoginDto, ip: string) {
     const user = await this.prisma.user.findUnique({
       where: { email: dto.email },
@@ -94,7 +87,6 @@ export class AuthService {
       throw new UnauthorizedException('Email ou mot de passe incorrect');
     }
 
-    // Vérifier si le compte est verrouillé
     if (user.isLocked) {
       throw new UnauthorizedException(
         'Compte verrouillé. Utilisez "Mot de passe oublié" pour le déverrouiller.'
@@ -128,9 +120,6 @@ export class AuthService {
     };
   }
 
-  // ============================================
-  // RÉCUPÉRER UN UTILISATEUR PAR ID
-  // ============================================
   async getUserById(id: string) {
     const user = await this.prisma.user.findUnique({
       where: { id },
@@ -164,9 +153,6 @@ export class AuthService {
     return user;
   }
 
-  // ============================================
-  // GÉNÉRER UNE COULEUR D'AVATAR
-  // ============================================
   private generateAvatarColor(username: string): string {
     const colors = [
       '#FF6B35', '#F03E5B', '#6B46FF', '#00D4FF',
