@@ -9,18 +9,17 @@ import * as crypto from 'crypto';
 export class SecurityService {
   constructor(
     private prisma: PrismaService,
-    private emailService: EmailService, // ✅ Injection du service d'email
+    private emailService: EmailService,
   ) {}
 
   // ============================================
-  // 1. DEMANDER LA RÉINITIALISATION (AVEC EMAIL)
+  // 1. DEMANDER LA RÉINITIALISATION
   // ============================================
   async requestPasswordReset(email: string) {
     const user = await this.prisma.user.findUnique({
       where: { email },
     });
 
-    // ✅ SÉCURITÉ : Ne pas révéler si l'email existe ou non
     if (!user) {
       return {
         success: true,
@@ -28,14 +27,12 @@ export class SecurityService {
       };
     }
 
-    // Supprimer les anciens tokens
     await this.prisma.passwordReset.deleteMany({
       where: { userId: user.id },
     });
 
-    // Générer un token sécurisé
     const token = crypto.randomBytes(32).toString('hex');
-    const expiresAt = new Date(Date.now() + 15 * 60 * 1000); // 15 minutes
+    const expiresAt = new Date(Date.now() + 15 * 60 * 1000);
 
     await this.prisma.passwordReset.create({
       data: {
@@ -45,7 +42,6 @@ export class SecurityService {
       },
     });
 
-    // ✅ ENVOYER L'EMAIL DE RÉINITIALISATION
     try {
       await this.emailService.sendResetPasswordEmail(
         user.email,
@@ -54,7 +50,6 @@ export class SecurityService {
       );
     } catch (error) {
       console.error('❌ Erreur envoi email:', error);
-      // On ne bloque pas le processus si l'email échoue
     }
 
     return {
@@ -64,7 +59,7 @@ export class SecurityService {
   }
 
   // ============================================
-  // 2. VÉRIFIER LA VALIDITÉ DU TOKEN
+  // 2. VÉRIFIER LE TOKEN
   // ============================================
   async verifyResetToken(token: string) {
     const reset = await this.prisma.passwordReset.findUnique({
@@ -102,7 +97,6 @@ export class SecurityService {
       throw new BadRequestException('Token expiré. Veuillez refaire une demande.');
     }
 
-    // ✅ VÉRIFIER LA FORCE DU MOT DE PASSE
     this.validatePasswordStrength(newPassword);
 
     const hashedPassword = await bcrypt.hash(newPassword, 10);
@@ -129,7 +123,6 @@ export class SecurityService {
       }),
     ]);
 
-    // ✅ NOTIFIER L'UTILISATEUR PAR EMAIL
     try {
       await this.emailService.sendEmail({
         to: reset.user.email,
@@ -157,18 +150,10 @@ export class SecurityService {
   private validatePasswordStrength(password: string) {
     const errors = [];
 
-    if (password.length < 8) {
-      errors.push('Au moins 8 caractères');
-    }
-    if (!/[A-Z]/.test(password)) {
-      errors.push('Au moins une majuscule');
-    }
-    if (!/[a-z]/.test(password)) {
-      errors.push('Au moins une minuscule');
-    }
-    if (!/[0-9]/.test(password)) {
-      errors.push('Au moins un chiffre');
-    }
+    if (password.length < 8) errors.push('Au moins 8 caractères');
+    if (!/[A-Z]/.test(password)) errors.push('Au moins une majuscule');
+    if (!/[a-z]/.test(password)) errors.push('Au moins une minuscule');
+    if (!/[0-9]/.test(password)) errors.push('Au moins un chiffre');
     if (!/[!@#$%^&*()_+\-=\[\]{};:'"\\|,.<>\/?]/.test(password)) {
       errors.push('Au moins un caractère spécial');
     }
@@ -201,7 +186,6 @@ export class SecurityService {
         },
       });
 
-      // 🔔 NOTIFIER L'UTILISATEUR
       await this.prisma.notification.create({
         data: {
           userId: user.id,
@@ -211,7 +195,6 @@ export class SecurityService {
         },
       });
 
-      // ✅ ENVOYER UN EMAIL D'ALERTE
       try {
         await this.emailService.sendEmail({
           to: user.email,
