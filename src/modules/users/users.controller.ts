@@ -267,9 +267,9 @@ export class UsersController {
   }
 
   // ============================================
-  // ✅ AJOUT : SAUVEGARDER L'ÉTAT
+  // ✅ AJOUT : SAUVEGARDER L'ÉTAT (avec la route /state)
   // ============================================
-  @Post('save-state')
+  @Post('state')
   @UseGuards(JwtAuthGuard)
   async saveState(@Req() req: any, @Body() body: any) {
     const userId = req.user?.id || req.user?.sub;
@@ -278,11 +278,33 @@ export class UsersController {
   }
 
   // ============================================
-  // ✅ AJOUT : CHARGER L'ÉTAT
+  // ✅ AJOUT : CHARGER L'ÉTAT (avec la route /state)
+  // ============================================
+  @Get('state')
+  @UseGuards(JwtAuthGuard)
+  async loadState(@Req() req: any) {
+    const userId = req.user?.id || req.user?.sub;
+    const state = await this.usersService.loadState(userId);
+    return { data: state };
+  }
+
+  // ============================================
+  // ✅ AJOUT : SAUVEGARDER L'ÉTAT (ancienne route pour compatibilité)
+  // ============================================
+  @Post('save-state')
+  @UseGuards(JwtAuthGuard)
+  async saveStateOld(@Req() req: any, @Body() body: any) {
+    const userId = req.user?.id || req.user?.sub;
+    await this.usersService.saveState(userId, body);
+    return { success: true };
+  }
+
+  // ============================================
+  // ✅ AJOUT : CHARGER L'ÉTAT (ancienne route pour compatibilité)
   // ============================================
   @Get('load-state')
   @UseGuards(JwtAuthGuard)
-  async loadState(@Req() req: any) {
+  async loadStateOld(@Req() req: any) {
     const userId = req.user?.id || req.user?.sub;
     const state = await this.usersService.loadState(userId);
     return { data: state };
