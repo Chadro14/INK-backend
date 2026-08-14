@@ -1,15 +1,19 @@
 // src/modules/security/security.service.ts
-import { Injectable, BadRequestException, NotFoundException } from '@nestjs/common';
+import { Injectable, BadRequestException } from '@nestjs/common';
 import { PrismaService } from '../../prisma/prisma.service';
+import { EmailService } from '../../common/services/email.service';
 import * as bcrypt from 'bcrypt';
 import * as crypto from 'crypto';
 
 @Injectable()
 export class SecurityService {
-  constructor(private prisma: PrismaService) {}
+  constructor(
+    private prisma: PrismaService,
+    private emailService: EmailService, // ✅ Injection du service d'email
+  ) {}
 
   // ============================================
-  // 1. DEMANDER LA RÉINITIALISATION
+  // 1. DEMANDER LA RÉINITIALISATION (AVEC EMAIL)
   // ============================================
   async requestPasswordReset(email: string) {
     const user = await this.prisma.user.findUnique({
@@ -41,8 +45,17 @@ export class SecurityService {
       },
     });
 
-    // TODO: Envoyer l'email avec Nodemailer
-    // await this.emailService.sendResetEmail(user.email, user.username, token);
+    // ✅ ENVOYER L'EMAIL DE RÉINITIALISATION
+    try {
+      await this.emailService.sendResetPasswordEmail(
+        user.email,
+        user.username || 'Utilisateur',
+        token,
+      );
+    } catch (error) {
+      console.error('❌ Erreur envoi email:', error);
+      // On ne bloque pas le processus si l'email échoue
+    }
 
     return {
       success: true,
@@ -116,6 +129,25 @@ export class SecurityService {
       }),
     ]);
 
+    // ✅ NOTIFIER L'UTILISATEUR PAR EMAIL
+    try {
+      await this.emailService.sendEmail({
+        to: reset.user.email,
+        subject: '🔐 Mot de passe réinitialisé - INKDROP',
+        text: `Bonjour ${reset.user.username},\n\nVotre mot de passe INKDROP a été réinitialisé avec succès.\n\nSi vous n'êtes pas à l'origine de cette action, contactez immédiatement le support.\n\n© INKDROP`,
+        html: `
+          <h2>🔐 Mot de passe réinitialisé</h2>
+          <p>Bonjour <strong>${reset.user.username}</strong>,</p>
+          <p>Votre mot de passe INKDROP a été réinitialisé avec succès.</p>
+          <p style="color:#ff6b6b;"><strong>⚠️ Si vous n'êtes pas à l'origine de cette action, contactez immédiatement le support.</strong></p>
+          <br>
+          <p>© INKDROP</p>
+        `,
+      });
+    } catch (error) {
+      console.error('❌ Erreur envoi email de confirmation:', error);
+    }
+
     return { success: true };
   }
 
@@ -169,6 +201,7 @@ export class SecurityService {
         },
       });
 
+      // 🔔 NOTIFIER L'UTILISATEUR
       await this.prisma.notification.create({
         data: {
           userId: user.id,
@@ -177,6 +210,25 @@ export class SecurityService {
           body: 'Votre compte a été verrouillé après 5 tentatives de connexion échouées. Utilisez "Mot de passe oublié" pour le déverrouiller.',
         },
       });
+
+      // ✅ ENVOYER UN EMAIL D'ALERTE
+      try {
+        await this.emailService.sendEmail({
+          to: user.email,
+          subject: '⚠️ Alerte de sécurité - Compte verrouillé',
+          text: `Bonjour ${user.username},\n\nVotre compte INKDROP a été verrouillé après 5 tentatives de connexion échouées.\n\nUtilisez "Mot de passe oublié" pour le déverrouiller.\n\n© INKDROP`,
+          html: `
+            <h2>⚠️ Alerte de sécurité</h2>
+            <p>Bonjour <strong>${user.username}</strong>,</p>
+            <p>Votre compte INKDROP a été <strong>verrouillé</strong> après 5 tentatives de connexion échouées.</p>
+            <p>Utilisez <a href="${process.env.FRONTEND_URL}/forgot-password">"Mot de passe oublié"</a> pour le déverrouiller.</p>
+            <br>
+            <p>© INKDROP</p>
+          `,
+        });
+      } catch (error) {
+        console.error('❌ Erreur envoi email alerte:', error);
+      }
 
       throw new BadRequestException('Compte verrouillé après 5 tentatives. Utilisez "Mot de passe oublié".');
     }
