@@ -18,7 +18,8 @@ import { PrismaModule } from './prisma/prisma.module';
 import { BootstrapModule } from './modules/admin/bootstrap.module';
 import { AiModule } from './modules/ai/ai.module';
 import { MangaApiModule } from './modules/manga-api/manga-api.module';
-import { CreatorsModule } from './modules/creators/creators.module'; // ✅ AJOUTE CETTE LIGNE
+import { CreatorsModule } from './modules/creators/creators.module';
+import { SecurityModule } from './modules/security/security.module'; // ✅ AJOUT
 
 @Module({
   imports: [
@@ -44,7 +45,8 @@ import { CreatorsModule } from './modules/creators/creators.module'; // ✅ AJOU
     BootstrapModule,
     AiModule,
     MangaApiModule,
-    CreatorsModule, 
+    CreatorsModule,
+    SecurityModule, // ✅ AJOUT
   ],
 })
 export class AppModule {}
