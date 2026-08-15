@@ -70,7 +70,7 @@ model User {
   passwordResets     PasswordReset[]
 
   createdAt          DateTime  @default(now())
-  updatedAt          DateTime  @updatedA
+  updatedAt          DateTime  @updatedAt // ✅ CORRIGÉ
 
   @@index([username])
   @@index([email])
@@ -121,7 +121,7 @@ model PasswordReset {
 // ============================================
 model Manga {
   id               String   @id @default(uuid())
-  slug             String?  @unique // ✅ SLUG UNIQUE (nullable temporairement)
+  slug             String?  @unique
   title            String
   description      String?  @db.Text
   coverUrl         String?
@@ -148,7 +148,7 @@ model Manga {
   @@index([authorId])
   @@index([status, createdAt])
   @@index([viewsCount, likesCount])
-  @@index([slug]) // ✅ INDEX SUR LE SLUG
+  @@index([slug])
 }
 
 enum Status {
