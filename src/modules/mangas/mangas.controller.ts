@@ -30,12 +30,18 @@ export class MangasController {
     private readonly chaptersService: ChaptersService,
   ) {}
 
+  // ============================================
+  // 1. CRÉER UN MANGA
+  // ============================================
   @Post()
   @UseGuards(JwtAuthGuard)
   async create(@Req() req: any, @Body() dto: CreateMangaDto) {
     return this.mangasService.create(req.user.id, dto);
   }
 
+  // ============================================
+  // 2. LISTE DES MANGAS (avec filtres)
+  // ============================================
   @Get()
   async findAll(
     @Query('page') page?: string,
@@ -53,81 +59,120 @@ export class MangasController {
     );
   }
 
-  // Placé avant :id pour éviter toute collision de route
+  // ============================================
+  // 3. TOP MANGAS (par popularité)
+  // ============================================
   @Get('top')
   async getTop(@Query('limit') limit?: string) {
     const limitNumber = limit ? parseInt(limit, 10) : 10;
     return this.mangasService.getTopMangas(Number.isNaN(limitNumber) ? 10 : limitNumber);
   }
 
-  @Get(':id')
-  async findOne(@Param('id') id: string) {
-    // Garde-fou pour identifier le problème rapidement dans les logs terminal
-    if (!id || id === 'undefined' || id === 'null') {
-      throw new BadRequestException(`L'ID de manga transmis est invalide: "${id}"`);
+  // ============================================
+  // 4. RECHERCHER UN MANGA PAR ID OU SLUG
+  // ============================================
+  @Get(':identifier')
+  async findOne(@Param('identifier') identifier: string) {
+    // ✅ Garde-fou pour identifier le problème rapidement
+    if (!identifier || identifier === 'undefined' || identifier === 'null') {
+      throw new BadRequestException(`L'identifiant du manga est invalide: "${identifier}"`);
     }
-    return this.mangasService.findById(id);
+    
+    // ✅ Utiliser la méthode unifiée (ID ou Slug)
+    return this.mangasService.findByIdOrSlug(identifier);
   }
 
-  @Put(':id')
+  // ============================================
+  // 5. METTRE À JOUR UN MANGA
+  // ============================================
+  @Put(':identifier')
   @UseGuards(JwtAuthGuard)
   async update(
-    @Param('id') id: string,
+    @Param('identifier') identifier: string,
     @Req() req: any,
     @Body() dto: UpdateMangaDto,
   ) {
-    return this.mangasService.update(id, req.user.id, dto);
+    if (!identifier || identifier === 'undefined' || identifier === 'null') {
+      throw new BadRequestException(`L'identifiant du manga est invalide: "${identifier}"`);
+    }
+    return this.mangasService.update(identifier, req.user.id, dto);
   }
 
-  @Delete(':id')
+  // ============================================
+  // 6. SUPPRIMER UN MANGA
+  // ============================================
+  @Delete(':identifier')
   @UseGuards(JwtAuthGuard)
-  async delete(@Param('id') id: string, @Req() req: any) {
-    return this.mangasService.delete(id, req.user.id);
+  async delete(@Param('identifier') identifier: string, @Req() req: any) {
+    if (!identifier || identifier === 'undefined' || identifier === 'null') {
+      throw new BadRequestException(`L'identifiant du manga est invalide: "${identifier}"`);
+    }
+    return this.mangasService.delete(identifier, req.user.id);
   }
 
-  // --- COUVERTURES ---
-
-  @Post(':id/cover/upload-url')
+  // ============================================
+  // 7. COUVERTURES - URL D'UPLOAD
+  // ============================================
+  @Post(':identifier/cover/upload-url')
   @UseGuards(JwtAuthGuard)
   async getCoverUploadUrl(
-    @Param('id') mangaId: string,
+    @Param('identifier') identifier: string,
     @Req() req: any,
   ) {
-    return this.mangasService.getCoverUploadUrl(mangaId, req.user.id);
+    if (!identifier || identifier === 'undefined' || identifier === 'null') {
+      throw new BadRequestException(`L'identifiant du manga est invalide: "${identifier}"`);
+    }
+    return this.mangasService.getCoverUploadUrl(identifier, req.user.id);
   }
 
-  @Post(':id/cover/finalize')
+  // ============================================
+  // 8. COUVERTURES - FINALISATION
+  // ============================================
+  @Post(':identifier/cover/finalize')
   @UseGuards(JwtAuthGuard)
   async finalizeCover(
-    @Param('id') mangaId: string,
+    @Param('identifier') identifier: string,
     @Req() req: any,
     @Body() body: { key: string },
   ) {
+    if (!identifier || identifier === 'undefined' || identifier === 'null') {
+      throw new BadRequestException(`L'identifiant du manga est invalide: "${identifier}"`);
+    }
     if (!body.key) {
       throw new BadRequestException('La clé du fichier (key) est requise');
     }
-    return this.mangasService.finalizeCover(mangaId, req.user.id, body.key);
+    return this.mangasService.finalizeCover(identifier, req.user.id, body.key);
   }
 
-  // --- CHAPITRES ---
-
-  @Post(':id/chapters/upload-urls')
+  // ============================================
+  // 9. CHAPITRES - URLS D'UPLOAD
+  // ============================================
+  @Post(':identifier/chapters/upload-urls')
   @UseGuards(JwtAuthGuard)
   async getChapterUploadUrls(
-    @Param('id') mangaId: string,
+    @Param('identifier') identifier: string,
     @Req() req: any,
     @Body() dto: ChapterUploadUrlsDto,
   ) {
-    return this.chaptersService.getChapterUploadUrls(mangaId, dto);
+    if (!identifier || identifier === 'undefined' || identifier === 'null') {
+      throw new BadRequestException(`L'identifiant du manga est invalide: "${identifier}"`);
+    }
+    return this.chaptersService.getChapterUploadUrls(identifier, dto);
   }
 
-  @Post(':id/chapters/finalize')
+  // ============================================
+  // 10. CHAPITRES - FINALISATION
+  // ============================================
+  @Post(':identifier/chapters/finalize')
   @UseGuards(JwtAuthGuard)
   async finalizeChapter(
-    @Param('id') mangaId: string,
+    @Param('identifier') identifier: string,
     @Req() req: any,
     @Body() dto: FinalizeChapterDto,
   ) {
-    return this.chaptersService.finalizeChapter(mangaId, req.user.id, dto);
+    if (!identifier || identifier === 'undefined' || identifier === 'null') {
+      throw new BadRequestException(`L'identifiant du manga est invalide: "${identifier}"`);
+    }
+    return this.chaptersService.finalizeChapter(identifier, req.user.id, dto);
   }
 }
