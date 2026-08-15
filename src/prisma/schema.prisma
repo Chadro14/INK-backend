@@ -130,6 +130,7 @@ model PasswordReset {
 // ============================================
 model Manga {
   id               String   @id @default(uuid())
+  slug             String   @unique  // ✅ AJOUTÉ - Pour les URLs propres
   title            String
   description      String?  @db.Text
   coverUrl         String?
@@ -156,6 +157,7 @@ model Manga {
   @@index([authorId])
   @@index([status, createdAt])
   @@index([viewsCount, likesCount])
+  @@index([slug])  // ✅ AJOUTÉ - Index pour les recherches par slug
 }
 
 enum Status {
