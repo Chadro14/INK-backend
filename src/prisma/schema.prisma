@@ -18,7 +18,6 @@ model User {
   username           String    @unique
   passwordHash       String?
   
-  // ✅ NOUVEAUX CHAMPS PROFIL
   firstName          String?
   lastName           String?
   birthDate          DateTime?
@@ -38,16 +37,13 @@ model User {
   premiumPlan        PremiumPlan?
   lastUsernameChange DateTime?
 
-  // Stockage de l'état de l'application
   appState           Json?
 
-  // SÉCURITÉ DU COMPTE
   failedLoginAttempts Int     @default(0)
   isLocked            Boolean @default(false)
   lastLoginAt         DateTime?
   lastLoginIP         String?
 
-  // RELATIONS
   mangas             Manga[]
   comments           Comment[]
   commentLikes       CommentLike[]
@@ -60,22 +56,17 @@ model User {
   watchHistory       InkStreamWatchHistory[]
   manas              Int       @default(0)
 
-  // FOLLOW
   following          UserFollow[] @relation("Follower")
   followers          UserFollow[] @relation("Following")
 
-  // STEAM (progression)
   steamPoints        Int       @default(0)
   steamLevel         Int       @default(1)
 
-  // MESSAGERIE
   sentMessages       Message[] @relation("SentMessages")
   receivedMessages   Message[] @relation("ReceivedMessages")
 
-  // EVENTS
   eventParticipations EventParticipation[]
 
-  // PASSWORD RESET
   passwordResets     PasswordReset[]
 
   createdAt          DateTime  @default(now())
@@ -130,7 +121,7 @@ model PasswordReset {
 // ============================================
 model Manga {
   id               String   @id @default(uuid())
-  slug             String?  @unique // ✅ MODIFIÉ : nullable pour permettre la migration
+  slug             String?  @unique // ✅ MODIFIÉ : NULLABLE pour la migration
   title            String
   description      String?  @db.Text
   coverUrl         String?
