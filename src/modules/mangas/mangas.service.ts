@@ -2,6 +2,7 @@ import {
   Injectable,
   NotFoundException,
   ForbiddenException,
+  ConflictException,
 } from '@nestjs/common';
 import { PrismaService } from '../../prisma/prisma.service';
 import { StorageService } from '../../common/services/storage.service';
@@ -25,7 +26,9 @@ export class MangasService {
     private storage: StorageService,
   ) {}
 
-  // Helper privé : Vérification des droits (Auteur du manga ou Admin)
+  // ============================================
+  // HELPER : Vérification des droits
+  // ============================================
   private async checkOwnershipOrAdmin(mangaAuthorId: string, userId: string) {
     if (mangaAuthorId === userId) return;
 
@@ -40,12 +43,66 @@ export class MangasService {
   }
 
   // ============================================
+  // HELPER : Génération de slug unique
+  // ============================================
+  private generateSlug(title: string): string {
+    return title
+      .toLowerCase()
+      .trim()
+      .normalize('NFD')
+      .replace(/[\u0300-\u036f]/g, '') // Supprimer les accents
+      .replace(/[^\w\s-]/g, '') // Supprimer les caractères spéciaux
+      .replace(/[\s_-]+/g, '-') // Remplacer les espaces par des tirets
+      .replace(/^-+|-+$/g, ''); // Supprimer les tirets en début/fin
+  }
+
+  // ============================================
+  // HELPER : Vérifier et générer un slug unique
+  // ============================================
+  private async generateUniqueSlug(baseTitle: string, excludeId?: string): Promise<string> {
+    let slug = this.generateSlug(baseTitle);
+    
+    // Vérifier si le slug existe déjà
+    let existing = await this.prisma.manga.findFirst({
+      where: {
+        slug,
+        ...(excludeId && { id: { not: excludeId } }),
+      },
+      select: { id: true },
+    });
+
+    // Si le slug existe, ajouter un suffixe numérique
+    let counter = 1;
+    while (existing) {
+      const testSlug = `${slug}-${counter}`;
+      existing = await this.prisma.manga.findFirst({
+        where: {
+          slug: testSlug,
+          ...(excludeId && { id: { not: excludeId } }),
+        },
+        select: { id: true },
+      });
+      if (!existing) {
+        slug = testSlug;
+        break;
+      }
+      counter++;
+    }
+
+    return slug;
+  }
+
+  // ============================================
   // 1. CRÉATION D'UN MANGA
   // ============================================
   async create(userId: string, dto: any) {
+    // Générer un slug unique à partir du titre
+    const slug = await this.generateUniqueSlug(dto.title);
+
     return this.prisma.manga.create({
       data: {
         title: dto.title,
+        slug, // ✅ AJOUTÉ
         description: dto.description || null,
         coverUrl: dto.coverUrl || null,
         status: dto.status ? (dto.status as Status) : Status.ONGOING,
@@ -75,7 +132,10 @@ export class MangasService {
     const where: any = {};
 
     if (filters?.search?.trim()) {
-      where.title = { contains: filters.search.trim(), mode: 'insensitive' };
+      where.OR = [
+        { title: { contains: filters.search.trim(), mode: 'insensitive' } },
+        { slug: { contains: filters.search.trim(), mode: 'insensitive' } },
+      ];
     }
 
     if (filters?.genre?.trim()) {
@@ -129,7 +189,7 @@ export class MangasService {
   }
 
   // ============================================
-  // 4. RECHERCHE PAR ID
+  // 4. RECHERCHE PAR ID (UNIQUEMENT UUID)
   // ============================================
   async findById(id: string) {
     const manga = await this.prisma.manga.findUnique({
@@ -170,14 +230,137 @@ export class MangasService {
   }
 
   // ============================================
+  // 4.b RECHERCHE PAR SLUG
+  // ============================================
+  async findBySlug(slug: string) {
+    const manga = await this.prisma.manga.findUnique({
+      where: { slug },
+      include: {
+        author: { select: AUTHOR_SELECT },
+        chapters: {
+          where: { isDraft: false },
+          orderBy: { number: 'asc' },
+          select: {
+            id: true,
+            number: true,
+            title: true,
+            contentType: true,
+            isFree: true,
+            price: true,
+            viewsCount: true,
+            createdAt: true,
+            publishedAt: true,
+          },
+        },
+        _count: {
+          select: {
+            chapters: true,
+            comments: true,
+            likes: true,
+            subscriptions: true,
+          },
+        },
+      },
+    });
+
+    if (!manga) {
+      throw new NotFoundException('Manga non trouvé.');
+    }
+
+    return manga;
+  }
+
+  // ============================================
+  // 4.c RECHERCHE PAR ID OU SLUG (UNIFIÉ)
+  // ============================================
+  async findByIdOrSlug(identifier: string) {
+    // Essayer de trouver par ID (UUID) d'abord
+    let manga = await this.prisma.manga.findUnique({
+      where: { id: identifier },
+      include: {
+        author: { select: AUTHOR_SELECT },
+        chapters: {
+          where: { isDraft: false },
+          orderBy: { number: 'asc' },
+          select: {
+            id: true,
+            number: true,
+            title: true,
+            contentType: true,
+            isFree: true,
+            price: true,
+            viewsCount: true,
+            createdAt: true,
+            publishedAt: true,
+          },
+        },
+        _count: {
+          select: {
+            chapters: true,
+            comments: true,
+            likes: true,
+            subscriptions: true,
+          },
+        },
+      },
+    });
+
+    // Si pas trouvé par ID, essayer par slug
+    if (!manga) {
+      manga = await this.prisma.manga.findUnique({
+        where: { slug: identifier },
+        include: {
+          author: { select: AUTHOR_SELECT },
+          chapters: {
+            where: { isDraft: false },
+            orderBy: { number: 'asc' },
+            select: {
+              id: true,
+              number: true,
+              title: true,
+              contentType: true,
+              isFree: true,
+              price: true,
+              viewsCount: true,
+              createdAt: true,
+              publishedAt: true,
+            },
+          },
+          _count: {
+            select: {
+              chapters: true,
+              comments: true,
+              likes: true,
+              subscriptions: true,
+            },
+          },
+        },
+      });
+    }
+
+    if (!manga) {
+      throw new NotFoundException('Manga non trouvé.');
+    }
+
+    return manga;
+  }
+
+  // ============================================
   // 5. MISE À JOUR DU MANGA
   // ============================================
   async update(id: string, userId: string, dto: any) {
-    const manga = await this.findById(id);
+    const manga = await this.findByIdOrSlug(id); // ✅ MODIFIÉ
     await this.checkOwnershipOrAdmin(manga.authorId, userId);
 
     const updateData: any = {};
-    if (dto.title !== undefined) updateData.title = dto.title;
+    
+    if (dto.title !== undefined) {
+      updateData.title = dto.title;
+      // Si le titre change, régénérer le slug
+      const newSlug = await this.generateUniqueSlug(dto.title, manga.id);
+      updateData.slug = newSlug;
+    }
+    
     if (dto.description !== undefined) updateData.description = dto.description;
     if (dto.coverUrl !== undefined) updateData.coverUrl = dto.coverUrl;
     if (dto.status !== undefined && Object.values(Status).includes(dto.status)) {
@@ -188,7 +371,7 @@ export class MangasService {
     if (dto.isPremium !== undefined) updateData.isPremium = dto.isPremium;
 
     return this.prisma.manga.update({
-      where: { id },
+      where: { id: manga.id },
       data: updateData,
       include: {
         author: { select: AUTHOR_SELECT },
@@ -200,7 +383,7 @@ export class MangasService {
   // 6. SUPPRESSION DU MANGA
   // ============================================
   async delete(id: string, userId: string) {
-    const manga = await this.findById(id);
+    const manga = await this.findByIdOrSlug(id); // ✅ MODIFIÉ
     await this.checkOwnershipOrAdmin(manga.authorId, userId);
 
     if (manga.coverUrl && !manga.coverUrl.startsWith('http')) {
@@ -208,7 +391,7 @@ export class MangasService {
     }
 
     await this.prisma.manga.delete({
-      where: { id },
+      where: { id: manga.id },
     });
 
     return { message: 'Manga supprimé avec succès.' };
@@ -218,22 +401,22 @@ export class MangasService {
   // 7. GESTION DE LA COUVERTURE
   // ============================================
   async getCoverUploadUrl(mangaId: string, userId: string) {
-    const manga = await this.findById(mangaId);
+    const manga = await this.findByIdOrSlug(mangaId); // ✅ MODIFIÉ
     await this.checkOwnershipOrAdmin(manga.authorId, userId);
 
-    const key = `covers/${mangaId}-${Date.now()}.webp`;
+    const key = `covers/${manga.id}-${Date.now()}.webp`;
     const upload = await this.storage.getUploadUrl(key, 'chapters');
     return { key, ...upload };
   }
 
   async finalizeCover(mangaId: string, userId: string, key: string) {
-    const manga = await this.findById(mangaId);
+    const manga = await this.findByIdOrSlug(mangaId); // ✅ MODIFIÉ
     await this.checkOwnershipOrAdmin(manga.authorId, userId);
 
     const coverUrl = await this.storage.getSignedUrl(key, 3600 * 24 * 365, 'chapters');
 
     return this.prisma.manga.update({
-      where: { id: mangaId },
+      where: { id: manga.id },
       data: { coverUrl },
       include: {
         author: { select: AUTHOR_SELECT },
@@ -245,15 +428,44 @@ export class MangasService {
   // 8. URLS D'UPLOAD POUR FICHIERS
   // ============================================
   async getUploadUrls(mangaId: string, filenames: string[]) {
-    await this.findById(mangaId);
+    const manga = await this.findByIdOrSlug(mangaId); // ✅ MODIFIÉ
     const results = [];
 
     for (const filename of filenames) {
-      const key = `chapters/${mangaId}/${Date.now()}-${filename}`;
+      const key = `chapters/${manga.id}/${Date.now()}-${filename}`;
       const upload = await this.storage.getUploadUrl(key, 'chapters');
       results.push({ filename, key, ...upload });
     }
 
     return results;
+  }
+
+  // ============================================
+  // 9. METTRE À JOUR LE SLUG MANUELLEMENT
+  // ============================================
+  async updateSlug(mangaId: string, newSlug: string, userId: string) {
+    const manga = await this.findByIdOrSlug(mangaId);
+    await this.checkOwnershipOrAdmin(manga.authorId, userId);
+
+    // Vérifier si le slug est déjà utilisé
+    const existing = await this.prisma.manga.findFirst({
+      where: {
+        slug: newSlug,
+        id: { not: manga.id },
+      },
+      select: { id: true },
+    });
+
+    if (existing) {
+      throw new ConflictException(`Le slug "${newSlug}" est déjà utilisé.`);
+    }
+
+    return this.prisma.manga.update({
+      where: { id: manga.id },
+      data: { slug: newSlug },
+      include: {
+        author: { select: AUTHOR_SELECT },
+      },
+    });
   }
 }
