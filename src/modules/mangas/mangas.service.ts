@@ -43,7 +43,7 @@ export class MangasService {
   }
 
   // ============================================
-  // HELPER : Génération de slug unique
+  // HELPER : Génération de slug
   // ============================================
   private generateSlug(title: string): string {
     return title
@@ -57,7 +57,7 @@ export class MangasService {
   }
 
   // ============================================
-  // HELPER : Vérifier et générer un slug unique
+  // HELPER : Générer un slug unique
   // ============================================
   private async generateUniqueSlug(baseTitle: string, excludeId?: string): Promise<string> {
     let slug = this.generateSlug(baseTitle);
@@ -102,7 +102,7 @@ export class MangasService {
     return this.prisma.manga.create({
       data: {
         title: dto.title,
-        slug, // ✅ AJOUTÉ
+        slug,
         description: dto.description || null,
         coverUrl: dto.coverUrl || null,
         status: dto.status ? (dto.status as Status) : Status.ONGOING,
@@ -349,7 +349,7 @@ export class MangasService {
   // 5. MISE À JOUR DU MANGA
   // ============================================
   async update(id: string, userId: string, dto: any) {
-    const manga = await this.findByIdOrSlug(id); // ✅ MODIFIÉ
+    const manga = await this.findByIdOrSlug(id);
     await this.checkOwnershipOrAdmin(manga.authorId, userId);
 
     const updateData: any = {};
@@ -383,7 +383,7 @@ export class MangasService {
   // 6. SUPPRESSION DU MANGA
   // ============================================
   async delete(id: string, userId: string) {
-    const manga = await this.findByIdOrSlug(id); // ✅ MODIFIÉ
+    const manga = await this.findByIdOrSlug(id);
     await this.checkOwnershipOrAdmin(manga.authorId, userId);
 
     if (manga.coverUrl && !manga.coverUrl.startsWith('http')) {
@@ -401,7 +401,7 @@ export class MangasService {
   // 7. GESTION DE LA COUVERTURE
   // ============================================
   async getCoverUploadUrl(mangaId: string, userId: string) {
-    const manga = await this.findByIdOrSlug(mangaId); // ✅ MODIFIÉ
+    const manga = await this.findByIdOrSlug(mangaId);
     await this.checkOwnershipOrAdmin(manga.authorId, userId);
 
     const key = `covers/${manga.id}-${Date.now()}.webp`;
@@ -410,7 +410,7 @@ export class MangasService {
   }
 
   async finalizeCover(mangaId: string, userId: string, key: string) {
-    const manga = await this.findByIdOrSlug(mangaId); // ✅ MODIFIÉ
+    const manga = await this.findByIdOrSlug(mangaId);
     await this.checkOwnershipOrAdmin(manga.authorId, userId);
 
     const coverUrl = await this.storage.getSignedUrl(key, 3600 * 24 * 365, 'chapters');
@@ -428,7 +428,7 @@ export class MangasService {
   // 8. URLS D'UPLOAD POUR FICHIERS
   // ============================================
   async getUploadUrls(mangaId: string, filenames: string[]) {
-    const manga = await this.findByIdOrSlug(mangaId); // ✅ MODIFIÉ
+    const manga = await this.findByIdOrSlug(mangaId);
     const results = [];
 
     for (const filename of filenames) {
@@ -467,5 +467,54 @@ export class MangasService {
         author: { select: AUTHOR_SELECT },
       },
     });
+  }
+
+  // ============================================
+  // 10. MIGRER LES SLUGS EXISTANTS
+  // ============================================
+  async migrateSlugs() {
+    // Récupérer tous les mangas qui n'ont pas de slug
+    const mangas = await this.prisma.manga.findMany({
+      where: { slug: null },
+      select: { id: true, title: true },
+    });
+
+    if (mangas.length === 0) {
+      return { message: 'Aucun manga à migrer. Tous les mangas ont déjà un slug.' };
+    }
+
+    console.log(`🔄 Migration de ${mangas.length} mangas sans slug...`);
+
+    let updatedCount = 0;
+    let errorCount = 0;
+
+    for (const manga of mangas) {
+      try {
+        // Générer un slug unique à partir du titre
+        const slug = await this.generateUniqueSlug(manga.title, manga.id);
+        
+        // Mettre à jour le manga avec le slug
+        await this.prisma.manga.update({
+          where: { id: manga.id },
+          data: { slug },
+        });
+
+        updatedCount++;
+        console.log(`✅ Slug généré pour "${manga.title}": ${slug}`);
+      } catch (error) {
+        errorCount++;
+        console.error(`❌ Erreur pour "${manga.title}":`, error.message);
+      }
+    }
+
+    console.log(`✅ ${updatedCount} mangas migrés avec succès !`);
+    console.log(`❌ ${errorCount} erreurs rencontrées.`);
+
+    return {
+      message: `${updatedCount} mangas migrés avec succès.`,
+      updatedCount,
+      errorCount,
+      total: mangas.length,
+    };
   }
 }
