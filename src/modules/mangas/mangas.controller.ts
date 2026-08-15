@@ -11,6 +11,7 @@ import {
   Req,
   BadRequestException,
   NotFoundException,
+  ForbiddenException,
 } from '@nestjs/common';
 import { MangasService } from './mangas.service';
 import { ChaptersService } from './chapters.service';
@@ -22,12 +23,14 @@ import {
   ChapterUploadUrlsDto,
   FinalizeChapterDto,
 } from './dto/create-chapter.dto';
+import { PrismaService } from '../../prisma/prisma.service';
 
 @Controller('mangas')
 export class MangasController {
   constructor(
     private readonly mangasService: MangasService,
     private readonly chaptersService: ChaptersService,
+    private readonly prisma: PrismaService,
   ) {}
 
   // ============================================
@@ -73,12 +76,9 @@ export class MangasController {
   // ============================================
   @Get(':identifier')
   async findOne(@Param('identifier') identifier: string) {
-    // ✅ Garde-fou pour identifier le problème rapidement
     if (!identifier || identifier === 'undefined' || identifier === 'null') {
       throw new BadRequestException(`L'identifiant du manga est invalide: "${identifier}"`);
     }
-    
-    // ✅ Utiliser la méthode unifiée (ID ou Slug)
     return this.mangasService.findByIdOrSlug(identifier);
   }
 
@@ -174,5 +174,24 @@ export class MangasController {
       throw new BadRequestException(`L'identifiant du manga est invalide: "${identifier}"`);
     }
     return this.chaptersService.finalizeChapter(identifier, req.user.id, dto);
+  }
+
+  // ============================================
+  // 11. MIGRER LES SLUGS (ENDPOINT TEMPORAIRE)
+  // ============================================
+  @Post('migrate-slugs')
+  @UseGuards(JwtAuthGuard)
+  async migrateSlugs(@Req() req: any) {
+    // Vérifier que l'utilisateur est ADMIN
+    const user = await this.prisma.user.findUnique({
+      where: { id: req.user.id },
+      select: { role: true },
+    });
+
+    if (user?.role !== 'ADMIN') {
+      throw new ForbiddenException('Seul un administrateur peut exécuter cette action.');
+    }
+
+    return this.mangasService.migrateSlugs();
   }
 }
