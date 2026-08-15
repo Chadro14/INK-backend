@@ -70,7 +70,7 @@ model User {
   passwordResets     PasswordReset[]
 
   createdAt          DateTime  @default(now())
-  updatedAt          DateTime  @updatedAt
+  updatedAt          DateTime  @updatedA
 
   @@index([username])
   @@index([email])
@@ -121,7 +121,7 @@ model PasswordReset {
 // ============================================
 model Manga {
   id               String   @id @default(uuid())
-  slug             String?  @unique // ✅ MODIFIÉ : NULLABLE pour la migration
+  slug             String?  @unique // ✅ SLUG UNIQUE (nullable temporairement)
   title            String
   description      String?  @db.Text
   coverUrl         String?
