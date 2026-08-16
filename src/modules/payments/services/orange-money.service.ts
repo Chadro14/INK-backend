@@ -1,3 +1,4 @@
+// src/modules/payments/services/orange-money.service.ts
 import { Injectable, BadRequestException, UnauthorizedException } from '@nestjs/common';
 import { ConfigService } from '@nestjs/config';
 import { HttpService } from '@nestjs/axios';
@@ -81,7 +82,7 @@ export class OrangeMoneyService {
             payer_msisdn: params.phoneNumber,
             description: params.description,
             merchant_reference: params.transactionId,
-            callback_url: `${this.configService.get('API_URL')}/webhooks/orange-money`,
+            callback_url: `${this.configService.get('API_URL')}/payments/webhooks/orange-money`,
           },
           {
             headers: {
