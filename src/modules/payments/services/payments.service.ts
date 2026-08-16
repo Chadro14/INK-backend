@@ -1,5 +1,6 @@
+// src/modules/payments/services/payments.service.ts
 import { Injectable, BadRequestException, NotFoundException } from '@nestjs/common';
-import { PaymentType } from '@prisma/client';
+import { PaymentType, PaymentStatus } from '@prisma/client';
 import { PrismaService } from '../../../prisma/prisma.service';
 import { OrangeMoneyService } from './orange-money.service';
 import { MpesaService } from './mpesa.service';
@@ -14,7 +15,7 @@ export class PaymentsService {
   ) {}
 
   // ============================================
-  // INITIER UN PAIEMENT
+  // 1. INITIER UN PAIEMENT
   // ============================================
   async initiatePayment(userId: string, dto: InitiatePaymentDto) {
     const user = await this.prisma.user.findUnique({
@@ -32,12 +33,13 @@ export class PaymentsService {
         userId,
         transactionId,
         amount: dto.amount,
-        currency: 'USD',
-        type: dto.type as unknown as PaymentType,
-        status: 'PENDING',
+        currency: dto.currency || 'USD',
+        type: dto.type as PaymentType,
+        status: PaymentStatus.PENDING,
         mangaId: dto.mangaId,
         chapterNumber: dto.chapterNumber,
         mobileNumber: dto.phoneNumber,
+        plan: dto.plan as any,
         metadata: {
           operator: dto.operator,
           description: dto.description || `Paiement ${dto.type}`,
@@ -50,7 +52,7 @@ export class PaymentsService {
       if (dto.operator === PaymentOperator.ORANGE) {
         result = await this.orangeMoneyService.initiatePayment({
           amount: dto.amount,
-          currency: 'USD',
+          currency: dto.currency || 'USD',
           phoneNumber: dto.phoneNumber,
           description: dto.description || `INKDROP - ${dto.type}`,
           transactionId,
@@ -58,7 +60,7 @@ export class PaymentsService {
       } else if (dto.operator === PaymentOperator.MPESA) {
         result = await this.mpesaService.initiatePayment({
           amount: dto.amount,
-          currency: 'USD',
+          currency: dto.currency || 'USD',
           phoneNumber: dto.phoneNumber,
           description: dto.description || `INKDROP - ${dto.type}`,
           transactionId,
@@ -79,6 +81,7 @@ export class PaymentsService {
       });
 
       return {
+        success: true,
         paymentId: payment.id,
         transactionId: result.transactionId,
         status: result.status,
@@ -86,17 +89,24 @@ export class PaymentsService {
       };
     } catch (error) {
       console.error('❌ Erreur de paiement:', error.message);
+
+      await this.prisma.payment.update({
+        where: { id: payment.id },
+        data: { status: PaymentStatus.FAILED },
+      });
+
       return {
+        success: false,
         paymentId: payment.id,
         transactionId,
-        status: 'PENDING_MANUAL',
-        message: `Veuillez envoyer ${dto.amount} USD sur le numéro +243 800 000 000 avec la référence ${transactionId}`,
+        status: 'FAILED',
+        message: error.message || 'Le paiement a échoué. Veuillez réessayer.',
       };
     }
   }
 
   // ============================================
-  // TRAITER UN PAIEMENT RÉUSSI (WEBHOOK)
+  // 2. TRAITER UN PAIEMENT RÉUSSI
   // ============================================
   async processSuccessfulPayment(paymentId: string) {
     const payment = await this.prisma.payment.findUnique({
@@ -107,9 +117,13 @@ export class PaymentsService {
       throw new NotFoundException('Paiement non trouvé');
     }
 
+    if (payment.status === PaymentStatus.SUCCESS) {
+      return payment;
+    }
+
     switch (payment.type) {
       case PaymentType.PREMIUM:
-        await this.activatePremium(payment.userId);
+        await this.activatePremium(payment.userId, payment.plan);
         break;
       case PaymentType.CHAPTER:
         if (payment.mangaId && payment.chapterNumber) {
@@ -124,7 +138,7 @@ export class PaymentsService {
     await this.prisma.payment.update({
       where: { id: payment.id },
       data: {
-        status: 'SUCCESS',
+        status: PaymentStatus.SUCCESS,
         completedAt: new Date(),
       },
     });
@@ -133,7 +147,7 @@ export class PaymentsService {
       data: {
         userId: payment.userId,
         type: 'EARNING',
-        title: 'Paiement réussi',
+        title: '✅ Paiement réussi',
         body: `Votre paiement de ${payment.amount} USD a été confirmé.`,
         metadata: { paymentId: payment.id },
       },
@@ -143,7 +157,7 @@ export class PaymentsService {
   }
 
   // ============================================
-  // CONFIRMER UN PAIEMENT MANUEL
+  // 3. CONFIRMER UN PAIEMENT MANUEL
   // ============================================
   async confirmManualPayment(transactionId: string, userId: string) {
     const payment = await this.prisma.payment.findFirst({
@@ -154,7 +168,7 @@ export class PaymentsService {
       throw new NotFoundException('Paiement non trouvé');
     }
 
-    if (payment.status === 'SUCCESS') {
+    if (payment.status === PaymentStatus.SUCCESS) {
       return payment;
     }
 
@@ -162,7 +176,7 @@ export class PaymentsService {
   }
 
   // ============================================
-  // LISTE DES PAIEMENTS D'UN UTILISATEUR
+  // 4. LISTE DES PAIEMENTS
   // ============================================
   async getUserPayments(userId: string, page = 1, limit = 20) {
     const skip = (page - 1) * limit;
@@ -186,7 +200,7 @@ export class PaymentsService {
   }
 
   // ============================================
-  // STATUT D'UN PAIEMENT
+  // 5. STATUT D'UN PAIEMENT
   // ============================================
   async getPaymentStatus(transactionId: string, userId: string) {
     const payment = await this.prisma.payment.findFirst({
@@ -205,21 +219,97 @@ export class PaymentsService {
     };
   }
 
-  private async activatePremium(userId: string) {
+  // ============================================
+  // 6. WEBHOOK ORANGE MONEY
+  // ============================================
+  async handleOrangeMoneyWebhook(payload: any) {
+    console.log('📩 Webhook Orange Money reçu:', JSON.stringify(payload, null, 2));
+
+    const { transactionId, status, amount, payer } = payload;
+
+    const payment = await this.prisma.payment.findFirst({
+      where: { transactionId },
+    });
+
+    if (!payment) {
+      console.log('❌ Paiement non trouvé:', transactionId);
+      return { received: true, message: 'Transaction non trouvée' };
+    }
+
+    if (status === 'SUCCESS' || status === 'COMPLETED') {
+      await this.processSuccessfulPayment(payment.id);
+      console.log(`✅ Paiement ${transactionId} confirmé via Orange Money`);
+    } else {
+      await this.prisma.payment.update({
+        where: { id: payment.id },
+        data: { status: PaymentStatus.FAILED },
+      });
+      console.log(`❌ Paiement ${transactionId} échoué via Orange Money`);
+    }
+
+    return { received: true };
+  }
+
+  // ============================================
+  // 7. WEBHOOK M-PESA
+  // ============================================
+  async handleMpesaWebhook(payload: any) {
+    console.log('📩 Webhook M-Pesa reçu:', JSON.stringify(payload, null, 2));
+
+    const { transactionId, ResultCode, ResultDesc, Amount } = payload;
+
+    const payment = await this.prisma.payment.findFirst({
+      where: { transactionId },
+    });
+
+    if (!payment) {
+      console.log('❌ Paiement non trouvé:', transactionId);
+      return { received: true, message: 'Transaction non trouvée' };
+    }
+
+    if (ResultCode === '0') {
+      await this.processSuccessfulPayment(payment.id);
+      console.log(`✅ Paiement ${transactionId} confirmé via M-Pesa`);
+    } else {
+      await this.prisma.payment.update({
+        where: { id: payment.id },
+        data: { status: PaymentStatus.FAILED },
+      });
+      console.log(`❌ Paiement ${transactionId} échoué via M-Pesa: ${ResultDesc}`);
+    }
+
+    return { received: true };
+  }
+
+  // ============================================
+  // 8. ACTIVER L'ABONNEMENT PREMIUM
+  // ============================================
+  private async activatePremium(userId: string, plan: any) {
+    const duration = plan === 'YEARLY' ? 365 : 30;
+
     await this.prisma.user.update({
       where: { id: userId },
       data: {
         premiumActive: true,
-        premiumExpires: new Date(Date.now() + 30 * 24 * 60 * 60 * 1000),
-        premiumPlan: 'MONTHLY',
+        premiumExpires: new Date(Date.now() + duration * 24 * 60 * 60 * 1000),
+        premiumPlan: plan || 'MONTHLY',
       },
     });
+
+    console.log(`✅ Abonnement Premium activé pour l'utilisateur ${userId}`);
   }
 
+  // ============================================
+  // 9. DÉBLOQUER UN CHAPITRE
+  // ============================================
   private async unlockChapter(userId: string, mangaId: string, chapterNumber: number) {
     console.log(`📚 Chapitre ${chapterNumber} du manga ${mangaId} débloqué pour ${userId}`);
+    // Logique de déblocage à implémenter
   }
 
+  // ============================================
+  // 10. TRAITER UN POURBOIRE
+  // ============================================
   private async processTip(payment: any) {
     const manga = await this.prisma.manga.findUnique({
       where: { id: payment.mangaId },
@@ -237,6 +327,7 @@ export class PaymentsService {
           status: 'PENDING',
         },
       });
+      console.log(`💰 Pourboire de ${payment.amount} USD envoyé au créateur ${manga.authorId}`);
     }
   }
 }
