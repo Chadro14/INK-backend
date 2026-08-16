@@ -1,4 +1,5 @@
-import { IsString, IsNumber, IsOptional, IsEnum, Min } from 'class-validator';
+// src/modules/payments/dto/initiate-payment.dto.ts
+import { IsString, IsNumber, IsOptional, IsEnum, Min, MaxLength } from 'class-validator';
 
 export enum PaymentOperator {
   ORANGE = 'orange',
@@ -6,34 +7,43 @@ export enum PaymentOperator {
 }
 
 export enum PaymentType {
-  PREMIUM = 'premium',
-  CHAPTER = 'chapter',
-  TIP = 'tip',
+  PREMIUM = 'PREMIUM',
+  CHAPTER = 'CHAPTER',
+  TIP = 'TIP',
 }
 
 export class InitiatePaymentDto {
   @IsNumber()
-  @Min(0.01)
+  @Min(0.5, { message: 'Le montant minimum est de 0.50 USD' })
   amount: number;
 
-  @IsEnum(PaymentOperator)
-  operator: PaymentOperator;
+  @IsString()
+  @IsOptional()
+  currency?: string;
 
   @IsString()
+  @MaxLength(15, { message: 'Le numéro de téléphone ne doit pas dépasser 15 caractères' })
   phoneNumber: string;
 
-  @IsEnum(PaymentType)
+  @IsEnum(PaymentOperator, { message: 'Opérateur non supporté' })
+  operator: PaymentOperator;
+
+  @IsEnum(PaymentType, { message: 'Type de paiement invalide' })
   type: PaymentType;
 
-  @IsOptional()
   @IsString()
+  @IsOptional()
   description?: string;
 
-  @IsOptional()
   @IsString()
+  @IsOptional()
   mangaId?: string;
 
-  @IsOptional()
   @IsNumber()
+  @IsOptional()
   chapterNumber?: number;
+
+  @IsString()
+  @IsOptional()
+  plan?: string;
 }
