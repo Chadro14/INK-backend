@@ -16,6 +16,7 @@ export class MpesaService {
     private configService: ConfigService,
     private httpService: HttpService,
   ) {
+    // ✅ RÉCUPÉRER LES CLÉS DEPUIS .env (PAS EN CLAIR)
     this.apiUrl = this.configService.get('MPESA_API_URL') || 'https://api.vodacom.cd/mpesa';
     this.consumerKey = this.configService.get('MPESA_CONSUMER_KEY') || '';
     this.consumerSecret = this.configService.get('MPESA_CONSUMER_SECRET') || '';
@@ -71,9 +72,8 @@ export class MpesaService {
     const token = await this.getAccessToken();
 
     try {
-      // Simuler le paiement (l'API réelle est plus complexe)
-      // En production, il faut utiliser le bon endpoint selon le pays
-      const response = await firstValueFrom(
+      // Enregistrer l'URL de confirmation
+      await firstValueFrom(
         this.httpService.post(
           `${this.apiUrl}/c2b/v1/registerurl`,
           {
