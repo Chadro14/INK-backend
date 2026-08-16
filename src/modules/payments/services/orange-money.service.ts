@@ -16,6 +16,7 @@ export class OrangeMoneyService {
     private configService: ConfigService,
     private httpService: HttpService,
   ) {
+    // ✅ RÉCUPÉRER LES CLÉS DEPUIS .env (PAS EN CLAIR)
     this.apiUrl = this.configService.get('ORANGE_API_URL') || 'https://api.orange.com/sonatel/webservice';
     this.clientId = this.configService.get('ORANGE_CLIENT_ID') || '';
     this.clientSecret = this.configService.get('ORANGE_CLIENT_SECRET') || '';
