@@ -1,3 +1,4 @@
+// src/modules/payments/services/mpesa.service.ts
 import { Injectable, BadRequestException, UnauthorizedException } from '@nestjs/common';
 import { ConfigService } from '@nestjs/config';
 import { HttpService } from '@nestjs/axios';
@@ -70,14 +71,16 @@ export class MpesaService {
     const token = await this.getAccessToken();
 
     try {
+      // Simuler le paiement (l'API réelle est plus complexe)
+      // En production, il faut utiliser le bon endpoint selon le pays
       const response = await firstValueFrom(
         this.httpService.post(
           `${this.apiUrl}/c2b/v1/registerurl`,
           {
             ShortCode: this.configService.get('MPESA_SHORTCODE') || '174379',
             ResponseType: 'Completed',
-            ConfirmationURL: `${this.configService.get('API_URL')}/webhooks/mpesa/confirmation`,
-            ValidationURL: `${this.configService.get('API_URL')}/webhooks/mpesa/validation`,
+            ConfirmationURL: `${this.configService.get('API_URL')}/payments/webhooks/mpesa/confirmation`,
+            ValidationURL: `${this.configService.get('API_URL')}/payments/webhooks/mpesa/validation`,
           },
           {
             headers: {
@@ -88,7 +91,7 @@ export class MpesaService {
         ),
       );
 
-      // Envoyer la demande de paiement
+      // Simuler la demande de paiement
       const paymentResponse = await firstValueFrom(
         this.httpService.post(
           `${this.apiUrl}/c2b/v1/simulate`,
