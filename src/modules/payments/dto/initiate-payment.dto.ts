@@ -4,6 +4,7 @@ import { IsString, IsNumber, IsOptional, IsEnum, Min, MaxLength } from 'class-va
 export enum PaymentOperator {
   ORANGE = 'orange',
   MPESA = 'mpesa',
+  TEST = 'test',
 }
 
 export enum PaymentType {
