@@ -1,3 +1,4 @@
+// src/modules/payments/controllers/payments.controller.ts
 import {
   Controller,
   Post,
@@ -64,5 +65,23 @@ export class PaymentsController {
     @Param('transactionId') transactionId: string,
   ) {
     return this.paymentsService.getPaymentStatus(transactionId, req.user.id);
+  }
+
+  // ============================================
+  // ✅ WEBHOOK ORANGE MONEY
+  // ============================================
+  @Post('webhooks/orange-money')
+  @HttpCode(HttpStatus.OK)
+  async handleOrangeMoneyWebhook(@Body() payload: any) {
+    return this.paymentsService.handleOrangeMoneyWebhook(payload);
+  }
+
+  // ============================================
+  // ✅ WEBHOOK M-PESA
+  // ============================================
+  @Post('webhooks/mpesa')
+  @HttpCode(HttpStatus.OK)
+  async handleMpesaWebhook(@Body() payload: any) {
+    return this.paymentsService.handleMpesaWebhook(payload);
   }
 }
