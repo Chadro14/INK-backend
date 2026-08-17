@@ -95,7 +95,8 @@ export class AuthService {
 
     const isPasswordValid = await bcrypt.compare(dto.password, user.passwordHash);
     if (!isPasswordValid) {
-      await this.securityService.handleFailedLogin(dto.email);
+      // ✅ CORRECTION : PASSER L'IP
+      await this.securityService.handleFailedLogin(dto.email, ip);
       throw new UnauthorizedException('Email ou mot de passe incorrect');
     }
 
