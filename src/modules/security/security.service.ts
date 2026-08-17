@@ -1,25 +1,62 @@
 // src/modules/security/security.service.ts
-import { Injectable, BadRequestException } from '@nestjs/common';
+import { Injectable, BadRequestException, UnauthorizedException } from '@nestjs/common';
 import { PrismaService } from '../../prisma/prisma.service';
 import { EmailService } from '../../common/services/email.service';
+import { JwtService } from '@nestjs/jwt';
 import * as bcrypt from 'bcrypt';
 import * as crypto from 'crypto';
+import { Cron, CronExpression } from '@nestjs/schedule';
 
 @Injectable()
 export class SecurityService {
+  // ✅ Rate limiting pour les demandes de réinitialisation
+  private readonly resetAttempts = new Map<string, { count: number; lastAttempt: number }>();
+
   constructor(
     private prisma: PrismaService,
     private emailService: EmailService,
+    private jwtService: JwtService,
   ) {}
 
   // ============================================
-  // 1. DEMANDER LA RÉINITIALISATION
+  // 1. DEMANDER LA RÉINITIALISATION (AVEC RATE LIMIT)
   // ============================================
-  async requestPasswordReset(email: string) {
+  async requestPasswordReset(email: string, ip: string, userAgent: string) {
+    // ✅ RATE LIMITING
+    const key = `${email}:${ip}`;
+    const attempts = this.resetAttempts.get(key);
+
+    if (attempts) {
+      if (attempts.count >= 5) {
+        throw new BadRequestException(
+          'Trop de tentatives. Veuillez attendre 1 heure.'
+        );
+      }
+      if (Date.now() - attempts.lastAttempt < 60000) {
+        throw new BadRequestException(
+          'Veuillez attendre 1 minute entre chaque demande.'
+        );
+      }
+    }
+
+    this.resetAttempts.set(key, {
+      count: (attempts?.count || 0) + 1,
+      lastAttempt: Date.now(),
+    });
+
+    // Nettoyer après 1 heure
+    setTimeout(() => {
+      this.resetAttempts.delete(key);
+    }, 3600000);
+
+    // ============================================
+    // VÉRIFICATION DE L'UTILISATEUR
+    // ============================================
     const user = await this.prisma.user.findUnique({
       where: { email },
     });
 
+    // ✅ MÊME RÉPONSE QUE LE COMPTE EXISTE OU NON (sécurité)
     if (!user) {
       return {
         success: true,
@@ -27,21 +64,36 @@ export class SecurityService {
       };
     }
 
+    // ✅ SUPPRESSION DES ANCIENS TOKENS
     await this.prisma.passwordReset.deleteMany({
       where: { userId: user.id },
     });
 
-    const token = crypto.randomBytes(32).toString('hex');
+    // ✅ GÉNÉRATION DU TOKEN (JWT)
+    const token = this.jwtService.sign(
+      { 
+        sub: user.id, 
+        type: 'password-reset',
+        email: user.email,
+      },
+      { expiresIn: '15m' }
+    );
+
+    // ✅ STOCKAGE DU TOKEN HASHÉ
+    const hashedToken = await bcrypt.hash(token, 10);
     const expiresAt = new Date(Date.now() + 15 * 60 * 1000);
 
     await this.prisma.passwordReset.create({
       data: {
         userId: user.id,
-        token,
+        token: hashedToken,
+        ipAddress: ip,
+        userAgent: userAgent,
         expiresAt,
       },
     });
 
+    // ✅ ENVOI DE L'EMAIL
     try {
       await this.emailService.sendResetPasswordEmail(
         user.email,
@@ -50,7 +102,20 @@ export class SecurityService {
       );
     } catch (error) {
       console.error('❌ Erreur envoi email:', error);
+      throw new BadRequestException(
+        'Erreur lors de l\'envoi de l\'email. Veuillez réessayer.'
+      );
     }
+
+    // ✅ LOG DE SÉCURITÉ
+    await this.prisma.auditLog.create({
+      data: {
+        userId: user.id,
+        action: 'PASSWORD_RESET_REQUESTED',
+        ipAddress: ip,
+        details: { email },
+      },
+    });
 
     return {
       success: true,
@@ -59,51 +124,91 @@ export class SecurityService {
   }
 
   // ============================================
-  // 2. VÉRIFIER LE TOKEN
+  // 2. VÉRIFIER LE TOKEN (AVEC IP CHECK)
   // ============================================
-  async verifyResetToken(token: string) {
-    const reset = await this.prisma.passwordReset.findUnique({
-      where: { token },
+  async verifyResetToken(token: string, ip: string) {
+    const resets = await this.prisma.passwordReset.findMany({
+      where: {
+        token: { in: await this.getAllTokens() },
+        expiresAt: { gt: new Date() },
+      },
       include: { user: true },
     });
 
-    if (!reset) {
+    let validReset = null;
+    for (const reset of resets) {
+      const isValid = await bcrypt.compare(token, reset.token);
+      if (isValid) {
+        validReset = reset;
+        break;
+      }
+    }
+
+    if (!validReset) {
       return { valid: false, message: 'Token invalide.' };
     }
 
-    if (reset.expiresAt < new Date()) {
-      await this.prisma.passwordReset.delete({ where: { id: reset.id } });
+    // ✅ VÉRIFICATION IP (optionnel, peut être désactivé)
+    if (validReset.ipAddress && validReset.ipAddress !== ip) {
+      return { valid: false, message: 'Token invalide (IP différente).' };
+    }
+
+    if (validReset.expiresAt < new Date()) {
+      await this.prisma.passwordReset.delete({ where: { id: validReset.id } });
       return { valid: false, message: 'Token expiré.' };
     }
 
-    return { valid: true, userId: reset.userId };
+    return { valid: true, userId: validReset.userId };
   }
 
   // ============================================
   // 3. RÉINITIALISER LE MOT DE PASSE
   // ============================================
-  async resetPassword(token: string, newPassword: string) {
-    const reset = await this.prisma.passwordReset.findUnique({
-      where: { token },
+  async resetPassword(token: string, newPassword: string, ip: string) {
+    // ✅ RÉCUPÉRER LE TOKEN HASHÉ EN BASE
+    const resets = await this.prisma.passwordReset.findMany({
+      where: {
+        expiresAt: { gt: new Date() },
+      },
       include: { user: true },
     });
 
-    if (!reset) {
+    let validReset = null;
+    for (const reset of resets) {
+      const isValid = await bcrypt.compare(token, reset.token);
+      if (isValid) {
+        validReset = reset;
+        break;
+      }
+    }
+
+    if (!validReset) {
       throw new BadRequestException('Token invalide.');
     }
 
-    if (reset.expiresAt < new Date()) {
-      await this.prisma.passwordReset.delete({ where: { id: reset.id } });
+    if (validReset.expiresAt < new Date()) {
+      await this.prisma.passwordReset.delete({ where: { id: validReset.id } });
       throw new BadRequestException('Token expiré. Veuillez refaire une demande.');
     }
 
+    // ✅ VALIDATION DE LA FORCE DU MOT DE PASSE
     this.validatePasswordStrength(newPassword);
 
+    // ✅ VÉRIFICATION QUE LE NOUVEAU MOT DE PASSE EST DIFFÉRENT DE L'ANCIEN
+    const isSamePassword = await bcrypt.compare(newPassword, validReset.user.passwordHash);
+    if (isSamePassword) {
+      throw new BadRequestException(
+        'Le nouveau mot de passe doit être différent du précédent.'
+      );
+    }
+
+    // ✅ HACHAGE DU NOUVEAU MOT DE PASSE
     const hashedPassword = await bcrypt.hash(newPassword, 10);
 
+    // ✅ TRANSACTION
     await this.prisma.$transaction([
       this.prisma.user.update({
-        where: { id: reset.userId },
+        where: { id: validReset.userId },
         data: {
           passwordHash: hashedPassword,
           failedLoginAttempts: 0,
@@ -111,26 +216,35 @@ export class SecurityService {
         },
       }),
       this.prisma.passwordReset.delete({
-        where: { id: reset.id },
+        where: { id: validReset.id },
       }),
       this.prisma.notification.create({
         data: {
-          userId: reset.userId,
+          userId: validReset.userId,
           type: 'SYSTEM',
           title: '🔐 Mot de passe réinitialisé',
           body: 'Votre mot de passe a été modifié avec succès. Si vous n\'êtes pas à l\'origine de cette action, contactez immédiatement le support.',
         },
       }),
+      this.prisma.auditLog.create({
+        data: {
+          userId: validReset.userId,
+          action: 'PASSWORD_RESET_SUCCESS',
+          ipAddress: ip,
+          details: { email: validReset.user.email },
+        },
+      }),
     ]);
 
+    // ✅ ENVOI DE L'EMAIL DE CONFIRMATION
     try {
       await this.emailService.sendEmail({
-        to: reset.user.email,
+        to: validReset.user.email,
         subject: '🔐 Mot de passe réinitialisé - INKDROP',
-        text: `Bonjour ${reset.user.username},\n\nVotre mot de passe INKDROP a été réinitialisé avec succès.\n\nSi vous n'êtes pas à l'origine de cette action, contactez immédiatement le support.\n\n© INKDROP`,
+        text: `Bonjour ${validReset.user.username},\n\nVotre mot de passe INKDROP a été réinitialisé avec succès.\n\nSi vous n'êtes pas à l'origine de cette action, contactez immédiatement le support.\n\n© INKDROP`,
         html: `
           <h2>🔐 Mot de passe réinitialisé</h2>
-          <p>Bonjour <strong>${reset.user.username}</strong>,</p>
+          <p>Bonjour <strong>${validReset.user.username}</strong>,</p>
           <p>Votre mot de passe INKDROP a été réinitialisé avec succès.</p>
           <p style="color:#ff6b6b;"><strong>⚠️ Si vous n'êtes pas à l'origine de cette action, contactez immédiatement le support.</strong></p>
           <br>
@@ -176,7 +290,7 @@ export class SecurityService {
   // ============================================
   // 5. GESTION DES TENTATIVES DE CONNEXION
   // ============================================
-  async handleFailedLogin(email: string) {
+  async handleFailedLogin(email: string, ip: string) {
     const user = await this.prisma.user.findUnique({
       where: { email },
     });
@@ -186,22 +300,31 @@ export class SecurityService {
     const attempts = user.failedLoginAttempts + 1;
 
     if (attempts >= 5) {
-      await this.prisma.user.update({
-        where: { id: user.id },
-        data: {
-          failedLoginAttempts: attempts,
-          isLocked: true,
-        },
-      });
-
-      await this.prisma.notification.create({
-        data: {
-          userId: user.id,
-          type: 'SYSTEM',
-          title: '⚠️ Compte verrouillé',
-          body: 'Votre compte a été verrouillé après 5 tentatives de connexion échouées. Utilisez "Mot de passe oublié" pour le déverrouiller.',
-        },
-      });
+      await this.prisma.$transaction([
+        this.prisma.user.update({
+          where: { id: user.id },
+          data: {
+            failedLoginAttempts: attempts,
+            isLocked: true,
+          },
+        }),
+        this.prisma.notification.create({
+          data: {
+            userId: user.id,
+            type: 'SYSTEM',
+            title: '⚠️ Compte verrouillé',
+            body: 'Votre compte a été verrouillé après 5 tentatives de connexion échouées. Utilisez "Mot de passe oublié" pour le déverrouiller.',
+          },
+        }),
+        this.prisma.auditLog.create({
+          data: {
+            userId: user.id,
+            action: 'ACCOUNT_LOCKED',
+            ipAddress: ip,
+            details: { attempts },
+          },
+        }),
+      ]);
 
       try {
         await this.emailService.sendEmail({
@@ -231,14 +354,49 @@ export class SecurityService {
   }
 
   async handleSuccessfulLogin(userId: string, ip: string) {
-    await this.prisma.user.update({
-      where: { id: userId },
-      data: {
-        failedLoginAttempts: 0,
-        isLocked: false,
-        lastLoginAt: new Date(),
-        lastLoginIP: ip,
+    await this.prisma.$transaction([
+      this.prisma.user.update({
+        where: { id: userId },
+        data: {
+          failedLoginAttempts: 0,
+          isLocked: false,
+          lastLoginAt: new Date(),
+          lastLoginIP: ip,
+        },
+      }),
+      this.prisma.auditLog.create({
+        data: {
+          userId: userId,
+          action: 'LOGIN_SUCCESS',
+          ipAddress: ip,
+        },
+      }),
+    ]);
+  }
+
+  // ============================================
+  // 6. NETTOYAGE DES TOKENS EXPIRÉS (CRON)
+  // ============================================
+  @Cron(CronExpression.EVERY_HOUR)
+  async cleanExpiredTokens() {
+    const result = await this.prisma.passwordReset.deleteMany({
+      where: {
+        expiresAt: { lt: new Date() },
       },
     });
+    if (result.count > 0) {
+      console.log(`🧹 ${result.count} tokens expirés supprimés`);
+    }
+    return result;
+  }
+
+  // ============================================
+  // 7. HELPER : RÉCUPÉRER TOUS LES TOKENS
+  // ============================================
+  private async getAllTokens(): Promise<string[]> {
+    const resets = await this.prisma.passwordReset.findMany({
+      select: { token: true },
+    });
+    return resets.map(r => r.token);
   }
 }
