@@ -102,7 +102,7 @@ export class UsersController {
   }
 
   // ============================================
-  // METTRE À JOUR LA COULEUR DU BADGE (PATCH & PUT)
+  // METTRE À JOUR LA COULEUR DU BADGE
   // ============================================
   @Patch('badge-color')
   @Put('badge-color')
@@ -210,7 +210,7 @@ export class UsersController {
 
     await this.usersService.updateAvatar(userId, publicUrl);
 
-    return { 
+    return {
       avatarUrl: publicUrl,
       message: 'Avatar mis à jour avec succès',
     };
@@ -267,7 +267,7 @@ export class UsersController {
   }
 
   // ============================================
-  // ✅ AJOUT : SAUVEGARDER L'ÉTAT (avec la route /state)
+  // SAUVEGARDER L'ÉTAT
   // ============================================
   @Post('state')
   @UseGuards(JwtAuthGuard)
@@ -277,9 +277,6 @@ export class UsersController {
     return { success: true };
   }
 
-  // ============================================
-  // ✅ AJOUT : CHARGER L'ÉTAT (avec la route /state)
-  // ============================================
   @Get('state')
   @UseGuards(JwtAuthGuard)
   async loadState(@Req() req: any) {
@@ -289,24 +286,77 @@ export class UsersController {
   }
 
   // ============================================
-  // ✅ AJOUT : SAUVEGARDER L'ÉTAT (ancienne route pour compatibilité)
+  // ✅ CHANGER LE MOT DE PASSE
   // ============================================
-  @Post('save-state')
+  @Post('change-password')
   @UseGuards(JwtAuthGuard)
-  async saveStateOld(@Req() req: any, @Body() body: any) {
+  async changePassword(
+    @Req() req: any,
+    @Body('currentPassword') currentPassword: string,
+    @Body('newPassword') newPassword: string,
+  ) {
     const userId = req.user?.id || req.user?.sub;
-    await this.usersService.saveState(userId, body);
-    return { success: true };
+    return this.usersService.changePassword(userId, currentPassword, newPassword);
   }
 
   // ============================================
-  // ✅ AJOUT : CHARGER L'ÉTAT (ancienne route pour compatibilité)
+  // ✅ CHANGER L'EMAIL (Étape 1 : Demande)
   // ============================================
-  @Get('load-state')
+  @Post('request-email-change')
   @UseGuards(JwtAuthGuard)
-  async loadStateOld(@Req() req: any) {
+  async requestEmailChange(
+    @Req() req: any,
+    @Body('newEmail') newEmail: string,
+    @Body('password') password: string,
+  ) {
     const userId = req.user?.id || req.user?.sub;
-    const state = await this.usersService.loadState(userId);
-    return { data: state };
+    return this.usersService.requestEmailChange(userId, newEmail, password);
+  }
+
+  // ============================================
+  // ✅ CHANGER L'EMAIL (Étape 2 : Confirmation)
+  // ============================================
+  @Post('confirm-email-change')
+  async confirmEmailChange(@Body('token') token: string) {
+    return this.usersService.confirmEmailChange(token);
+  }
+
+  // ============================================
+  // ✅ METTRE À JOUR LES NOTIFICATIONS
+  // ============================================
+  @Put('notifications')
+  @UseGuards(JwtAuthGuard)
+  async updateNotifications(
+    @Req() req: any,
+    @Body() settings: any,
+  ) {
+    const userId = req.user?.id || req.user?.sub;
+    return this.usersService.updateNotificationSettings(userId, settings);
+  }
+
+  // ============================================
+  // ✅ METTRE À JOUR LES PRÉFÉRENCES
+  // ============================================
+  @Put('preferences')
+  @UseGuards(JwtAuthGuard)
+  async updatePreferences(
+    @Req() req: any,
+    @Body() preferences: any,
+  ) {
+    const userId = req.user?.id || req.user?.sub;
+    return this.usersService.updatePreferences(userId, preferences);
+  }
+
+  // ============================================
+  // ✅ SUPPRIMER LE COMPTE
+  // ============================================
+  @Delete('account')
+  @UseGuards(JwtAuthGuard)
+  async deleteAccount(
+    @Req() req: any,
+    @Body('password') password: string,
+  ) {
+    const userId = req.user?.id || req.user?.sub;
+    return this.usersService.deleteAccount(userId, password);
   }
 }
