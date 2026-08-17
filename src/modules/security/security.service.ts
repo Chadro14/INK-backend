@@ -9,7 +9,7 @@ import { Cron, CronExpression } from '@nestjs/schedule';
 
 @Injectable()
 export class SecurityService {
-  // ✅ Rate limiting pour les demandes de réinitialisation
+  // Rate limiting pour les demandes de réinitialisation
   private readonly resetAttempts = new Map<string, { count: number; lastAttempt: number }>();
 
   constructor(
@@ -22,7 +22,7 @@ export class SecurityService {
   // 1. DEMANDER LA RÉINITIALISATION (AVEC RATE LIMIT)
   // ============================================
   async requestPasswordReset(email: string, ip: string, userAgent: string) {
-    // ✅ RATE LIMITING
+    // RATE LIMITING
     const key = `${email}:${ip}`;
     const attempts = this.resetAttempts.get(key);
 
@@ -56,7 +56,7 @@ export class SecurityService {
       where: { email },
     });
 
-    // ✅ MÊME RÉPONSE QUE LE COMPTE EXISTE OU NON (sécurité)
+    // MÊME RÉPONSE QUE LE COMPTE EXISTE OU NON (sécurité)
     if (!user) {
       return {
         success: true,
@@ -64,12 +64,19 @@ export class SecurityService {
       };
     }
 
-    // ✅ SUPPRESSION DES ANCIENS TOKENS
+    // Vérifier si le compte est verrouillé
+    if (user.isLocked) {
+      throw new BadRequestException(
+        'Votre compte est verrouillé. Contactez le support pour le débloquer.'
+      );
+    }
+
+    // SUPPRESSION DES ANCIENS TOKENS
     await this.prisma.passwordReset.deleteMany({
       where: { userId: user.id },
     });
 
-    // ✅ GÉNÉRATION DU TOKEN (JWT)
+    // GÉNÉRATION DU TOKEN (JWT)
     const token = this.jwtService.sign(
       { 
         sub: user.id, 
@@ -79,7 +86,7 @@ export class SecurityService {
       { expiresIn: '15m' }
     );
 
-    // ✅ STOCKAGE DU TOKEN HASHÉ
+    // STOCKAGE DU TOKEN HASHÉ
     const hashedToken = await bcrypt.hash(token, 10);
     const expiresAt = new Date(Date.now() + 15 * 60 * 1000);
 
@@ -93,7 +100,7 @@ export class SecurityService {
       },
     });
 
-    // ✅ ENVOI DE L'EMAIL
+    // ENVOI DE L'EMAIL
     try {
       await this.emailService.sendResetPasswordEmail(
         user.email,
@@ -107,12 +114,13 @@ export class SecurityService {
       );
     }
 
-    // ✅ LOG DE SÉCURITÉ
+    // LOG DE SÉCURITÉ
     await this.prisma.auditLog.create({
       data: {
         userId: user.id,
         action: 'PASSWORD_RESET_REQUESTED',
         ipAddress: ip,
+        userAgent: userAgent,
         details: { email },
       },
     });
@@ -127,9 +135,9 @@ export class SecurityService {
   // 2. VÉRIFIER LE TOKEN (AVEC IP CHECK)
   // ============================================
   async verifyResetToken(token: string, ip: string) {
+    // Récupérer tous les tokens non expirés
     const resets = await this.prisma.passwordReset.findMany({
       where: {
-        token: { in: await this.getAllTokens() },
         expiresAt: { gt: new Date() },
       },
       include: { user: true },
@@ -148,7 +156,7 @@ export class SecurityService {
       return { valid: false, message: 'Token invalide.' };
     }
 
-    // ✅ VÉRIFICATION IP (optionnel, peut être désactivé)
+    // VÉRIFICATION IP (optionnel, peut être désactivé)
     if (validReset.ipAddress && validReset.ipAddress !== ip) {
       return { valid: false, message: 'Token invalide (IP différente).' };
     }
@@ -165,7 +173,7 @@ export class SecurityService {
   // 3. RÉINITIALISER LE MOT DE PASSE
   // ============================================
   async resetPassword(token: string, newPassword: string, ip: string) {
-    // ✅ RÉCUPÉRER LE TOKEN HASHÉ EN BASE
+    // RÉCUPÉRER LE TOKEN HASHÉ EN BASE
     const resets = await this.prisma.passwordReset.findMany({
       where: {
         expiresAt: { gt: new Date() },
@@ -191,10 +199,10 @@ export class SecurityService {
       throw new BadRequestException('Token expiré. Veuillez refaire une demande.');
     }
 
-    // ✅ VALIDATION DE LA FORCE DU MOT DE PASSE
+    // VALIDATION DE LA FORCE DU MOT DE PASSE
     this.validatePasswordStrength(newPassword);
 
-    // ✅ VÉRIFICATION QUE LE NOUVEAU MOT DE PASSE EST DIFFÉRENT DE L'ANCIEN
+    // VÉRIFICATION QUE LE NOUVEAU MOT DE PASSE EST DIFFÉRENT DE L'ANCIEN
     const isSamePassword = await bcrypt.compare(newPassword, validReset.user.passwordHash);
     if (isSamePassword) {
       throw new BadRequestException(
@@ -202,10 +210,10 @@ export class SecurityService {
       );
     }
 
-    // ✅ HACHAGE DU NOUVEAU MOT DE PASSE
+    // HACHAGE DU NOUVEAU MOT DE PASSE
     const hashedPassword = await bcrypt.hash(newPassword, 10);
 
-    // ✅ TRANSACTION
+    // TRANSACTION
     await this.prisma.$transaction([
       this.prisma.user.update({
         where: { id: validReset.userId },
@@ -236,7 +244,7 @@ export class SecurityService {
       }),
     ]);
 
-    // ✅ ENVOI DE L'EMAIL DE CONFIRMATION
+    // ENVOI DE L'EMAIL DE CONFIRMATION
     try {
       await this.emailService.sendEmail({
         to: validReset.user.email,
@@ -388,15 +396,5 @@ export class SecurityService {
       console.log(`🧹 ${result.count} tokens expirés supprimés`);
     }
     return result;
-  }
-
-  // ============================================
-  // 7. HELPER : RÉCUPÉRER TOUS LES TOKENS
-  // ============================================
-  private async getAllTokens(): Promise<string[]> {
-    const resets = await this.prisma.passwordReset.findMany({
-      select: { token: true },
-    });
-    return resets.map(r => r.token);
   }
 }
