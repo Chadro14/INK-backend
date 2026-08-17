@@ -39,6 +39,10 @@ model User {
 
   appState           Json?
 
+  // ✅ NOUVEAUX CHAMPS POUR LES PARAMÈTRES
+  notificationSettings Json?  // { newChapter, newComment, newSubscriber, earning, system }
+  preferences         Json?  // { theme, language }
+
   failedLoginAttempts Int     @default(0)
   isLocked            Boolean @default(false)
   lastLoginAt         DateTime?
@@ -68,6 +72,7 @@ model User {
   eventParticipations EventParticipation[]
 
   passwordResets     PasswordReset[]
+  emailChangeRequests EmailChangeRequest[] // ✅ NOUVEAU
 
   createdAt          DateTime  @default(now())
   updatedAt          DateTime  @updatedAt
@@ -107,8 +112,26 @@ model PasswordReset {
   userId    String
   user      User     @relation(fields: [userId], references: [id], onDelete: Cascade)
   token     String   @unique
-  ipAddress String?  // ✅ AJOUTÉ - IP de la demande
-  userAgent String?  // ✅ AJOUTÉ - User-Agent de la demande
+  ipAddress String?
+  userAgent String?
+  expiresAt DateTime
+  createdAt DateTime @default(now())
+  usedAt    DateTime?
+
+  @@index([token])
+  @@index([expiresAt])
+  @@index([userId])
+}
+
+// ============================================
+// ✅ NOUVEAU : DEMANDE DE CHANGEMENT D'EMAIL
+// ============================================
+model EmailChangeRequest {
+  id        String   @id @default(uuid())
+  userId    String
+  user      User     @relation(fields: [userId], references: [id], onDelete: Cascade)
+  newEmail  String
+  token     String   @unique
   expiresAt DateTime
   createdAt DateTime @default(now())
   usedAt    DateTime?
