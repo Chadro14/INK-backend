@@ -10,6 +10,7 @@
     "start:prod": "node dist/main",
     "postinstall": "prisma generate --schema=src/prisma/schema.prisma",
     "migrate-slugs": "ts-node scripts/migrate-slugs.ts",
+    "reset-password": "ts-node scripts/reset-password.ts",
     "vercel-build": "npx prisma generate --schema=src/prisma/schema.prisma && npx prisma db push --schema=src/prisma/schema.prisma --accept-data-loss && npm run build"
   },
   "dependencies": {
