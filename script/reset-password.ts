@@ -4,42 +4,36 @@ import * as bcrypt from 'bcrypt';
 
 const prisma = new PrismaClient();
 
-async function resetPassword() {
-  try {
-    const email = 'studioxelira@gmail.com';
-    const newPassword = 'Altesse@2026';
+async function main() {
+  const email = 'studioxelira@gmail.com';
+  const newPassword = 'Altesse@2026'; // 👈 CHANGE CE MOT DE PASSE SI TU VEUX
 
-    // Vérifier que l'utilisateur existe
-    const existingUser = await prisma.user.findUnique({
-      where: { email },
-    });
+  console.log(`🔐 Réinitialisation du mot de passe pour ${email}...`);
 
-    if (!existingUser) {
-      console.error(`❌ Utilisateur avec l'email ${email} non trouvé`);
-      return;
-    }
+  const hashedPassword = await bcrypt.hash(newPassword, 10);
 
-    // Hacher le nouveau mot de passe
-    const hashedPassword = await bcrypt.hash(newPassword, 10);
+  const user = await prisma.user.update({
+    where: { email },
+    data: {
+      passwordHash: hashedPassword,
+      isLocked: false,
+      failedLoginAttempts: 0,
+      role: 'ADMIN', // 👈 TU DEVIENS ADMIN
+    },
+  });
 
-    // Mettre à jour l'utilisateur
-    const user = await prisma.user.update({
-      where: { email },
-      data: {
-        passwordHash: hashedPassword,
-        isLocked: false,
-        failedLoginAttempts: 0,
-      },
-    });
-
-    console.log(`✅ Mot de passe réinitialisé pour ${user.email}`);
-    console.log(`📋 Nouveau mot de passe : ${newPassword}`);
-    console.log(`🔓 Compte débloqué : ${!user.isLocked}`);
-  } catch (error) {
-    console.error('❌ Erreur :', error.message);
-  } finally {
-    await prisma.$disconnect();
-  }
+  console.log(`✅ Mot de passe réinitialisé avec succès !`);
+  console.log(`📧 Email : ${user.email}`);
+  console.log(`🔑 Nouveau mot de passe : ${newPassword}`);
+  console.log(`👑 Rôle : ${user.role}`);
+  console.log(`🔓 Compte débloqué : ${!user.isLocked}`);
 }
 
-resetPassword();
+main()
+  .catch((e) => {
+    console.error('❌ Erreur :', e.message);
+    process.exit(1);
+  })
+  .finally(async () => {
+    await prisma.$disconnect();
+  });
