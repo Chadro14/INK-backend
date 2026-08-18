@@ -1,16 +1,40 @@
-# Email (Gmail)
-EMAIL_USER=xelirastudiogmail@gmail.com
-EMAIL_PASSWORD=Altesse252006
+# ============================================
+# EMAIL (Gmail)
+# ============================================
+EMAIL_HOST=smtp.gmail.com
+EMAIL_PORT=587
+EMAIL_SECURE=false
+EMAIL_USER=studioxelira@gmail.com
+EMAIL_PASSWORD=TON_MOT_DE_PASSE_APPLICATION_16_CARACTERES
+EMAIL_FROM=studioxelira@gmail.com
+
+# ============================================
+# FRONTEND
+# ============================================
 FRONTEND_URL=https://ink-drop-one.vercel.app
+
+# ============================================
+# BACKEND
+# ============================================
+BASE_URL=https://ink-backend.vercel.app
+JWT_SECRET=ton_secret_jwt_super_securise
+
+# ============================================
+# DATABASE (Supabase)
+# ============================================
+DATABASE_URL=postgresql://postgres.abcdefghijklmnop:password@aws-0-eu-west-3.pooler.supabase.com:6543/postgres
+DIRECT_URL=postgresql://postgres.abcdefghijklmnop:password@aws-0-eu-west-3.pooler.supabase.com:5432/postgres
+
+# ============================================
+# SUPABASE
+# ============================================
+SUPABASE_URL=https://abcdefghijklmnop.supabase.co
+SUPABASE_ANON_KEY=ton_anon_key
+SUPABASE_SERVICE_ROLE_KEY=ton_service_role_key
+
+# ============================================
+# ORANGE PAYMENT
+# ============================================
 ORANGE_CLIENT_ID=25eb3eec-65c6-429a-b930-b2a93021e89c
 ORANGE_CLIENT_SECRET=61cffc3d-aeb4-42b2-90c5-f4b38ff9d14d
 ORANGE_API_URL=https://api.orange.com/sonatel/webservice
-
-# M-Pesa
-MPESA_CONSUMER_KEY=HuIdfqJjP2XcAPfJGGtSz0ip6BvZXQcd
-MPESA_CONSUMER_SECRET=zqPdnBNkQjmGwHRlVPdfYOW9X1MnrtER
-MPESA_SHORTCODE=174379
-MPESA_API_URL=https://api.vodacom.cd/mpesa
-
-# URL de l'API (pour les webhooks)
-API_URL=https://inkdrop-backend.vercel.app                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                          
