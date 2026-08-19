@@ -44,8 +44,7 @@ export interface ModerationResult {
   action: ModerationAction;
   severity: ModerationSeverity;
   reason: string;
-  confidence: number; // 0-1
-  suggestedBanDuration?: '1d' | '7d' | '30d' | 'permanent';
+  confidence: number;
   requiresHumanReview: boolean;
 }
 
