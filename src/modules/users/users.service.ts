@@ -224,9 +224,9 @@ export class UsersService {
   }
 
   // ============================================
-  // ✅ CHANGER LE MOT DE PASSE
+  // ✅ CHANGER LE MOT DE PASSE (SANS ANCIEN)
   // ============================================
-  async changePassword(userId: string, currentPassword: string, newPassword: string) {
+  async changePassword(userId: string, newPassword: string) {
     const user = await this.prisma.user.findUnique({
       where: { id: userId },
     });
@@ -235,16 +235,10 @@ export class UsersService {
       throw new NotFoundException('Utilisateur non trouvé');
     }
 
-    // Vérifier le mot de passe actuel
-    const isPasswordValid = await bcrypt.compare(currentPassword, user.passwordHash);
-    if (!isPasswordValid) {
-      throw new BadRequestException('Mot de passe actuel incorrect');
-    }
-
     // Vérifier que le nouveau mot de passe est différent
     const isSamePassword = await bcrypt.compare(newPassword, user.passwordHash);
     if (isSamePassword) {
-      throw new BadRequestException('Le nouveau mot de passe doit être différent');
+      throw new BadRequestException('Le nouveau mot de passe doit être différent de l\'ancien');
     }
 
     // Valider la force du mot de passe
@@ -292,13 +286,11 @@ export class UsersService {
       throw new NotFoundException('Utilisateur non trouvé');
     }
 
-    // Vérifier le mot de passe
     const isPasswordValid = await bcrypt.compare(password, user.passwordHash);
     if (!isPasswordValid) {
       throw new BadRequestException('Mot de passe incorrect');
     }
 
-    // Vérifier si l'email est déjà utilisé
     const existing = await this.prisma.user.findUnique({
       where: { email: newEmail },
     });
@@ -306,13 +298,12 @@ export class UsersService {
       throw new ConflictException('Cet email est déjà utilisé');
     }
 
-    // Supprimer les anciennes demandes
     await this.prisma.emailChangeRequest.deleteMany({
       where: { userId: user.id },
     });
 
     const token = crypto.randomBytes(32).toString('hex');
-    const expiresAt = new Date(Date.now() + 24 * 60 * 60 * 1000); // 24h
+    const expiresAt = new Date(Date.now() + 24 * 60 * 60 * 1000);
 
     await this.prisma.emailChangeRequest.create({
       data: {
@@ -323,7 +314,6 @@ export class UsersService {
       },
     });
 
-    // Envoyer l'email de vérification
     await this.emailService.sendEmailVerification(user.email, token, newEmail);
 
     return {
