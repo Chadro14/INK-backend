@@ -1,15 +1,15 @@
-// scripts/reset-password.ts
+// scripts/force-reset-password.ts
 import { PrismaClient } from '@prisma/client';
 import * as bcrypt from 'bcrypt';
 
 const prisma = new PrismaClient();
 
 async function main() {
-  const email = 'studioxelira@gmail.com';
-  const newPassword = 'Altesse@2026'; // Ton nouveau mot de passe
-  
+  const email = 'altessemwamboko@gmail.com';
+  const newPassword = 'Altesse@2026'; // 🔥 Change si tu veux
+
   const hashedPassword = await bcrypt.hash(newPassword, 10);
-  
+
   const user = await prisma.user.update({
     where: { email },
     data: {
@@ -20,6 +20,9 @@ async function main() {
   });
 
   console.log(`✅ Mot de passe réinitialisé pour ${user.email}`);
+  console.log(`📋 Nouveau mot de passe : ${newPassword}`);
+  console.log(`📋 isLocked : ${user.isLocked}`);
+  console.log(`📋 failedLoginAttempts : ${user.failedLoginAttempts}`);
 }
 
 main()
