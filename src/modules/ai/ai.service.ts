@@ -21,7 +21,7 @@ export class AiService {
   ];
 
   private currentKeyIndex = 0;
-  private readonly apiUrl = 'https://api.groq.com/openai/v1/chat/completions'; // ✅ URL Groq
+  private readonly apiUrl = 'https://api.groq.com/openai/v1/chat/completions';
 
   constructor(
     private prisma: PrismaService,
@@ -188,7 +188,6 @@ export class AiService {
           reply = await this.handleChat(userName, message, history);
       }
     } catch (error) {
-      // ✅ LOG DE L'ERREUR
       console.error('❌ ERREUR DANS AI SERVICE :', error);
       console.error('📋 MESSAGE :', error.message);
       console.error('📋 STACK :', error.stack);
@@ -532,10 +531,9 @@ Tags :`;
   }
 
   // ============================================
-  // APPEL GROQ
+  // APPEL GROQ (CORRIGÉ AVEC LE BON MODÈLE)
   // ============================================
   private async callGroq(messages: any[], userName: string = 'Utilisateur'): Promise<string> {
-    // ✅ LOG POUR VOIR CE QUI SE PASSE
     console.log(`📤 Appel Groq - ${messages.length} messages, ${this.groqKeys.length} clés disponibles`);
     console.log(`📤 URL : ${this.apiUrl}`);
 
@@ -553,7 +551,7 @@ Tags :`;
             'Authorization': `Bearer ${key}`,
           },
           body: JSON.stringify({
-            model: 'llama-3.3-70b-versatile',
+            model: 'openai/gpt-oss-120b', // ✅ MODÈLE CORRIGÉ
             messages,
             temperature: 0.7,
             max_tokens: 500,
