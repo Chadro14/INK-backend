@@ -48,11 +48,17 @@ export class AiController {
   @UseGuards(JwtAuthGuard)
   async banUser(
     @Request() req: any,
-    @Body() body: { userId: string; reason: string; permanent?: boolean; duration?: string }
+    @Body() body: { userId: string; reason: string; permanent?: boolean; duration?: '1d' | '7d' | '30d' | 'permanent' }
   ) {
     const user = await this.toolsService.getUserProfile(req.user.id);
     if (user.data.role !== 'ADMIN') return { error: 'Accès réservé aux administrateurs.' };
-    return this.toolsService.banUser(body, req.user.id);
+    
+    return this.toolsService.banUser({
+      userId: body.userId,
+      reason: body.reason,
+      permanent: body.permanent || false,
+      duration: body.duration || '30d',
+    }, req.user.id);
   }
 
   // ============================================
