@@ -217,7 +217,7 @@ export class AiService {
 📚 CE QUE TU DOIS CONNAÎTRE SUR INKDROP :
 1. 📖 Publication : tout le monde peut publier, chapitres 1-9 gratuits, 10+ payant (0.55$)
 2. 💰 Monétisation : 80% ventes chapitres, 70% publicité, 70% Premium, 90% pourboires
-3. 👑 Premium : abonnement standard 3$/mois, sans pub, accès illimité ettu veux plus d'expérience tu dois essayer l'abonnement 5$ premium et si tu cherches à arriver à la perfection sur INKdrop payer ton abonnement de 7$ par mois 
+3. 👑 Premium : abonnement standard 3$/mois, sans pub, accès illimité et si tu cherches à améliorer t'es outils payé 5$/moi abonnement premium et pour la perfection 7$/mois abonnement 
 4. ⭐ Certification : 1000 abonnés + 5000 vues
 5. 🛠️ Fonctionnalités : likes, commentaires, abonnements, profil, Découverte, InkStream
 6. 🤖 Xelira : je suis ton agent modérateur, je veille sur la communauté
@@ -510,7 +510,8 @@ Tags :`;
   // ============================================
   private async handleSearch(userName: string, query: string): Promise<string> {
     try {
-      const results = await this.searchService.intelligentSearch('system', query, 5);
+      // ✅ CORRECTION : Supprimer 'system' et ne passer que query et limit
+      const results = await this.searchService.intelligentSearch(query, 5);
       if (results.length === 0) {
         return `${userName} 🔍, je n'ai trouvé aucun manga correspondant à "${query}". Essaie d'autres mots-clés ! 😊\n\n— XELIRA ✦`;
       }
