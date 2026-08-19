@@ -1,24 +1,27 @@
+// src/modules/ai/search.service.ts
 import { Injectable } from '@nestjs/common';
-import { AiService } from './ai.service';
 import { PrismaService } from '../../prisma/prisma.service';
 
 @Injectable()
 export class SearchService {
-  constructor(
-    private aiService: AiService,
-    private prisma: PrismaService,
-  ) {}
+  private readonly groqKeys: string[] = [
+    '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',
+    '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',
+    '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',
+    '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',
+  ];
+
+  private currentKeyIndex = 0;
+  private readonly apiUrl = 'https://api.groq.com/openai/v1/chat/completions';
+
+  constructor(private prisma: PrismaService) {}
 
   // ============================================
   // RECHERCHE INTELLIGENTE
   // ============================================
-  async intelligentSearch(
-    userId: string,
-    query: string,
-    limit: number = 10,
-  ): Promise<any[]> {
+  async intelligentSearch(query: string, limit: number = 10): Promise<any[]> {
     // 1. Extraire les mots-clés avec l'IA
-    const keywords = await this.extractKeywords(userId, query);
+    const keywords = await this.extractKeywords(query);
 
     // 2. Rechercher dans la BDD
     const mangas = await this.prisma.manga.findMany({
@@ -52,38 +55,30 @@ export class SearchService {
 
     // 3. Si pas de résultats, faire une recherche plus large
     if (mangas.length === 0) {
-      return this.fallbackSearch(userId, query, limit);
+      return this.fallbackSearch(query, limit);
     }
 
-    // 4. Ajouter un score de pertinence
-    return mangas.map(manga => ({
-      ...manga,
-      relevanceScore: this.calculateRelevance(manga, query, keywords),
-    })).sort((a, b) => b.relevanceScore - a.relevanceScore);
+    return mangas;
   }
 
   // ============================================
   // EXTRAIRE LES MOTS-CLÉS AVEC L'IA
   // ============================================
-  private async extractKeywords(userId: string, query: string): Promise<string> {
+  private async extractKeywords(query: string): Promise<string> {
     const prompt = `Extrais les mots-clés principaux de cette recherche de manga.
 
 Recherche : "${query}"
 
 Mots-clés (séparés par des espaces) :`;
 
-    const result = await this.aiService.chat(userId, prompt, [], 'Système');
-    return result.reply.trim() || query;
+    const reply = await this.callGroq(prompt);
+    return reply.trim() || query;
   }
 
   // ============================================
   // RECHERCHE DE FALLBACK
   // ============================================
-  private async fallbackSearch(
-    userId: string,
-    query: string,
-    limit: number,
-  ): Promise<any[]> {
+  private async fallbackSearch(query: string, limit: number): Promise<any[]> {
     const words = query.split(' ').filter(w => w.length > 2);
 
     if (words.length === 0) {
@@ -121,49 +116,61 @@ Mots-clés (séparés par des espaces) :`;
   }
 
   // ============================================
-  // CALCULER LE SCORE DE PERTINENCE
-  // ============================================
-  private calculateRelevance(manga: any, query: string, keywords: string): number {
-    let score = 0;
-
-    if (manga.title.toLowerCase().includes(query.toLowerCase())) {
-      score += 10;
-    }
-
-    keywords.split(' ').forEach(keyword => {
-      if (manga.title.toLowerCase().includes(keyword.toLowerCase())) {
-        score += 3;
-      }
-    });
-
-    const allTags = [...(manga.tags || []), ...(manga.aiTags || [])];
-    keywords.split(' ').forEach(keyword => {
-      if (allTags.some(tag => tag.toLowerCase().includes(keyword.toLowerCase()))) {
-        score += 2;
-      }
-    });
-
-    score += (manga._count?.likes || 0) * 0.1;
-    score += (manga._count?.subscriptions || 0) * 0.2;
-
-    return Math.round(score * 10) / 10;
-  }
-
-  // ============================================
   // SUGGÉRER DES TAGS POUR LA RECHERCHE
   // ============================================
-  async suggestSearchTags(userId: string, query: string): Promise<string[]> {
+  async suggestSearchTags(query: string): Promise<string[]> {
     const prompt = `Propose 5 tags pertinents pour cette recherche de manga.
 
 Recherche : "${query}"
 
 Tags suggérés (séparés par des virgules) :`;
 
-    const result = await this.aiService.chat(userId, prompt, [], 'Système');
+    const reply = await this.callGroq(prompt);
 
-    return result.reply
+    return reply
       .split(',')
       .map(tag => tag.trim().toLowerCase())
       .filter(tag => tag.length > 0);
+  }
+
+  // ============================================
+  // APPEL GROQ
+  // ============================================
+  private async callGroq(prompt: string): Promise<string> {
+    for (let attempt = 0; attempt < this.groqKeys.length; attempt++) {
+      const key = this.groqKeys[this.currentKeyIndex];
+      this.currentKeyIndex = (this.currentKeyIndex + 1) % this.groqKeys.length;
+
+      try {
+        const response = await fetch(this.apiUrl, {
+          method: 'POST',
+          headers: {
+            'Content-Type': 'application/json',
+            'Authorization': `Bearer ${key}`,
+          },
+          body: JSON.stringify({
+            model: 'llama-3.3-70b-versatile',
+            messages: [{ role: 'user', content: prompt }],
+            temperature: 0.3,
+            max_tokens: 200,
+          }),
+        });
+
+        const data = await response.json();
+
+        if (!response.ok) {
+          continue;
+        }
+
+        const reply = data.choices?.[0]?.message?.content;
+        if (reply) {
+          return reply;
+        }
+      } catch (error) {
+        continue;
+      }
+    }
+
+    return '';
   }
 }
