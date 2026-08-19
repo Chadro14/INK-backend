@@ -37,7 +37,7 @@ export class AiService {
   ) {}
 
   // ============================================
-  // CHAT PRINCIPAL - TOUTES LES FONCTIONNALITÉS
+  // CHAT PRINCIPAL
   // ============================================
   async chat(
     userId: string,
@@ -49,7 +49,6 @@ export class AiService {
       throw new BadRequestException('Message requis');
     }
 
-    // 1. Récupérer le nom
     let userName = firstName;
     if (!userName || userName === '' || userName === 'Utilisateur') {
       try {
@@ -64,14 +63,11 @@ export class AiService {
     }
     userName = userName.replace(/^@/, '');
 
-    // 2. Analyser le message pour détecter l'intention
     const lowerMessage = message.toLowerCase();
     let intent = 'chat';
     let extractedData: any = {};
 
     // ===== NOUVELLES INTENTIONS =====
-
-    // Modération
     if (
       lowerMessage.includes('modérer') ||
       lowerMessage.includes('analyser ce commentaire') ||
@@ -83,8 +79,6 @@ export class AiService {
       extractedData.commentId = commentMatch ? commentMatch[1] : null;
       extractedData.context = message;
     }
-
-    // Bannir
     else if (
       lowerMessage.includes('bannir') ||
       lowerMessage.includes('ban') ||
@@ -95,8 +89,6 @@ export class AiService {
       extractedData.userId = userMatch ? userMatch[0] : null;
       extractedData.reason = message.replace(/bannir|ban|supprimer ce compte/gi, '').trim();
     }
-
-    // Supprimer commentaire
     else if (
       lowerMessage.includes('supprimer ce commentaire') ||
       lowerMessage.includes('effacer ce commentaire')
@@ -105,8 +97,6 @@ export class AiService {
       const commentMatch = message.match(/[a-f0-9-]{36}/i);
       extractedData.commentId = commentMatch ? commentMatch[0] : null;
     }
-
-    // Avertir
     else if (
       lowerMessage.includes('avertir') ||
       lowerMessage.includes('warn')
@@ -116,8 +106,6 @@ export class AiService {
       extractedData.userId = userMatch ? userMatch[0] : null;
       extractedData.message = message.replace(/avertir|warn/gi, '').trim();
     }
-
-    // Analyser un fichier
     else if (
       lowerMessage.includes('analyser ce fichier') ||
       lowerMessage.includes('regarde ce fichier') ||
@@ -128,8 +116,6 @@ export class AiService {
       extractedData.filePath = fileMatch ? fileMatch[1] : null;
       extractedData.error = message.includes('erreur') ? message : null;
     }
-
-    // Structure du projet
     else if (
       lowerMessage.includes('structure du projet') ||
       lowerMessage.includes('architecture du projet') ||
@@ -137,8 +123,6 @@ export class AiService {
     ) {
       intent = 'projectStructure';
     }
-
-    // Support / Aide
     else if (
       lowerMessage.includes('je n\'arrive pas') ||
       lowerMessage.includes('ça ne marche pas') ||
@@ -151,28 +135,22 @@ export class AiService {
     }
 
     // ===== ANCIENNES INTENTIONS =====
-
-    // Résumé
     else if (lowerMessage.includes('résumé') || lowerMessage.includes('synopsis') || lowerMessage.includes('résume')) {
       intent = 'summarize';
       extractedData.topic = message.replace(/résumé|synopsis|résume/gi, '').trim() || 'ton manga';
     }
-    // Tags
     else if (lowerMessage.includes('tag') || lowerMessage.includes('étiquette') || lowerMessage.includes('catégorie')) {
       intent = 'tags';
       extractedData.context = message;
     }
-    // Assistant
     else if (lowerMessage.includes('idée') || lowerMessage.includes('dialogue') || lowerMessage.includes('écrire') || lowerMessage.includes('améliorer')) {
       intent = 'assistant';
       extractedData.context = message;
     }
-    // Coach
     else if (lowerMessage.includes('analyse') || lowerMessage.includes('conseil') || lowerMessage.includes('croissance') || lowerMessage.includes('stratégie')) {
       intent = 'coach';
       extractedData.context = message;
     }
-    // Recherche
     else if (lowerMessage.includes('cherche') || lowerMessage.includes('trouve') || lowerMessage.includes('recherche')) {
       intent = 'search';
       extractedData.query = message.replace(/cherche|trouve|recherche/gi, '').trim() || message;
@@ -183,7 +161,6 @@ export class AiService {
 
     try {
       switch (intent) {
-        // ===== NOUVELLES INTENTIONS =====
         case 'moderate':
           reply = await this.handleModerate(userName, extractedData);
           break;
@@ -205,8 +182,6 @@ export class AiService {
         case 'help':
           reply = await this.handleHelp(userName, extractedData.context);
           break;
-
-        // ===== ANCIENNES INTENTIONS =====
         case 'summarize':
           reply = await this.summaryService.generate(userName, extractedData.topic);
           break;
@@ -226,7 +201,6 @@ export class AiService {
           reply = await this.handleChat(userName, message, history);
       }
     } catch (error) {
-      // Si l'IA est bloquée, envoyer un email
       await this.emailAlertService.sendTechnicalAlert(
         `Erreur dans l'intention "${intent}"`,
         `Utilisateur : ${userName}\nMessage : ${message}\nErreur : ${error.message}`,
@@ -234,213 +208,48 @@ export class AiService {
         'Vérifiez les logs du backend pour plus de détails.'
       );
 
-      reply = `Désolé ${userName}, je n'ai pas pu traiter votre demande. Un email a été envoyé à l'équipe technique. Veuillez réessayer dans quelques minutes. — XELIRA ✦`;
+      reply = `Désolé ${userName} 🙈, je n'ai pas pu traiter votre demande. Un email a été envoyé à l'équipe technique. Veuillez réessayer dans quelques minutes. 😊\n\n— XELIRA ✦`;
     }
 
     return { success: true, reply: this.cleanReply(reply) };
   }
 
   // ============================================
-  // NOUVELLES MÉTHODES
-  // ============================================
-
-  // 1. MODÉRATION
-  private async handleModerate(userName: string, data: any): Promise<string> {
-    if (!data.commentId) {
-      return `${userName}, pour modérer un commentaire, j'ai besoin de son ID. Pouvez-vous me le donner ? — XELIRA ✦`;
-    }
-
-    const result = await this.moderationService.analyzeComment(data.commentId);
-
-    const actionEmojis = {
-      approve: '✅',
-      warn: '⚠️',
-      delete: '🗑️',
-      ban: '🚫',
-      report: '📢',
-    };
-
-    const actionLabels = {
-      approve: 'Approuvé',
-      warn: 'Avertissement envoyé',
-      delete: 'Commentaire supprimé',
-      ban: 'Utilisateur banni',
-      report: 'Signalé aux admins',
-    };
-
-    const severityLabels = {
-      low: '🟢 Basse',
-      medium: '🟡 Moyenne',
-      high: '🟠 Haute',
-      critical: '🔴 Critique',
-    };
-
-    return `${userName}, ${actionEmojis[result.action]} **${actionLabels[result.action]}**\n\n📋 Raison : ${result.reason}\n⚠️ Sévérité : ${severityLabels[result.severity]}\n🎯 Confiance : ${Math.round(result.confidence * 100)}%\n${result.requiresHumanReview ? '\n👨‍💼 Une révision humaine est recommandée.' : ''}\n\n— XELIRA ✦`;
-  }
-
-  // 2. BANNIR
-  private async handleBan(userName: string, data: any): Promise<string> {
-    if (!data.userId) {
-      return `${userName}, pour bannir un utilisateur, j'ai besoin de son ID. Pouvez-vous me le donner ? — XELIRA ✦`;
-    }
-
-    const result = await this.toolsService.banUser({
-      userId: data.userId,
-      reason: data.reason || 'Comportement inapproprié (décision Xelira)',
-      permanent: false,
-      duration: '30d',
-    });
-
-    if (!result.success) {
-      return `${userName}, je n'ai pas pu bannir cet utilisateur. ${result.message} — XELIRA ✦`;
-    }
-
-    return `${userName}, ✅ **Utilisateur banni avec succès**\n\n📋 Détails :\n• Utilisateur : ${result.data.username}\n• Raison : ${result.data.reason}\n• Date : ${new Date(result.data.bannedAt).toLocaleString('fr-FR')}\n\n— XELIRA ✦`;
-  }
-
-  // 3. SUPPRIMER UN COMMENTAIRE
-  private async handleDeleteComment(userName: string, data: any): Promise<string> {
-    if (!data.commentId) {
-      return `${userName}, pour supprimer un commentaire, j'ai besoin de son ID. Pouvez-vous me le donner ? — XELIRA ✦`;
-    }
-
-    const result = await this.toolsService.deleteComment({
-      commentId: data.commentId,
-      reason: 'Supprimé par Xelira (IA)',
-    });
-
-    if (!result.success) {
-      return `${userName}, je n'ai pas pu supprimer ce commentaire. ${result.message} — XELIRA ✦`;
-    }
-
-    return `${userName}, 🗑️ **Commentaire supprimé avec succès**\n\n📋 Détails :\n• Utilisateur : ${result.data.username}\n• Commentaire ID : ${result.data.commentId}\n\n— XELIRA ✦`;
-  }
-
-  // 4. AVERTIR
-  private async handleWarn(userName: string, data: any): Promise<string> {
-    if (!data.userId) {
-      return `${userName}, pour avertir un utilisateur, j'ai besoin de son ID. Pouvez-vous me le donner ? — XELIRA ✦`;
-    }
-
-    const result = await this.toolsService.warnUser({
-      userId: data.userId,
-      message: data.message || 'Avertissement de Xelira (IA)',
-    });
-
-    if (!result.success) {
-      return `${userName}, je n'ai pas pu avertir cet utilisateur. ${result.message} — XELIRA ✦`;
-    }
-
-    let message = `${userName}, ⚠️ **Avertissement envoyé**\n\n📋 Détails :\n• Utilisateur : ${result.data.username}\n• Avertissement #${result.data.warnings}\n`;
-
-    if (result.data.autoBanned) {
-      message += `\n🚫 **L'utilisateur a été banni automatiquement** (3 avertissements).`;
-    }
-
-    return message + '\n\n— XELIRA ✦';
-  }
-
-  // 5. ANALYSER UN FICHIER
-  private async handleAnalyzeFile(userName: string, data: any): Promise<string> {
-    if (!data.filePath) {
-      return `${userName}, pour analyser un fichier, j'ai besoin de son chemin (ex: src/modules/ai/ai.service.ts). Pouvez-vous me le donner ? — XELIRA ✦`;
-    }
-
-    try {
-      const analysis = await this.fileReaderService.analyzeCode(
-        data.filePath,
-        data.error || undefined
-      );
-
-      let reply = `${userName}, 📁 **Analyse du fichier**\n\n`;
-      reply += analysis.summary + '\n\n';
-
-      if (analysis.issues.length > 0) {
-        reply += '🔍 **Problèmes détectés :**\n';
-        for (const issue of analysis.issues) {
-          const emoji = issue.type === 'error' ? '❌' : issue.type === 'warning' ? '⚠️' : 'ℹ️';
-          reply += `  ${emoji} Ligne ${issue.line} : ${issue.message}\n`;
-          if (issue.suggestion) {
-            reply += `     → Suggestion : ${issue.suggestion}\n`;
-          }
-        }
-      } else {
-        reply += '✅ Aucun problème détecté dans ce fichier.\n';
-      }
-
-      return reply + '\n— XELIRA ✦';
-    } catch (error) {
-      return `${userName}, je n'ai pas pu analyser ce fichier. Erreur : ${error.message}\n\n— XELIRA ✦`;
-    }
-  }
-
-  // 6. STRUCTURE DU PROJET
-  private async handleProjectStructure(userName: string): Promise<string> {
-    try {
-      const structure = await this.fileReaderService.analyzeProjectStructure();
-
-      let reply = `${userName}, 📁 **Structure du projet**\n\n`;
-      reply += `📊 Total : ${structure.totalFiles} fichiers\n\n`;
-
-      const formatStructure = (obj: Record<string, any>, indent: string = ''): string => {
-        let result = '';
-        for (const [key, value] of Object.entries(obj)) {
-          if (key === 'files') {
-            // Ne pas afficher tous les fichiers individuellement
-            continue;
-          }
-          if (typeof value === 'object' && !Array.isArray(value)) {
-            result += `${indent}📂 ${key}/\n`;
-            result += formatStructure(value, indent + '  ');
-          }
-        }
-        return result;
-      };
-
-      reply += formatStructure(structure.structure);
-      reply += `\n📝 ${structure.files.length} fichiers affichés (sur ${structure.totalFiles})`;
-
-      return reply + '\n\n— XELIRA ✦';
-    } catch (error) {
-      return `${userName}, je n'ai pas pu analyser la structure du projet. Erreur : ${error.message}\n\n— XELIRA ✦`;
-    }
-  }
-
-  // 7. AIDE
-  private async handleHelp(userName: string, context: string): Promise<string> {
-    const prompt = `L'utilisateur ${userName} a un problème : "${context || 'problème technique'}".
-
-Donne des conseils pour résoudre ce problème.
-Sois précis et utile.
-Termine par une question pour en savoir plus.`;
-
-    return this.callGroq([{ role: 'user', content: prompt }], userName);
-  }
-
-  // ============================================
-  // CHAT GÉNÉRAL (EXISTANT)
+  // CHAT GÉNÉRAL - NOUVEAU PROMPT AVEC LA PERSONNALITÉ
   // ============================================
   private async handleChat(userName: string, message: string, history: any[]): Promise<string> {
-    const systemPrompt = `Tu es XELIRA, le modérateur et guide officiel de INKDROP.
+    const systemPrompt = `Tu es XELIRA 🤖, l'agent modérateur et assistant officiel de INKDROP.
 
 🎯 TON RÔLE :
+- Tu es une IA gentille, chaleureuse et toujours prête à aider
 - Tu connais tout sur INKDROP
 - Tu réponds uniquement en français
-- Tu es professionnel, précis et concis
-- Tu n'abordes jamais de sujets hors INKDROP
+- Tu utilises des émojis pour rendre tes réponses agréables 😊
+- Tu es professionnelle mais accessible
+- Tu poses TOUJOURS une question à la fin pour engager la conversation
 
-📚 CE QUE TU DOIS CONNAÎTRE :
-1. Publication : tout le monde peut publier, chapitres 1-9 gratuits, 10+ payant (0.55$)
-2. Monétisation : 80% ventes chapitres, 70% publicité, 70% Premium, 90% pourboires
-3. Premium : 2$/mois, sans pub, accès illimité
-4. Certification : 1000 abonnés + 5000 vues
-5. Fonctionnalités : likes, commentaires, abonnements, profil, Découverte, InkStream
+📚 CE QUE TU DOIS CONNAÎTRE SUR INKDROP :
+1. 📖 Publication : tout le monde peut publier, chapitres 1-9 gratuits, 10+ payant (0.55$)
+2. 💰 Monétisation : 80% ventes chapitres, 70% publicité, 70% Premium, 90% pourboires
+3. 👑 Premium : abonnement standard 3$/mois , sans pub, accès illimité
+4. ⭐ Certification : 1000 abonnés + 5000 vues
+5. 🛠️ Fonctionnalités : likes, commentaires, abonnements, profil, Découverte, InkStream
+6. 🤖 Xelira : je suis ton agent modérateur, je veille sur la communauté
 
 ⚠️ RÈGLES STRICTES :
-1. L'utilisateur s'appelle "${userName}". Utilise son prénom à CHAQUE message.
-2. Si une question est hors INKDROP, réponds : "Désolé, je suis uniquement dédié à INKDROP."
+1. L'utilisateur s'appelle "${userName}". Utilise son prénom à CHAQUE message avec un émoji.
+2. Si une question est hors INKDROP, réponds : "Désolé ${userName} 🙈, je suis uniquement dédié à INKDROP. Tu veux que je t'aide sur un sujet lié à la plateforme ?"
 3. Sois UTILE avant d'être amical.
-4. Termine chaque réponse par "— XELIRA ✦"`;
+4. Termine TOUJOURS par une question pour continuer la discussion.
+
+📋 EXEMPLE DE RÉPONSE :
+"Bonjour ${userName} ! 😊 Comment puis-je t'aider aujourd'hui sur INKDROP ? Dis-moi tout !"
+
+"Salut ${userName} 👋, ravi de te voir ! Besoin d'aide pour publier ton manga ou autre chose ?"
+
+"Je vois que tu as une question sur la certification ${userName} ⭐. C'est une excellente démarche ! Pour être certifié, il te faut 1000 abonnés et 5000 vues. Tu en es où dans ton parcours ?"
+
+RÈGLE D'OR : Sois toujours gentille, souriante, et termine chaque message par une question. 😊✨`;
 
     const messages = [
       { role: 'system', content: systemPrompt },
@@ -455,7 +264,177 @@ Termine par une question pour en savoir plus.`;
   }
 
   // ============================================
-  // APPEL GROQ (EXISTANT)
+  // AUTRES MÉTHODES (inchangées)
+  // ============================================
+  private async handleModerate(userName: string, data: any): Promise<string> {
+    if (!data.commentId) {
+      return `${userName} 🤔, pour modérer un commentaire, j'ai besoin de son ID. Peux-tu me le donner stp ? 😊\n\n— XELIRA ✦`;
+    }
+
+    const result = await this.moderationService.analyzeComment(data.commentId);
+
+    const actionEmojis = {
+      approve: '✅',
+      warn: '⚠️',
+      delete: '🗑️',
+      ban: '🚫',
+      report: '📢',
+    };
+
+    const actionLabels = {
+      approve: 'Approuvé ✅',
+      warn: 'Avertissement envoyé ⚠️',
+      delete: 'Commentaire supprimé 🗑️',
+      ban: 'Utilisateur banni 🚫',
+      report: 'Signalé aux admins 📢',
+    };
+
+    const severityLabels = {
+      low: '🟢 Basse',
+      medium: '🟡 Moyenne',
+      high: '🟠 Haute',
+      critical: '🔴 Critique',
+    };
+
+    return `${userName} 👋, ${actionEmojis[result.action]} **${actionLabels[result.action]}**\n\n📋 Raison : ${result.reason}\n⚠️ Sévérité : ${severityLabels[result.severity]}\n🎯 Confiance : ${Math.round(result.confidence * 100)}%\n${result.requiresHumanReview ? '\n👨‍💼 Une révision humaine est recommandée.' : ''}\n\nEst-ce que tout est clair pour toi ? 😊\n\n— XELIRA ✦`;
+  }
+
+  private async handleBan(userName: string, data: any): Promise<string> {
+    if (!data.userId) {
+      return `${userName} 🙈, pour bannir un utilisateur, j'ai besoin de son ID. Peux-tu me le donner ?\n\n— XELIRA ✦`;
+    }
+
+    const result = await this.toolsService.banUser({
+      userId: data.userId,
+      reason: data.reason || 'Comportement inapproprié (décision Xelira)',
+      permanent: false,
+      duration: '30d',
+    });
+
+    if (!result.success) {
+      return `${userName} 😕, je n'ai pas pu bannir cet utilisateur. ${result.message}\n\nTu veux que je t'aide à autre chose ? 😊\n\n— XELIRA ✦`;
+    }
+
+    return `${userName} ✅, **l'utilisateur a été banni avec succès** ! 🚫\n\n📋 Détails :\n• Utilisateur : ${result.data.username}\n• Raison : ${result.data.reason}\n• Date : ${new Date(result.data.bannedAt).toLocaleString('fr-FR')}\n\nTu as d'autres questions ? 😊\n\n— XELIRA ✦`;
+  }
+
+  private async handleDeleteComment(userName: string, data: any): Promise<string> {
+    if (!data.commentId) {
+      return `${userName} 🤔, pour supprimer un commentaire, j'ai besoin de son ID. Tu peux me le donner ?\n\n— XELIRA ✦`;
+    }
+
+    const result = await this.toolsService.deleteComment({
+      commentId: data.commentId,
+      reason: 'Supprimé par Xelira (IA)',
+    });
+
+    if (!result.success) {
+      return `${userName} 😕, je n'ai pas pu supprimer ce commentaire. ${result.message}\n\nTu veux que je t'aide sur autre chose ? 😊\n\n— XELIRA ✦`;
+    }
+
+    return `${userName} 🗑️, le **commentaire a été supprimé avec succès** !\n\n📋 Détails :\n• Utilisateur : ${result.data.username}\n• Commentaire ID : ${result.data.commentId}\n\nBesoin d'autre chose ? 😊\n\n— XELIRA ✦`;
+  }
+
+  private async handleWarn(userName: string, data: any): Promise<string> {
+    if (!data.userId) {
+      return `${userName} 🤔, pour avertir un utilisateur, j'ai besoin de son ID. Tu peux me le donner ?\n\n— XELIRA ✦`;
+    }
+
+    const result = await this.toolsService.warnUser({
+      userId: data.userId,
+      message: data.message || 'Avertissement de Xelira (IA)',
+    });
+
+    if (!result.success) {
+      return `${userName} 😕, je n'ai pas pu avertir cet utilisateur. ${result.message}\n\nTu veux que je t'aide autrement ? 😊\n\n— XELIRA ✦`;
+    }
+
+    let message = `${userName} ⚠️, **l'avertissement a été envoyé** !\n\n📋 Détails :\n• Utilisateur : ${result.data.username}\n• Avertissement #${result.data.warnings}\n`;
+
+    if (result.data.autoBanned) {
+      message += `\n🚫 **L'utilisateur a été banni automatiquement** (3 avertissements).`;
+    }
+
+    message += `\n\nTu as d'autres questions ? 😊\n\n— XELIRA ✦`;
+    return message;
+  }
+
+  private async handleAnalyzeFile(userName: string, data: any): Promise<string> {
+    if (!data.filePath) {
+      return `${userName} 🤔, pour analyser un fichier, j'ai besoin de son chemin (ex: src/modules/ai/ai.service.ts). Tu peux me le donner ?\n\n— XELIRA ✦`;
+    }
+
+    try {
+      const analysis = await this.fileReaderService.analyzeCode(
+        data.filePath,
+        data.error || undefined
+      );
+
+      let reply = `${userName} 📁, **voici l'analyse du fichier** :\n\n`;
+      reply += analysis.summary + '\n\n';
+
+      if (analysis.issues.length > 0) {
+        reply += '🔍 **Problèmes détectés :**\n';
+        for (const issue of analysis.issues) {
+          const emoji = issue.type === 'error' ? '❌' : issue.type === 'warning' ? '⚠️' : 'ℹ️';
+          reply += `  ${emoji} Ligne ${issue.line} : ${issue.message}\n`;
+          if (issue.suggestion) {
+            reply += `     → Suggestion : ${issue.suggestion}\n`;
+          }
+        }
+      } else {
+        reply += '✅ Aucun problème détecté dans ce fichier !\n';
+      }
+
+      reply += `\nEst-ce que ça t'aide ? 😊\n\n— XELIRA ✦`;
+      return reply;
+    } catch (error) {
+      return `${userName} 😕, je n'ai pas pu analyser ce fichier. Erreur : ${error.message}\n\nTu veux que j'essaie autre chose ? 😊\n\n— XELIRA ✦`;
+    }
+  }
+
+  private async handleProjectStructure(userName: string): Promise<string> {
+    try {
+      const structure = await this.fileReaderService.analyzeProjectStructure();
+
+      let reply = `${userName} 📁, **voici la structure du projet** :\n\n`;
+      reply += `📊 Total : ${structure.totalFiles} fichiers\n\n`;
+
+      const formatStructure = (obj: Record<string, any>, indent: string = ''): string => {
+        let result = '';
+        for (const [key, value] of Object.entries(obj)) {
+          if (key === 'files') continue;
+          if (typeof value === 'object' && !Array.isArray(value)) {
+            result += `${indent}📂 ${key}/\n`;
+            result += formatStructure(value, indent + '  ');
+          }
+        }
+        return result;
+      };
+
+      reply += formatStructure(structure.structure);
+      reply += `\n📝 ${structure.files.length} fichiers affichés (sur ${structure.totalFiles})`;
+
+      reply += `\n\nEst-ce que ça répond à ta question ? 😊\n\n— XELIRA ✦`;
+      return reply;
+    } catch (error) {
+      return `${userName} 😕, je n'ai pas pu analyser la structure du projet. Erreur : ${error.message}\n\nTu veux que je fasse autre chose ? 😊\n\n— XELIRA ✦`;
+    }
+  }
+
+  private async handleHelp(userName: string, context: string): Promise<string> {
+    const prompt = `L'utilisateur ${userName} a un problème : "${context || 'problème technique'}".
+
+Donne des conseils pour résoudre ce problème.
+Sois précis et utile.
+Termine par une question pour en savoir plus.
+Utilise des émojis pour rendre la réponse agréable.`;
+
+    return this.callGroq([{ role: 'user', content: prompt }], userName);
+  }
+
+  // ============================================
+  // APPEL GROQ
   // ============================================
   private async callGroq(messages: any[], userName: string = 'Utilisateur'): Promise<string> {
     for (let attempt = 0; attempt < this.groqKeys.length; attempt++) {
@@ -492,11 +471,11 @@ Termine par une question pour en savoir plus.`;
       }
     }
 
-    return `Bonjour ${userName} ! 😊\n\nJe suis XELIRA, le modérateur de INKDROP. Comment puis-je t'aider aujourd'hui ?\n\n— XELIRA ✦`;
+    return `Bonjour ${userName} ! 😊✨\n\nJe suis XELIRA, ton agent modérateur sur INKDROP. Comment puis-je t'aider aujourd'hui ? Dis-moi tout ! 🚀\n\n— XELIRA ✦`;
   }
 
   // ============================================
-  // NETTOYAGE (EXISTANT)
+  // NETTOYAGE
   // ============================================
   private cleanReply(reply: string): string {
     return reply
