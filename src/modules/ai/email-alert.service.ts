@@ -10,21 +10,21 @@ export class EmailAlertService {
   constructor(private emailService: EmailService) {}
 
   // ============================================
-  // 1. ENVOYER UNE ALERTE QUAND L'IA EST BLOQUÉE
+  // 1. ENVOYER UNE ALERTE
   // ============================================
   async sendAlert(data: EmailAlertData): Promise<void> {
     const severityColors = {
-      low: '#3B82F6', // bleu
-      medium: '#F59E0B', // jaune
-      high: '#F97316', // orange
-      critical: '#EF4444', // rouge
+      [ModerationSeverity.LOW]: '#3B82F6',
+      [ModerationSeverity.MEDIUM]: '#F59E0B',
+      [ModerationSeverity.HIGH]: '#F97316',
+      [ModerationSeverity.CRITICAL]: '#EF4444',
     };
 
     const severityLabels = {
-      low: '🟢 BASSE',
-      medium: '🟡 MOYENNE',
-      high: '🟠 HAUTE',
-      critical: '🔴 CRITIQUE',
+      [ModerationSeverity.LOW]: '🟢 BASSE',
+      [ModerationSeverity.MEDIUM]: '🟡 MOYENNE',
+      [ModerationSeverity.HIGH]: '🟠 HAUTE',
+      [ModerationSeverity.CRITICAL]: '🔴 CRITIQUE',
     };
 
     const html = `
@@ -93,7 +93,7 @@ export class EmailAlertService {
 
           <div class="footer">
             Cet email a été envoyé automatiquement par Xelira (IA INKDROP).<br>
-            ${data.urgency === 'critical' ? '⚠️ Intervention immédiate recommandée.' : ''}
+            ${data.urgency === ModerationSeverity.CRITICAL ? '⚠️ Intervention immédiate recommandée.' : ''}
           </div>
         </div>
       </body>
@@ -126,7 +126,7 @@ export class EmailAlertService {
   }
 
   // ============================================
-  // 2. ALERTE : PROBLÈME TECHNIQUE
+  // 2. ALERTE TECHNIQUE
   // ============================================
   async sendTechnicalAlert(
     problem: string,
@@ -141,13 +141,13 @@ export class EmailAlertService {
       details,
       files,
       suggestedFix,
-      urgency: 'high',
+      urgency: ModerationSeverity.HIGH,
       timestamp: new Date(),
     });
   }
 
   // ============================================
-  // 3. ALERTE : MODÉRATION (BANNISSEMENT, ETC.)
+  // 3. ALERTE MODÉRATION
   // ============================================
   async sendModerationAlert(
     action: 'ban' | 'warn' | 'delete',
@@ -170,13 +170,13 @@ export class EmailAlertService {
         Raison : ${reason}
         Agent : Xelira (IA)
       `,
-      urgency: 'medium',
+      urgency: ModerationSeverity.MEDIUM,
       timestamp: new Date(),
     });
   }
 
   // ============================================
-  // 4. ALERTE : ACCÈS REFUSÉ
+  // 4. ALERTE ACCÈS REFUSÉ
   // ============================================
   async sendAccessDeniedAlert(
     attemptedAction: string,
@@ -193,7 +193,7 @@ export class EmailAlertService {
         Raison : ${reason}
         Besoin : Droits ADMIN supplémentaires
       `,
-      urgency: 'high',
+      urgency: ModerationSeverity.HIGH,
       timestamp: new Date(),
     });
   }
