@@ -1,11 +1,10 @@
 // src/modules/ai/ai.controller.ts
-import { Controller, Post, Body, UseGuards, Request, Get, Param, Query } from '@nestjs/common';
+import { Controller, Post, Body, UseGuards, Request, Get, Param } from '@nestjs/common';
 import { AiService } from './ai.service';
 import { ModerationService } from './moderation.service';
 import { ToolsService } from './tools.service';
 import { FileReaderService } from './file-reader.service';
 import { JwtAuthGuard } from '../../common/guards/jwt-auth.guard';
-import { ModerateCommentDto, BanUserDto, WarnUserDto, DeleteCommentDto } from './dto/moderation.dto';
 
 @Controller('ai')
 export class AiController {
@@ -17,7 +16,7 @@ export class AiController {
   ) {}
 
   // ============================================
-  // 1. CHAT PRINCIPAL (EXISTANT)
+  // 1. CHAT PRINCIPAL
   // ============================================
   @Post('chat')
   @UseGuards(JwtAuthGuard)
@@ -26,11 +25,7 @@ export class AiController {
     @Body() body: { message: string; history?: any[]; firstName?: string }
   ) {
     const { message, history = [], firstName = '' } = body;
-
-    if (!message) {
-      return { error: 'Message requis' };
-    }
-
+    if (!message) return { error: 'Message requis' };
     return this.aiService.chat(req.user.id, message, history, firstName);
   }
 
@@ -39,14 +34,10 @@ export class AiController {
   // ============================================
   @Post('moderate')
   @UseGuards(JwtAuthGuard)
-  async moderateComment(@Request() req: any, @Body() dto: ModerateCommentDto) {
-    // Vérifier que l'utilisateur est ADMIN
+  async moderateComment(@Request() req: any, @Body('commentId') commentId: string) {
     const user = await this.toolsService.getUserProfile(req.user.id);
-    if (user.data.role !== 'ADMIN') {
-      return { error: 'Accès réservé aux administrateurs.' };
-    }
-
-    const result = await this.moderationService.analyzeComment(dto.commentId);
+    if (user.data.role !== 'ADMIN') return { error: 'Accès réservé aux administrateurs.' };
+    const result = await this.moderationService.analyzeComment(commentId);
     return { success: true, result };
   }
 
@@ -55,15 +46,13 @@ export class AiController {
   // ============================================
   @Post('ban')
   @UseGuards(JwtAuthGuard)
-  async banUser(@Request() req: any, @Body() dto: BanUserDto) {
-    // Vérifier que l'utilisateur est ADMIN
+  async banUser(
+    @Request() req: any,
+    @Body() body: { userId: string; reason: string; permanent?: boolean; duration?: string }
+  ) {
     const user = await this.toolsService.getUserProfile(req.user.id);
-    if (user.data.role !== 'ADMIN') {
-      return { error: 'Accès réservé aux administrateurs.' };
-    }
-
-    const result = await this.toolsService.banUser(dto, req.user.id);
-    return result;
+    if (user.data.role !== 'ADMIN') return { error: 'Accès réservé aux administrateurs.' };
+    return this.toolsService.banUser(body, req.user.id);
   }
 
   // ============================================
@@ -71,14 +60,10 @@ export class AiController {
   // ============================================
   @Post('warn')
   @UseGuards(JwtAuthGuard)
-  async warnUser(@Request() req: any, @Body() dto: WarnUserDto) {
+  async warnUser(@Request() req: any, @Body() body: { userId: string; message: string }) {
     const user = await this.toolsService.getUserProfile(req.user.id);
-    if (user.data.role !== 'ADMIN') {
-      return { error: 'Accès réservé aux administrateurs.' };
-    }
-
-    const result = await this.toolsService.warnUser(dto, req.user.id);
-    return result;
+    if (user.data.role !== 'ADMIN') return { error: 'Accès réservé aux administrateurs.' };
+    return this.toolsService.warnUser(body, req.user.id);
   }
 
   // ============================================
@@ -86,14 +71,10 @@ export class AiController {
   // ============================================
   @Post('delete-comment')
   @UseGuards(JwtAuthGuard)
-  async deleteComment(@Request() req: any, @Body() dto: DeleteCommentDto) {
+  async deleteComment(@Request() req: any, @Body() body: { commentId: string; reason?: string }) {
     const user = await this.toolsService.getUserProfile(req.user.id);
-    if (user.data.role !== 'ADMIN') {
-      return { error: 'Accès réservé aux administrateurs.' };
-    }
-
-    const result = await this.toolsService.deleteComment(dto, req.user.id);
-    return result;
+    if (user.data.role !== 'ADMIN') return { error: 'Accès réservé aux administrateurs.' };
+    return this.toolsService.deleteComment(body, req.user.id);
   }
 
   // ============================================
@@ -103,10 +84,7 @@ export class AiController {
   @UseGuards(JwtAuthGuard)
   async getUserProfile(@Request() req: any, @Param('userId') userId: string) {
     const user = await this.toolsService.getUserProfile(req.user.id);
-    if (user.data.role !== 'ADMIN') {
-      return { error: 'Accès réservé aux administrateurs.' };
-    }
-
+    if (user.data.role !== 'ADMIN') return { error: 'Accès réservé aux administrateurs.' };
     return this.toolsService.getUserProfile(userId);
   }
 
@@ -120,14 +98,8 @@ export class AiController {
     @Body() body: { filePath: string; errorMessage?: string }
   ) {
     const user = await this.toolsService.getUserProfile(req.user.id);
-    if (user.data.role !== 'ADMIN') {
-      return { error: 'Accès réservé aux administrateurs.' };
-    }
-
-    const result = await this.fileReaderService.analyzeCode(
-      body.filePath,
-      body.errorMessage
-    );
+    if (user.data.role !== 'ADMIN') return { error: 'Accès réservé aux administrateurs.' };
+    const result = await this.fileReaderService.analyzeCode(body.filePath, body.errorMessage);
     return { success: true, result };
   }
 
@@ -138,10 +110,7 @@ export class AiController {
   @UseGuards(JwtAuthGuard)
   async getProjectStructure(@Request() req: any) {
     const user = await this.toolsService.getUserProfile(req.user.id);
-    if (user.data.role !== 'ADMIN') {
-      return { error: 'Accès réservé aux administrateurs.' };
-    }
-
+    if (user.data.role !== 'ADMIN') return { error: 'Accès réservé aux administrateurs.' };
     const result = await this.fileReaderService.analyzeProjectStructure();
     return { success: true, result };
   }
@@ -153,11 +122,7 @@ export class AiController {
   @UseGuards(JwtAuthGuard)
   async getReportedContent(@Request() req: any) {
     const user = await this.toolsService.getUserProfile(req.user.id);
-    if (user.data.role !== 'ADMIN') {
-      return { error: 'Accès réservé aux administrateurs.' };
-    }
-
-    const result = await this.toolsService.getReportedContent();
-    return result;
+    if (user.data.role !== 'ADMIN') return { error: 'Accès réservé aux administrateurs.' };
+    return this.toolsService.getReportedContent();
   }
 }
