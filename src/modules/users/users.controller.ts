@@ -286,17 +286,16 @@ export class UsersController {
   }
 
   // ============================================
-  // ✅ CHANGER LE MOT DE PASSE
+  // ✅ CHANGER LE MOT DE PASSE (SANS ANCIEN)
   // ============================================
   @Post('change-password')
   @UseGuards(JwtAuthGuard)
   async changePassword(
     @Req() req: any,
-    @Body('currentPassword') currentPassword: string,
     @Body('newPassword') newPassword: string,
   ) {
     const userId = req.user?.id || req.user?.sub;
-    return this.usersService.changePassword(userId, currentPassword, newPassword);
+    return this.usersService.changePassword(userId, newPassword);
   }
 
   // ============================================
