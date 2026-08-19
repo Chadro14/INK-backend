@@ -21,7 +21,7 @@ export class AiService {
   ];
 
   private currentKeyIndex = 0;
-  private readonly apiUrl = 'https://api.groq.com/openai/v1/chat/completions';
+  private readonly apiUrl = 'https://api.groq.com/openai/v1/chat/completions'; // ✅ URL Groq
 
   constructor(
     private prisma: PrismaService,
@@ -188,6 +188,11 @@ export class AiService {
           reply = await this.handleChat(userName, message, history);
       }
     } catch (error) {
+      // ✅ LOG DE L'ERREUR
+      console.error('❌ ERREUR DANS AI SERVICE :', error);
+      console.error('📋 MESSAGE :', error.message);
+      console.error('📋 STACK :', error.stack);
+      
       await this.emailAlertService.sendTechnicalAlert(
         `Erreur dans l'intention "${intent}"`,
         `Utilisateur : ${userName}\nMessage : ${message}\nErreur : ${error.message}`,
@@ -449,8 +454,7 @@ Termine par une question pour savoir si c'est utile.
 
 Résumé :`;
 
-    const reply = await this.callGroq([{ role: 'user', content: prompt }], userName);
-    return `${reply}\n\n— XELIRA ✦`;
+    return this.callGroq([{ role: 'user', content: prompt }], userName);
   }
 
   // ============================================
@@ -469,13 +473,11 @@ Tags :`;
     return `🏷️ ${userName}, voici 5 tags pertinents :\n\n${tags.map((t: string, i: number) => `• ${t}`).join('\n')}\n\nCes tags correspondent-ils à ce que tu cherchais ? 😊\n\n— XELIRA ✦`;
   }
 
-  
-  // ============================================
-  // HANDLER : ASSISTANT (CORRIGÉ)
+    // ============================================
+  // HANDLER : ASSISTANT
   // ============================================
   private async handleAssistant(userName: string, context: string): Promise<string> {
     try {
-      // ✅ CORRECTION : 3 arguments (context, characters, genre)
       const result = await this.assistantService.suggestIdeas(
         context,
         [],
@@ -489,11 +491,10 @@ Tags :`;
   }
 
   // ============================================
-  // HANDLER : COACH (CORRIGÉ)
+  // HANDLER : COACH
   // ============================================
   private async handleCoach(userName: string, context: string): Promise<string> {
     try {
-      // ✅ CORRECTION : 3 arguments (title, description, genres)
       const result = await this.coachService.suggestImprovements(
         'Manga sans titre',
         context || 'Aucune description',
@@ -511,7 +512,6 @@ Tags :`;
   // ============================================
   private async handleSearch(userName: string, query: string): Promise<string> {
     try {
-      // ✅ CORRECTION : Supprimer 'system'
       const results = await this.searchService.intelligentSearch(query, 5);
       if (results.length === 0) {
         return `${userName} 🔍, je n'ai trouvé aucun manga correspondant à "${query}". Essaie d'autres mots-clés ! 😊\n\n— XELIRA ✦`;
@@ -535,11 +535,17 @@ Tags :`;
   // APPEL GROQ
   // ============================================
   private async callGroq(messages: any[], userName: string = 'Utilisateur'): Promise<string> {
+    // ✅ LOG POUR VOIR CE QUI SE PASSE
+    console.log(`📤 Appel Groq - ${messages.length} messages, ${this.groqKeys.length} clés disponibles`);
+    console.log(`📤 URL : ${this.apiUrl}`);
+
     for (let attempt = 0; attempt < this.groqKeys.length; attempt++) {
       const key = this.groqKeys[this.currentKeyIndex];
       this.currentKeyIndex = (this.currentKeyIndex + 1) % this.groqKeys.length;
 
       try {
+        console.log(`🔑 Tentative ${attempt + 1}/${this.groqKeys.length} - Clé : ${key.substring(0, 15)}...`);
+
         const response = await fetch(this.apiUrl, {
           method: 'POST',
           headers: {
@@ -557,18 +563,23 @@ Tags :`;
         const data = await response.json();
 
         if (!response.ok) {
+          console.error(`❌ Erreur Groq (${response.status}) :`, JSON.stringify(data, null, 2));
           continue;
         }
 
         const reply = data.choices?.[0]?.message?.content;
         if (reply) {
+          console.log(`✅ Réponse Groq reçue (${reply.length} caractères)`);
           return reply;
+        } else {
+          console.error('❌ Pas de reply dans la réponse:', data);
         }
       } catch (error) {
-        continue;
+        console.error(`❌ Exception Groq :`, error.message);
       }
     }
 
+    console.error('❌ TOUTES LES TENTATIVES GROQ ONT ÉCHOUÉ');
     return `Bonjour ${userName} ! 😊✨\n\nJe suis XELIRA, ton agent modérateur sur INKDROP. Comment puis-je t'aider aujourd'hui ? Dis-moi tout ! 🚀\n\n— XELIRA ✦`;
   }
 
