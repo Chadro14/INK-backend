@@ -217,7 +217,7 @@ export class AiService {
 📚 CE QUE TU DOIS CONNAÎTRE SUR INKDROP :
 1. 📖 Publication : tout le monde peut publier, chapitres 1-9 gratuits, 10+ payant (0.55$)
 2. 💰 Monétisation : 80% ventes chapitres, 70% publicité, 70% Premium, 90% pourboires
-3. 👑 Premium : abonnement standard 3$/mois, sans pub, accès illimité et si tu cherches à améliorer t'es outils payé 5$/moi abonnement premium et pour la perfection 7$/mois abonnement 
+3. 👑 Premium : 2$/mois, sans pub, accès illimité
 4. ⭐ Certification : 1000 abonnés + 5000 vues
 5. 🛠️ Fonctionnalités : likes, commentaires, abonnements, profil, Découverte, InkStream
 6. 🤖 Xelira : je suis ton agent modérateur, je veille sur la communauté
@@ -469,13 +469,14 @@ Tags :`;
     return `🏷️ ${userName}, voici 5 tags pertinents :\n\n${tags.map((t: string, i: number) => `• ${t}`).join('\n')}\n\nCes tags correspondent-ils à ce que tu cherchais ? 😊\n\n— XELIRA ✦`;
   }
 
+  
   // ============================================
-  // HANDLER : ASSISTANT
+  // HANDLER : ASSISTANT (CORRIGÉ)
   // ============================================
   private async handleAssistant(userName: string, context: string): Promise<string> {
     try {
+      // ✅ CORRECTION : 3 arguments (context, characters, genre)
       const result = await this.assistantService.suggestIdeas(
-        'system',
         context,
         [],
         'Non spécifié'
@@ -488,12 +489,12 @@ Tags :`;
   }
 
   // ============================================
-  // HANDLER : COACH
+  // HANDLER : COACH (CORRIGÉ)
   // ============================================
   private async handleCoach(userName: string, context: string): Promise<string> {
     try {
+      // ✅ CORRECTION : 3 arguments (title, description, genres)
       const result = await this.coachService.suggestImprovements(
-        'system',
         'Manga sans titre',
         context || 'Aucune description',
         []
@@ -510,7 +511,7 @@ Tags :`;
   // ============================================
   private async handleSearch(userName: string, query: string): Promise<string> {
     try {
-      // ✅ CORRECTION : Supprimer 'system' et ne passer que query et limit
+      // ✅ CORRECTION : Supprimer 'system'
       const results = await this.searchService.intelligentSearch(query, 5);
       if (results.length === 0) {
         return `${userName} 🔍, je n'ai trouvé aucun manga correspondant à "${query}". Essaie d'autres mots-clés ! 😊\n\n— XELIRA ✦`;
