@@ -22,6 +22,7 @@ import { AiModule } from './modules/ai/ai.module';
 import { MangaApiModule } from './modules/manga-api/manga-api.module';
 import { CreatorsModule } from './modules/creators/creators.module';
 import { SecurityModule } from './modules/security/security.module';
+import { PremiumModule } from './modules/premium/premium.module'; // ✅ AJOUTÉ
 
 @Module({
   imports: [
@@ -50,6 +51,7 @@ import { SecurityModule } from './modules/security/security.module';
     MangaApiModule,
     CreatorsModule,
     SecurityModule,
+    PremiumModule, // ✅ AJOUTÉ
   ],
 })
 export class AppModule {}
