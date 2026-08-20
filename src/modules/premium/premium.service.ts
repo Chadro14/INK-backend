@@ -1,5 +1,6 @@
 // src/modules/premium/premium.service.ts
 import { Injectable, BadRequestException } from '@nestjs/common';
+import { Cron, CronExpression } from '@nestjs/schedule'; // ✅ AJOUTÉ
 import { PrismaService } from '../../prisma/prisma.service';
 
 @Injectable()
@@ -18,7 +19,6 @@ export class PremiumService {
       throw new BadRequestException('Utilisateur non trouvé');
     }
 
-    // Définir la durée selon le plan
     const durations = {
       standard: 30,
       premium: 30,
@@ -29,7 +29,6 @@ export class PremiumService {
     const expiresAt = new Date();
     expiresAt.setDate(expiresAt.getDate() + days);
 
-    // Mettre à jour l'utilisateur
     const updatedUser = await this.prisma.user.update({
       where: { id: userId },
       data: {
@@ -39,7 +38,6 @@ export class PremiumService {
       },
     });
 
-    // Créer une notification
     await this.prisma.notification.create({
       data: {
         userId,
@@ -67,7 +65,6 @@ export class PremiumService {
     if (!user) return false;
     if (!user.premiumActive) return false;
     if (user.premiumExpires && new Date(user.premiumExpires) < new Date()) {
-      // Mettre à jour en base
       await this.prisma.user.update({
         where: { id: userId },
         data: { premiumActive: false },
@@ -76,6 +73,63 @@ export class PremiumService {
     }
 
     return true;
+  }
+
+  // ============================================
+  // ✅ CRON : VÉRIFIER LES ABONNEMENTS EXPIRÉS
+  // ============================================
+  @Cron(CronExpression.EVERY_DAY_AT_MIDNIGHT)
+  async checkExpiredPremium() {
+    console.log('🔄 Vérification des abonnements premium expirés...');
+
+    try {
+      const expiredUsers = await this.prisma.user.findMany({
+        where: {
+          premiumActive: true,
+          premiumExpires: {
+            lt: new Date(),
+          },
+        },
+        select: {
+          id: true,
+          username: true,
+          email: true,
+          premiumExpires: true,
+        },
+      });
+
+      if (expiredUsers.length === 0) {
+        console.log('✅ Aucun abonnement expiré trouvé.');
+        return;
+      }
+
+      console.log(`📊 ${expiredUsers.length} abonnement(s) expiré(s) trouvé(s).`);
+
+      for (const user of expiredUsers) {
+        await this.prisma.user.update({
+          where: { id: user.id },
+          data: {
+            premiumActive: false,
+          },
+        });
+
+        await this.prisma.notification.create({
+          data: {
+            userId: user.id,
+            type: 'PREMIUM_EXPIRY',
+            title: '⏰ Votre abonnement premium a expiré',
+            body: 'Votre abonnement premium est arrivé à expiration. Profitez à nouveau de tous les avantages en vous réabonnant.',
+            link: '/premium',
+          },
+        });
+
+        console.log(`✅ Premium désactivé pour ${user.username} (${user.email})`);
+      }
+
+      console.log(`✅ ${expiredUsers.length} abonnement(s) expiré(s) désactivé(s).`);
+    } catch (error) {
+      console.error('❌ Erreur lors de la vérification des abonnements expirés :', error);
+    }
   }
 
   // ============================================
