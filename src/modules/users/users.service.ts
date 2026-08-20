@@ -235,13 +235,11 @@ export class UsersService {
       throw new NotFoundException('Utilisateur non trouvé');
     }
 
-    // Vérifier que le nouveau mot de passe est différent
     const isSamePassword = await bcrypt.compare(newPassword, user.passwordHash);
     if (isSamePassword) {
       throw new BadRequestException('Le nouveau mot de passe doit être différent de l\'ancien');
     }
 
-    // Valider la force du mot de passe
     this.validatePasswordStrength(newPassword);
 
     const hashedPassword = await bcrypt.hash(newPassword, 10);
@@ -441,6 +439,39 @@ export class UsersService {
     ]);
 
     return { success: true, message: 'Compte supprimé avec succès' };
+  }
+
+  // ============================================
+  // ✅ RÉCUPÉRER LE STATUT PREMIUM
+  // ============================================
+  async getPremiumStatus(userId: string) {
+    const user = await this.prisma.user.findUnique({
+      where: { id: userId },
+      select: {
+        premiumActive: true,
+        premiumPlan: true,
+        premiumExpires: true,
+      },
+    });
+
+    if (!user) {
+      throw new NotFoundException('Utilisateur non trouvé');
+    }
+
+    let isActive = user.premiumActive;
+    if (user.premiumExpires && new Date(user.premiumExpires) < new Date()) {
+      isActive = false;
+      await this.prisma.user.update({
+        where: { id: userId },
+        data: { premiumActive: false },
+      });
+    }
+
+    return {
+      premiumActive: isActive,
+      premiumPlan: user.premiumPlan,
+      premiumExpires: user.premiumExpires,
+    };
   }
 
   // ============================================
