@@ -358,4 +358,14 @@ export class UsersController {
     const userId = req.user?.id || req.user?.sub;
     return this.usersService.deleteAccount(userId, password);
   }
+
+  // ============================================
+  // ✅ RÉCUPÉRER LE STATUT PREMIUM
+  // ============================================
+  @Get('premium-status')
+  @UseGuards(JwtAuthGuard)
+  async getPremiumStatus(@Req() req: any) {
+    const userId = req.user?.id || req.user?.sub;
+    return this.usersService.getPremiumStatus(userId);
+  }
 }
