@@ -14,12 +14,13 @@ export class InkstreamService {
   ) {}
 
   // ============================================
-  // RECHERCHER DES ANIMES
+  // RECHERCHER DES ANIMES (AVEC FALLBACK)
   // ============================================
   async searchAnimes(dto: SearchAnimeDto) {
     const { q, page = 1, limit = 20, genre, source } = dto;
     const skip = (page - 1) * limit;
 
+    // 1. Recherche AniList
     if (q) {
       try {
         const results = await this.movieboxService.searchAnimes(q, limit);
@@ -39,6 +40,7 @@ export class InkstreamService {
       }
     }
 
+    // 2. Recherche par genre
     if (genre) {
       try {
         const results = await this.movieboxService.getAnimesByGenre(genre, limit);
@@ -58,19 +60,11 @@ export class InkstreamService {
       }
     }
 
+    // 3. Fallback : Base de données
     const where: any = {};
-    
-    if (q) {
-      where.title = { contains: q, mode: 'insensitive' };
-    }
-    
-    if (genre) {
-      where.genre = { has: genre };
-    }
-    
-    if (source) {
-      where.source = source;
-    }
+    if (q) where.title = { contains: q, mode: 'insensitive' };
+    if (genre) where.genre = { has: genre };
+    if (source) where.source = source;
 
     const dbAnimes = await this.prisma.inkStreamAnime.findMany({
       where,
@@ -79,6 +73,7 @@ export class InkstreamService {
       orderBy: { rating: 'desc' },
     });
 
+    // 4. Fallback : Tendances AniList
     if (dbAnimes.length === 0 && !q && !genre) {
       try {
         const trending = await this.movieboxService.getTrendingAnimes(limit);
@@ -113,6 +108,7 @@ export class InkstreamService {
   // RÉCUPÉRER UN ANIME PAR ID
   // ============================================
   async getAnime(id: string) {
+    // 1. Vérifier en base
     const anime = await this.prisma.inkStreamAnime.findUnique({
       where: { id },
       include: { episodes: true },
@@ -122,6 +118,7 @@ export class InkstreamService {
       return anime;
     }
 
+    // 2. Chercher sur AniList
     const isNumeric = /^\d+$/.test(id);
     if (isNumeric) {
       try {
@@ -141,6 +138,7 @@ export class InkstreamService {
   // RÉCUPÉRER LES ANIMES POPULAIRES
   // ============================================
   async getPopularAnimes() {
+    // 1. Base de données
     const dbAnimes = await this.prisma.inkStreamAnime.findMany({
       where: { isActive: true },
       orderBy: { rating: 'desc' },
@@ -151,6 +149,7 @@ export class InkstreamService {
       return dbAnimes;
     }
 
+    // 2. AniList
     try {
       const anilistAnimes = await this.movieboxService.getPopularAnimes(10);
       if (anilistAnimes.length > 0) {
@@ -203,9 +202,10 @@ export class InkstreamService {
   }
 
   // ============================================
-  // REGARDER UN ÉPISODE
+  // ✅ REGARDER UN ÉPISODE (AVEC DOUBLE API DE STREAMING)
   // ============================================
   async watchEpisode(userId: string, animeId: string, episodeNumber: number) {
+    // 1. Vérifier l'anime
     const anime = await this.prisma.inkStreamAnime.findUnique({
       where: { id: animeId },
     });
@@ -214,6 +214,7 @@ export class InkstreamService {
       throw new NotFoundException('Anime non trouvé');
     }
 
+    // 2. Vérifier l'épisode
     const episode = await this.prisma.inkStreamEpisode.findUnique({
       where: {
         animeId_episodeNumber: {
@@ -227,12 +228,45 @@ export class InkstreamService {
       throw new NotFoundException('Épisode non trouvé');
     }
 
+    // 3. Consommer 1 MANA
+    let remainingManas = 0;
     try {
       const result = await this.manasService.consumeMana(userId, animeId, episodeNumber);
-      
+      remainingManas = result.remainingManas;
+    } catch (error) {
+      throw new BadRequestException(error.message || 'MANAS insuffisants');
+    }
+
+    // 4. ✅ RÉCUPÉRER LE LIEN DE STREAMING (DOUBLE API)
+    let streamUrl = '';
+
+    // API 1 : Consumet (Gogoanime, Zoro, etc.)
+    try {
+      streamUrl = await this.movieboxService.getEpisodeStreamFromConsumet(
+        anime.externalId || animeId,
+        episodeNumber
+      );
+    } catch (error) {
+      console.warn('⚠️ Consumet stream failed:', error.message);
+    }
+
+    // API 2 : Fallback sur MovieBox (si Consumet échoue)
+    if (!streamUrl) {
+      try {
+        streamUrl = await this.movieboxService.getEpisodeStreamFromMovieBox(
+          anime.externalId || animeId,
+          episodeNumber
+        );
+      } catch (error) {
+        console.warn('⚠️ MovieBox stream failed:', error.message);
+      }
+    }
+
+    // 5. Si aucune API ne donne de lien
+    if (!streamUrl) {
       return {
         success: true,
-        remainingManas: result.remainingManas,
+        remainingManas,
         anime: {
           id: anime.id,
           title: anime.title,
@@ -240,20 +274,38 @@ export class InkstreamService {
         episode: {
           number: episodeNumber,
           title: episode.title || `Épisode ${episodeNumber}`,
-          videoUrl: episode.videoUrl || '',
+          videoUrl: '',
           duration: episode.duration || 0,
         },
         watchHistory: {
           createdAt: new Date(),
         },
+        error: 'Aucune source de streaming disponible pour cet épisode.',
       };
-    } catch (error) {
-      throw new BadRequestException(error.message || 'Impossible de regarder cet épisode');
     }
+
+    // 6. Retourner le lien de streaming
+    return {
+      success: true,
+      remainingManas,
+      anime: {
+        id: anime.id,
+        title: anime.title,
+      },
+      episode: {
+        number: episodeNumber,
+        title: episode.title || `Épisode ${episodeNumber}`,
+        videoUrl: streamUrl, // ✅ LIEN DE STREAMING
+        duration: episode.duration || 0,
+      },
+      watchHistory: {
+        createdAt: new Date(),
+      },
+    };
   }
 
   // ============================================
-  // AJOUTER UN ANIME EN BASE (DEPUIS ANILIST)
+  // AJOUTER UN ANIME EN BASE
   // ============================================
   async addAnimeFromAnilist(anilistId: string) {
     try {
@@ -263,7 +315,6 @@ export class InkstreamService {
         throw new NotFoundException('Anime non trouvé sur AniList');
       }
 
-      // ✅ CORRIGÉ : Utiliser source_externalId
       const existing = await this.prisma.inkStreamAnime.findUnique({
         where: {
           source_externalId: {
@@ -277,7 +328,6 @@ export class InkstreamService {
         return existing;
       }
 
-      // ✅ CORRIGÉ : Ajouter lastSyncAt
       const anime = await this.prisma.inkStreamAnime.create({
         data: {
           title: details.title,
@@ -290,7 +340,7 @@ export class InkstreamService {
           rating: details.rating || 0,
           episodesCount: details.episodesCount || 0,
           isActive: true,
-          lastSyncAt: new Date(), // ✅ AJOUTÉ
+          lastSyncAt: new Date(),
         },
       });
 
@@ -302,7 +352,7 @@ export class InkstreamService {
   }
 
   // ============================================
-  // SYNC DES ÉPISODES D'UN ANIME
+  // SYNC DES ÉPISODES
   // ============================================
   async syncEpisodes(animeId: string, episodeData: any[]) {
     const anime = await this.prisma.inkStreamAnime.findUnique({
@@ -342,7 +392,7 @@ export class InkstreamService {
   }
 
   // ============================================
-  // RÉCUPÉRER L'HISTORIQUE DE VISIONNAGE
+  // HISTORIQUE DE VISIONNAGE
   // ============================================
   async getWatchHistory(userId: string) {
     return this.prisma.inkStreamWatchHistory.findMany({
