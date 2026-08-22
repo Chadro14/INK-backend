@@ -37,12 +37,21 @@ export class ChaptersService {
   }
 
   // ============================================
-  // HELPER : Recherche de manga par ID
+  // HELPER : Recherche de manga par ID OU SLUG
+  // ✅ CORRIGÉ : accepte maintenant les deux formats
   // ============================================
   private async findMangaByIdOrSlug(identifier: string) {
-    const manga = await this.prisma.manga.findUnique({
+    // 1. Essayer de trouver par ID (UUID)
+    let manga = await this.prisma.manga.findUnique({
       where: { id: identifier },
     });
+
+    // 2. Si pas trouvé, essayer par slug
+    if (!manga) {
+      manga = await this.prisma.manga.findUnique({
+        where: { slug: identifier },
+      });
+    }
 
     if (!manga) {
       throw new NotFoundException('Manga introuvable.');
@@ -154,7 +163,6 @@ export class ChaptersService {
 
     const isDraft = dto.isDraft ?? false;
 
-    // ✅ CORRECTION : Ajout de pageCount pour les PDF
     if (isPdfMode) {
       return this.prisma.chapter.create({
         data: {
@@ -167,7 +175,7 @@ export class ChaptersService {
           price: calculatedPrice,
           isDraft,
           publishedAt: !isDraft ? new Date() : null,
-          pageCount: 1, // ✅ AJOUTÉ
+          pageCount: 1,
         },
       });
     }
@@ -339,8 +347,13 @@ export class ChaptersService {
     return this.attachSignedUrls(chapter);
   }
 
-  async findByNumber(mangaId: string, number: number) {
-    const manga = await this.findMangaByIdOrSlug(mangaId);
+  // ============================================
+  // ✅ 5. RECHERCHER UN CHAPITRE PAR NUMÉRO (CORRIGÉ)
+  // ✅ ACCEPTE MAINTENANT ID OU SLUG POUR LE MANGA
+  // ============================================
+  async findByNumber(mangaIdOrSlug: string, number: number) {
+    // ✅ Utiliser findMangaByIdOrSlug pour accepter ID ou slug
+    const manga = await this.findMangaByIdOrSlug(mangaIdOrSlug);
 
     const chapter = await this.prisma.chapter.findUnique({
       where: {
@@ -356,8 +369,8 @@ export class ChaptersService {
     return this.attachSignedUrls(chapter);
   }
 
-  async findByManga(mangaId: string) {
-    const manga = await this.findMangaByIdOrSlug(mangaId);
+  async findByManga(mangaIdOrSlug: string) {
+    const manga = await this.findMangaByIdOrSlug(mangaIdOrSlug);
 
     return this.prisma.chapter.findMany({
       where: { mangaId: manga.id, isDraft: false },
