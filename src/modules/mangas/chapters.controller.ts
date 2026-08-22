@@ -30,7 +30,7 @@ export class ChaptersController {
   ) {}
 
   // ============================================
-  // 1. Demande d'URLs d'upload signées pour Supabase Storage
+  // 1. Demande d'URLs d'upload signées
   // ============================================
   @Post('upload-urls')
   @UseGuards(JwtAuthGuard)
@@ -42,7 +42,7 @@ export class ChaptersController {
   }
 
   // ============================================
-  // 2. Finalisation du chapitre dans la BDD
+  // 2. Finalisation du chapitre
   // ============================================
   @Post('finalize')
   @UseGuards(JwtAuthGuard)
@@ -59,7 +59,7 @@ export class ChaptersController {
   }
 
   // ============================================
-  // 3. Création classique / directe d'un chapitre (legacy)
+  // 3. Création classique (legacy)
   // ============================================
   @Post()
   @UseGuards(JwtAuthGuard)
@@ -72,7 +72,7 @@ export class ChaptersController {
   }
 
   // ============================================
-  // 4. Récupérer tous les chapitres d'un manga
+  // 4. Récupérer tous les chapitres
   // ============================================
   @Get()
   async findByManga(@Param('mangaId') mangaId: string) {
@@ -80,8 +80,8 @@ export class ChaptersController {
   }
 
   // ============================================
-  // 5. Récupérer un chapitre par son NUMÉRO (avec "number/" dans l'URL)
-  // ⚠️ ROUTE SPÉCIFIQUE : doit être AVANT @Get(':chapterId')
+  // 5. Récupérer un chapitre par NUMÉRO (avec "number/")
+  // ✅ ROUTE SPÉCIFIQUE : DOIT ÊTRE AVANT @Get(':chapterId')
   // ============================================
   @Get('number/:number')
   async findByNumber(
@@ -91,22 +91,9 @@ export class ChaptersController {
     return this.chaptersService.findByNumber(mangaId, number);
   }
 
-  // ✅ ============================================
-  // ✅ 6. Récupérer un chapitre par son NUMÉRO (sans "number/" dans l'URL)
-  // ✅ AJOUTÉ POUR COMPATIBILITÉ AVEC LE FRONTEND
-  // ✅ DOIT ÊTRE PLACÉ AVANT @Get(':chapterId')
-  // ✅ ============================================
-  @Get(':number')
-  async findByNumberDirect(
-    @Param('mangaId') mangaId: string,
-    @Param('number', ParseIntPipe) number: number,
-  ) {
-    return this.chaptersService.findByNumber(mangaId, number);
-  }
-
   // ============================================
-  // 7. PUBLIER un chapitre (passer de draft à publié)
-  // ⚠️ ROUTE SPÉCIFIQUE : doit être AVANT @Get(':chapterId')
+  // 6. PUBLIER un chapitre (draft → publié)
+  // ✅ ROUTE SPÉCIFIQUE : DOIT ÊTRE AVANT @Get(':chapterId')
   // ============================================
   @Patch(':chapterId/publish')
   @UseGuards(JwtAuthGuard)
@@ -115,13 +102,11 @@ export class ChaptersController {
     @Param('chapterId') chapterId: string,
     @Request() req: any,
   ) {
-    // 1. Vérifier que le chapitre existe
     const chapter = await this.chaptersService.findOne(chapterId);
     if (!chapter) {
       throw new NotFoundException('Chapitre non trouvé.');
     }
 
-    // 2. Vérifier que le manga existe et que l'utilisateur est l'auteur
     const manga = await this.prisma.manga.findUnique({
       where: { id: mangaId },
       select: { authorId: true },
@@ -135,15 +120,14 @@ export class ChaptersController {
       throw new ForbiddenException("Vous n'êtes pas l'auteur de ce manga.");
     }
 
-    // 3. Publier le chapitre (passer isDraft à false)
     return this.chaptersService.update(chapterId, {
       isDraft: false,
     });
   }
 
   // ============================================
-  // 8. Récupérer un chapitre par son ID
-  // ⚠️ ROUTE GÉNÉRIQUE : doit être EN DERNIER
+  // 7. Récupérer un chapitre par ID
+  // ⚠️ ROUTE GÉNÉRIQUE : DOIT ÊTRE EN DERNIER
   // ============================================
   @Get(':chapterId')
   async findOne(@Param('chapterId') chapterId: string) {
@@ -151,7 +135,7 @@ export class ChaptersController {
   }
 
   // ============================================
-  // 9. Mettre à jour un chapitre
+  // 8. Mettre à jour un chapitre
   // ============================================
   @Patch(':chapterId')
   @UseGuards(JwtAuthGuard)
@@ -163,7 +147,7 @@ export class ChaptersController {
   }
 
   // ============================================
-  // 10. Supprimer un chapitre
+  // 9. Supprimer un chapitre
   // ============================================
   @Delete(':chapterId')
   @UseGuards(JwtAuthGuard)
