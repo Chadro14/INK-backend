@@ -182,7 +182,6 @@ export class MangasController {
   @Post('migrate-slugs')
   @UseGuards(JwtAuthGuard)
   async migrateSlugs(@Req() req: any) {
-    // Vérifier que l'utilisateur est ADMIN
     const user = await this.prisma.user.findUnique({
       where: { id: req.user.id },
       select: { role: true },
@@ -193,5 +192,19 @@ export class MangasController {
     }
 
     return this.mangasService.migrateSlugs();
+  }
+
+  // ============================================
+  // ✅ 12. INCRÉMENTER LES VUES (AJOUTÉ)
+  // ============================================
+  @Post(':identifier/view')
+  async incrementView(
+    @Param('identifier') identifier: string,
+    @Req() req: any,
+  ) {
+    if (!identifier || identifier === 'undefined' || identifier === 'null') {
+      throw new BadRequestException(`L'identifiant du manga est invalide: "${identifier}"`);
+    }
+    return this.mangasService.incrementView(identifier, req.user?.id);
   }
 }
