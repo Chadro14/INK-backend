@@ -38,15 +38,12 @@ export class ChaptersService {
 
   // ============================================
   // HELPER : Recherche de manga par ID OU SLUG
-  // ✅ CORRIGÉ : accepte maintenant les deux formats
   // ============================================
   private async findMangaByIdOrSlug(identifier: string) {
-    // 1. Essayer de trouver par ID (UUID)
     let manga = await this.prisma.manga.findUnique({
       where: { id: identifier },
     });
 
-    // 2. Si pas trouvé, essayer par slug
     if (!manga) {
       manga = await this.prisma.manga.findUnique({
         where: { slug: identifier },
@@ -61,7 +58,7 @@ export class ChaptersService {
   }
 
   // ============================================
-  // 1. GÉNÉRATION DES URLS D'UPLOAD (HYBRIDE / FLEXIBLE)
+  // 1. GÉNÉRATION DES URLS D'UPLOAD
   // ============================================
   async getChapterUploadUrls(mangaId: string, dto: ChapterUploadUrlsDto) {
     const manga = await this.findMangaByIdOrSlug(mangaId);
@@ -111,7 +108,7 @@ export class ChaptersService {
   }
 
   // ============================================
-  // 2. FINALISATION DU CHAPITRE (CORRIGÉ)
+  // 2. FINALISATION DU CHAPITRE
   // ============================================
   async finalizeChapter(mangaId: string, userId: string, dto: FinalizeChapterDto) {
     const manga = await this.findMangaByIdOrSlug(mangaId);
@@ -163,14 +160,17 @@ export class ChaptersService {
 
     const isDraft = dto.isDraft ?? false;
 
+    // ===== MODE PDF =====
     if (isPdfMode) {
+      console.log('📄 PDF Key reçu:', dto.keys[0]);
+      
       return this.prisma.chapter.create({
         data: {
           mangaId: realMangaId,
           number: chapterNumber,
           title: dto.title?.trim() || null,
           contentType: ChapterContentType.PDF,
-          pdfKey: dto.keys[0],
+          pdfKey: dto.keys[0] || null,
           isFree: calculatedPrice === 0,
           price: calculatedPrice,
           isDraft,
@@ -180,6 +180,7 @@ export class ChaptersService {
       });
     }
 
+    // ===== MODE IMAGES =====
     const pages: ChapterPage[] = dto.keys.map((key, i) => ({
       key,
       order: i + 1,
@@ -203,7 +204,7 @@ export class ChaptersService {
   }
 
   // ============================================
-  // Helper pour la génération par tableau de filenames
+  // Helper : Génération d'URLs signées
   // ============================================
   async generateSignedUploadUrls(mangaId: string, filenames: string[]) {
     const results = await Promise.all(
@@ -237,7 +238,7 @@ export class ChaptersService {
   }
 
   // ============================================
-  // 3. ANCIENNE MÉTHODE DE CRÉATION CLASSIQUE
+  // 3. CRÉATION CLASSIQUE (LEGACY)
   // ============================================
   async create(mangaId: string, userId: string, dto: CreateChapterDto) {
     if (!dto.pdfUrl && (!dto.imagesUrls || dto.imagesUrls.length === 0)) {
@@ -314,7 +315,7 @@ export class ChaptersService {
   }
 
   // ============================================
-  // 4. MISE À JOUR ET LECTURE
+  // 4. MISE À JOUR
   // ============================================
   async update(chapterId: string, dto: UpdateChapterDto) {
     const chapter = await this.prisma.chapter.findUnique({
@@ -337,6 +338,9 @@ export class ChaptersService {
     });
   }
 
+  // ============================================
+  // 5. RÉCUPÉRER UN CHAPITRE PAR ID
+  // ============================================
   async findOne(chapterId: string) {
     const chapter = await this.prisma.chapter.findUnique({
       where: { id: chapterId },
@@ -348,11 +352,9 @@ export class ChaptersService {
   }
 
   // ============================================
-  // ✅ 5. RECHERCHER UN CHAPITRE PAR NUMÉRO (CORRIGÉ)
-  // ✅ ACCEPTE MAINTENANT ID OU SLUG POUR LE MANGA
+  // 6. RÉCUPÉRER UN CHAPITRE PAR NUMÉRO
   // ============================================
   async findByNumber(mangaIdOrSlug: string, number: number) {
-    // ✅ Utiliser findMangaByIdOrSlug pour accepter ID ou slug
     const manga = await this.findMangaByIdOrSlug(mangaIdOrSlug);
 
     const chapter = await this.prisma.chapter.findUnique({
@@ -369,6 +371,9 @@ export class ChaptersService {
     return this.attachSignedUrls(chapter);
   }
 
+  // ============================================
+  // 7. RÉCUPÉRER TOUS LES CHAPITRES D'UN MANGA
+  // ============================================
   async findByManga(mangaIdOrSlug: string) {
     const manga = await this.findMangaByIdOrSlug(mangaIdOrSlug);
 
@@ -378,30 +383,92 @@ export class ChaptersService {
     });
   }
 
+  // ============================================
+  // ✅ 8. ATTACHER LES URLS SIGNÉES (CORRIGÉ)
+  // ✅ SUPPORTE PDF ET IMAGES
+  // ============================================
   private async attachSignedUrls(chapter: any) {
-    if (chapter.contentType === ChapterContentType.PDF && chapter.pdfKey) {
-      const isFullUrl = chapter.pdfKey.startsWith('http://') || chapter.pdfKey.startsWith('https://');
-      const pdfUrl = isFullUrl ? chapter.pdfKey : await this.storage.getSignedUrl(chapter.pdfKey);
-      return { ...chapter, pdfUrl };
+    // Log pour voir ce que le chapitre contient
+    console.log('📦 AttachSignedUrls - Chapitre:', {
+      id: chapter.id,
+      contentType: chapter.contentType,
+      pdfKey: chapter.pdfKey,
+      pages: chapter.pages,
+      pagesType: typeof chapter.pages,
+      isArray: Array.isArray(chapter.pages),
+    });
+
+    // ===== MODE PDF =====
+    if (chapter.contentType === ChapterContentType.PDF) {
+      if (!chapter.pdfKey) {
+        console.warn('⚠️ pdfKey est null pour le chapitre', chapter.id);
+        return { ...chapter, pdfUrl: null };
+      }
+
+      try {
+        const isFullUrl = chapter.pdfKey.startsWith('http://') || chapter.pdfKey.startsWith('https://');
+        const pdfUrl = isFullUrl 
+          ? chapter.pdfKey 
+          : await this.storage.getSignedUrl(chapter.pdfKey);
+        
+        console.log('✅ PDF URL générée:', pdfUrl);
+        return { ...chapter, pdfUrl };
+      } catch (error) {
+        console.error('❌ Erreur génération PDF URL:', error.message);
+        return { ...chapter, pdfUrl: null };
+      }
     }
 
-    if (chapter.contentType === ChapterContentType.IMAGES && Array.isArray(chapter.pages)) {
-      const pagesWithUrls = await Promise.all(
-        (chapter.pages as unknown as ChapterPage[]).map(async (page) => {
-          const isFullUrl = page.key.startsWith('http://') || page.key.startsWith('https://');
-          return {
-            order: page.order,
-            isFree: page.isFree,
-            url: isFullUrl ? page.key : await this.storage.getSignedUrl(page.key),
-          };
-        }),
-      );
-      return { ...chapter, pages: pagesWithUrls };
+    // ===== MODE IMAGES =====
+    if (chapter.contentType === ChapterContentType.IMAGES) {
+      // Vérifier que pages existe et est un tableau
+      if (!chapter.pages || !Array.isArray(chapter.pages) || chapter.pages.length === 0) {
+        console.warn('⚠️ pages est vide ou invalide pour le chapitre', chapter.id);
+        return { ...chapter, pages: [] };
+      }
+
+      try {
+        const pagesWithUrls = await Promise.all(
+          (chapter.pages as unknown as ChapterPage[]).map(async (page, index) => {
+            // Vérifier que page.key existe
+            if (!page.key) {
+              console.warn(`⚠️ page.key manquant pour la page ${index + 1}`, page);
+              return { order: page.order, isFree: page.isFree, url: null };
+            }
+
+            const isFullUrl = page.key.startsWith('http://') || page.key.startsWith('https://');
+            
+            try {
+              const url = isFullUrl 
+                ? page.key 
+                : await this.storage.getSignedUrl(page.key);
+              
+              return {
+                order: page.order,
+                isFree: page.isFree,
+                url: url || null,
+              };
+            } catch (error) {
+              console.error(`❌ Erreur pour la page ${index + 1}:`, error.message);
+              return { order: page.order, isFree: page.isFree, url: null };
+            }
+          })
+        );
+        
+        console.log(`✅ ${pagesWithUrls.length} images URLs générées`);
+        return { ...chapter, pages: pagesWithUrls };
+      } catch (error) {
+        console.error('❌ Erreur génération images URLs:', error.message);
+        return { ...chapter, pages: [] };
+      }
     }
 
     return chapter;
   }
 
+  // ============================================
+  // 9. SUPPRIMER UN CHAPITRE
+  // ============================================
   async delete(chapterId: string) {
     const chapter = await this.prisma.chapter.findUnique({
       where: { id: chapterId },
