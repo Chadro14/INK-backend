@@ -8,7 +8,6 @@ import { PrismaService } from '../../prisma/prisma.service';
 import { StorageService } from '../../common/services/storage.service';
 import { Status, Role } from '@prisma/client';
 
-// Sélection restreinte pour ne jamais exposer les données sensibles de l'utilisateur
 const AUTHOR_SELECT = {
   id: true,
   username: true,
@@ -50,10 +49,10 @@ export class MangasService {
       .toLowerCase()
       .trim()
       .normalize('NFD')
-      .replace(/[\u0300-\u036f]/g, '') // Supprimer les accents
-      .replace(/[^\w\s-]/g, '') // Supprimer les caractères spéciaux
-      .replace(/[\s_-]+/g, '-') // Remplacer les espaces par des tirets
-      .replace(/^-+|-+$/g, ''); // Supprimer les tirets en début/fin
+      .replace(/[\u0300-\u036f]/g, '')
+      .replace(/[^\w\s-]/g, '')
+      .replace(/[\s_-]+/g, '-')
+      .replace(/^-+|-+$/g, '');
   }
 
   // ============================================
@@ -62,7 +61,6 @@ export class MangasService {
   private async generateUniqueSlug(baseTitle: string, excludeId?: string): Promise<string> {
     let slug = this.generateSlug(baseTitle);
     
-    // Vérifier si le slug existe déjà
     let existing = await this.prisma.manga.findFirst({
       where: {
         slug,
@@ -71,7 +69,6 @@ export class MangasService {
       select: { id: true },
     });
 
-    // Si le slug existe, ajouter un suffixe numérique
     let counter = 1;
     while (existing) {
       const testSlug = `${slug}-${counter}`;
@@ -96,7 +93,6 @@ export class MangasService {
   // 1. CRÉATION D'UN MANGA
   // ============================================
   async create(userId: string, dto: any) {
-    // Générer un slug unique à partir du titre
     const slug = await this.generateUniqueSlug(dto.title);
 
     return this.prisma.manga.create({
@@ -274,7 +270,6 @@ export class MangasService {
   // 4.c RECHERCHE PAR ID OU SLUG (UNIFIÉ)
   // ============================================
   async findByIdOrSlug(identifier: string) {
-    // Essayer de trouver par ID (UUID) d'abord
     let manga = await this.prisma.manga.findUnique({
       where: { id: identifier },
       include: {
@@ -305,7 +300,6 @@ export class MangasService {
       },
     });
 
-    // Si pas trouvé par ID, essayer par slug
     if (!manga) {
       manga = await this.prisma.manga.findUnique({
         where: { slug: identifier },
@@ -356,7 +350,6 @@ export class MangasService {
     
     if (dto.title !== undefined) {
       updateData.title = dto.title;
-      // Si le titre change, régénérer le slug
       const newSlug = await this.generateUniqueSlug(dto.title, manga.id);
       updateData.slug = newSlug;
     }
@@ -447,7 +440,6 @@ export class MangasService {
     const manga = await this.findByIdOrSlug(mangaId);
     await this.checkOwnershipOrAdmin(manga.authorId, userId);
 
-    // Vérifier si le slug est déjà utilisé
     const existing = await this.prisma.manga.findFirst({
       where: {
         slug: newSlug,
@@ -473,7 +465,6 @@ export class MangasService {
   // 10. MIGRER LES SLUGS EXISTANTS
   // ============================================
   async migrateSlugs() {
-    // Récupérer tous les mangas qui n'ont pas de slug
     const mangas = await this.prisma.manga.findMany({
       where: { slug: null },
       select: { id: true, title: true },
@@ -490,10 +481,8 @@ export class MangasService {
 
     for (const manga of mangas) {
       try {
-        // Générer un slug unique à partir du titre
         const slug = await this.generateUniqueSlug(manga.title, manga.id);
         
-        // Mettre à jour le manga avec le slug
         await this.prisma.manga.update({
           where: { id: manga.id },
           data: { slug },
@@ -516,5 +505,27 @@ export class MangasService {
       errorCount,
       total: mangas.length,
     };
+  }
+
+  // ============================================
+  // ✅ 11. INCRÉMENTER LES VUES (AJOUTÉ)
+  // ============================================
+  async incrementView(identifier: string, userId?: string) {
+    // 1. Récupérer le manga
+    const manga = await this.findByIdOrSlug(identifier);
+    
+    // 2. Ne pas compter les vues du propriétaire
+    if (userId && manga.authorId === userId) {
+      return { viewsCount: manga.viewsCount };
+    }
+
+    // 3. Incrémenter les vues
+    const updated = await this.prisma.manga.update({
+      where: { id: manga.id },
+      data: { viewsCount: { increment: 1 } },
+      select: { viewsCount: true },
+    });
+
+    return { viewsCount: updated.viewsCount };
   }
 }
