@@ -80,7 +80,7 @@ export class ChaptersController {
   }
 
   // ============================================
-  // 5. Récupérer un chapitre par son NUMÉRO
+  // 5. Récupérer un chapitre par son NUMÉRO (avec "number/" dans l'URL)
   // ⚠️ ROUTE SPÉCIFIQUE : doit être AVANT @Get(':chapterId')
   // ============================================
   @Get('number/:number')
@@ -91,8 +91,21 @@ export class ChaptersController {
     return this.chaptersService.findByNumber(mangaId, number);
   }
 
+  // ✅ ============================================
+  // ✅ 6. Récupérer un chapitre par son NUMÉRO (sans "number/" dans l'URL)
+  // ✅ AJOUTÉ POUR COMPATIBILITÉ AVEC LE FRONTEND
+  // ✅ DOIT ÊTRE PLACÉ AVANT @Get(':chapterId')
+  // ✅ ============================================
+  @Get(':number')
+  async findByNumberDirect(
+    @Param('mangaId') mangaId: string,
+    @Param('number', ParseIntPipe) number: number,
+  ) {
+    return this.chaptersService.findByNumber(mangaId, number);
+  }
+
   // ============================================
-  // 6. PUBLIER un chapitre (passer de draft à publié)
+  // 7. PUBLIER un chapitre (passer de draft à publié)
   // ⚠️ ROUTE SPÉCIFIQUE : doit être AVANT @Get(':chapterId')
   // ============================================
   @Patch(':chapterId/publish')
@@ -129,7 +142,7 @@ export class ChaptersController {
   }
 
   // ============================================
-  // 7. Récupérer un chapitre par son ID
+  // 8. Récupérer un chapitre par son ID
   // ⚠️ ROUTE GÉNÉRIQUE : doit être EN DERNIER
   // ============================================
   @Get(':chapterId')
@@ -138,7 +151,7 @@ export class ChaptersController {
   }
 
   // ============================================
-  // 8. Mettre à jour un chapitre
+  // 9. Mettre à jour un chapitre
   // ============================================
   @Patch(':chapterId')
   @UseGuards(JwtAuthGuard)
@@ -150,7 +163,7 @@ export class ChaptersController {
   }
 
   // ============================================
-  // 9. Supprimer un chapitre
+  // 10. Supprimer un chapitre
   // ============================================
   @Delete(':chapterId')
   @UseGuards(JwtAuthGuard)
