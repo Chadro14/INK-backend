@@ -64,6 +64,7 @@ export class ChaptersService {
     const manga = await this.findMangaByIdOrSlug(mangaId);
     const realMangaId = manga.id;
 
+    // ✅ Si filenames est fourni, utiliser la méthode alternative
     if (dto.filenames && dto.filenames.length > 0) {
       return this.generateSignedUploadUrls(realMangaId, dto.filenames);
     }
@@ -108,9 +109,21 @@ export class ChaptersService {
   }
 
   // ============================================
-  // 2. FINALISATION DU CHAPITRE
+  // 2. FINALISATION DU CHAPITRE (CORRIGÉ)
   // ============================================
   async finalizeChapter(mangaId: string, userId: string, dto: FinalizeChapterDto) {
+    // 🔍 LOG DE DEBUG
+    console.log('🔍 === FINALIZE CHAPTER DEBUG ===');
+    console.log('📌 mangaId:', mangaId);
+    console.log('📌 userId:', userId);
+    console.log('📌 dto.number:', dto.number);
+    console.log('📌 dto.mode:', dto.mode);
+    console.log('📌 dto.keys:', dto.keys);
+    console.log('📌 dto.keys length:', dto.keys?.length);
+    console.log('📌 dto.isDraft:', dto.isDraft);
+    console.log('📌 dto.keys[0] (pour PDF):', dto.keys?.[0]);
+    console.log('🔍 === FIN DEBUG ===');
+
     const manga = await this.findMangaByIdOrSlug(mangaId);
     const realMangaId = manga.id;
 
@@ -162,6 +175,13 @@ export class ChaptersService {
 
     // ===== MODE PDF =====
     if (isPdfMode) {
+      // ✅ VALIDATION : Vérifier que la clé PDF existe
+      if (!dto.keys || dto.keys.length === 0 || !dto.keys[0]) {
+        throw new BadRequestException(
+          'Aucune clé PDF fournie. Vérifie que upload-urls renvoie bien une clé.'
+        );
+      }
+
       console.log('📄 PDF Key reçu:', dto.keys[0]);
       
       return this.prisma.chapter.create({
@@ -170,7 +190,7 @@ export class ChaptersService {
           number: chapterNumber,
           title: dto.title?.trim() || null,
           contentType: ChapterContentType.PDF,
-          pdfKey: dto.keys[0] || null,
+          pdfKey: dto.keys[0], // ✅ PLUS DE "|| null"
           isFree: calculatedPrice === 0,
           price: calculatedPrice,
           isDraft,
@@ -181,6 +201,13 @@ export class ChaptersService {
     }
 
     // ===== MODE IMAGES =====
+    // ✅ VALIDATION : Vérifier que les clés existent
+    if (!dto.keys || dto.keys.length === 0) {
+      throw new BadRequestException(
+        'Aucune image fournie. Vérifie que upload-urls renvoie bien des clés.'
+      );
+    }
+
     const pages: ChapterPage[] = dto.keys.map((key, i) => ({
       key,
       order: i + 1,
@@ -384,11 +411,9 @@ export class ChaptersService {
   }
 
   // ============================================
-  // ✅ 8. ATTACHER LES URLS SIGNÉES (CORRIGÉ)
-  // ✅ SUPPORTE PDF ET IMAGES
+  // 8. ATTACHER LES URLS SIGNÉES
   // ============================================
   private async attachSignedUrls(chapter: any) {
-    // Log pour voir ce que le chapitre contient
     console.log('📦 AttachSignedUrls - Chapitre:', {
       id: chapter.id,
       contentType: chapter.contentType,
@@ -421,7 +446,6 @@ export class ChaptersService {
 
     // ===== MODE IMAGES =====
     if (chapter.contentType === ChapterContentType.IMAGES) {
-      // Vérifier que pages existe et est un tableau
       if (!chapter.pages || !Array.isArray(chapter.pages) || chapter.pages.length === 0) {
         console.warn('⚠️ pages est vide ou invalide pour le chapitre', chapter.id);
         return { ...chapter, pages: [] };
@@ -430,7 +454,6 @@ export class ChaptersService {
       try {
         const pagesWithUrls = await Promise.all(
           (chapter.pages as unknown as ChapterPage[]).map(async (page, index) => {
-            // Vérifier que page.key existe
             if (!page.key) {
               console.warn(`⚠️ page.key manquant pour la page ${index + 1}`, page);
               return { order: page.order, isFree: page.isFree, url: null };
