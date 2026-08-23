@@ -39,17 +39,17 @@ model User {
 
   appState           Json?
 
-  // ✅ CHAMPS POUR LES PARAMÈTRES
-  notificationSettings Json?  // { newChapter, newComment, newSubscriber, earning, system }
-  preferences         Json?  // { theme, language }
+  // CHAMPS POUR LES PARAMÈTRES
+  notificationSettings Json?
+  preferences         Json?
 
-  // ✅ CHAMPS DE SÉCURITÉ
+  // CHAMPS DE SÉCURITÉ
   failedLoginAttempts Int     @default(0)
   isLocked            Boolean @default(false)
   lastLoginAt         DateTime?
   lastLoginIP         String?
 
-  // ✅ CHAMPS POUR LE BANNISSEMENT ET LA MODÉRATION
+  // CHAMPS POUR LE BANNISSEMENT ET LA MODÉRATION
   warningsCount       Int     @default(0)
   banReason           String?
   bannedAt            DateTime?
@@ -66,6 +66,7 @@ model User {
   payouts            Payout[]
   notifications      Notification[]
   watchHistory       InkStreamWatchHistory[]
+  favorites          Favorite[]
   manas              Int       @default(0)
 
   following          UserFollow[] @relation("Follower")
@@ -100,7 +101,7 @@ enum Role {
   CREATOR
   ADMIN
   SUSPENDED
-  BANNED   // ✅ AJOUTÉ POUR LE BANNISSEMENT
+  BANNED
 }
 
 enum PremiumPlan {
@@ -152,6 +153,21 @@ model EmailChangeRequest {
 }
 
 // ============================================
+// ✅ FAVORIS (AJOUTÉ)
+// ============================================
+model Favorite {
+  id        String   @id @default(uuid())
+  userId    String
+  user      User     @relation(fields: [userId], references: [id], onDelete: Cascade)
+  mangaId   String
+  manga     Manga    @relation(fields: [mangaId], references: [id], onDelete: Cascade)
+  createdAt DateTime @default(now())
+
+  @@unique([userId, mangaId])
+  @@index([userId, createdAt])
+}
+
+// ============================================
 // MANGAS
 // ============================================
 model Manga {
@@ -176,6 +192,7 @@ model Manga {
   likes            Like[]
   comments         Comment[]
   subscriptions    Subscription[]
+  favorites        Favorite[]
 
   createdAt        DateTime @default(now())
   updatedAt        DateTime @updatedAt
