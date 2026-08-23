@@ -8,6 +8,7 @@ export class ViewsController {
 
   // ============================================
   // INCRÉMENTER UNE VUE (MANGA ou CHAPITRE)
+  // ✅ MÉTHODE TIKTOK : 1 VUE = 1 PERSONNE
   // ============================================
   @Post('increment')
   async incrementView(
