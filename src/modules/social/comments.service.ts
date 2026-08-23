@@ -55,7 +55,7 @@ export class CommentsService {
             avatarUrl: true,
             avatarColor: true,
             isCertified: true,
-            badgeColor: true, // ✅ AJOUT
+            badgeColor: true,
           },
         },
       },
@@ -95,7 +95,7 @@ export class CommentsService {
               avatarUrl: true,
               avatarColor: true,
               isCertified: true,
-              badgeColor: true, // ✅ AJOUT
+              badgeColor: true,
             },
           },
           _count: {
@@ -133,7 +133,7 @@ export class CommentsService {
             avatarUrl: true,
             avatarColor: true,
             isCertified: true,
-            badgeColor: true, // ✅ AJOUT
+            badgeColor: true,
           },
         },
       },
@@ -185,7 +185,7 @@ export class CommentsService {
               avatarUrl: true,
               avatarColor: true,
               isCertified: true,
-              badgeColor: true, // ✅ AJOUT
+              badgeColor: true,
             },
           },
         },
@@ -243,7 +243,7 @@ export class CommentsService {
             avatarUrl: true,
             avatarColor: true,
             isCertified: true,
-            badgeColor: true, // ✅ AJOUT
+            badgeColor: true,
           },
         },
       },
@@ -288,41 +288,63 @@ export class CommentsService {
   }
 
   // ============================================
-  // LIKER UN COMMENTAIRE
+  // ✅ LIKER UN COMMENTAIRE - CORRIGÉ
   // ============================================
   async likeComment(userId: string, commentId: string) {
+    // 1. Vérifier que le commentaire existe
     const comment = await this.prisma.comment.findUnique({
       where: { id: commentId },
+      select: { id: true, likesCount: true },
     });
 
     if (!comment) {
       throw new NotFoundException('Commentaire non trouvé');
     }
 
-    const existingLike = await this.prisma.$queryRaw`
-      SELECT * FROM "CommentLikes" WHERE "userId" = ${userId} AND "commentId" = ${commentId}
-    `;
-
-    if (existingLike) {
-      await this.prisma.$executeRaw`
-        DELETE FROM "CommentLikes" WHERE "userId" = ${userId} AND "commentId" = ${commentId}
-      `;
-      await this.prisma.comment.update({
-        where: { id: commentId },
-        data: { likesCount: { decrement: 1 } },
-      });
-      return { liked: false };
-    }
-
-    await this.prisma.$executeRaw`
-      INSERT INTO "CommentLikes" ("userId", "commentId", "createdAt") 
-      VALUES (${userId}, ${commentId}, NOW())
-    `;
-    await this.prisma.comment.update({
-      where: { id: commentId },
-      data: { likesCount: { increment: 1 } },
+    // 2. Vérifier si l'utilisateur a déjà liké
+    const existingLike = await this.prisma.commentLike.findUnique({
+      where: {
+        userId_commentId: {
+          userId,
+          commentId,
+        },
+      },
     });
 
-    return { liked: true };
+    if (existingLike) {
+      // ✅ SUPPRIMER LE LIKE
+      await this.prisma.commentLike.delete({
+        where: { id: existingLike.id },
+      });
+
+      // ✅ Décrémenter le compteur et récupérer la nouvelle valeur
+      const updated = await this.prisma.comment.update({
+        where: { id: commentId },
+        data: { likesCount: { decrement: 1 } },
+        select: { likesCount: true },
+      });
+
+      return {
+        liked: false,
+        likesCount: updated.likesCount,
+      };
+    }
+
+    // ✅ AJOUTER LE LIKE
+    await this.prisma.commentLike.create({
+      data: { userId, commentId },
+    });
+
+    // ✅ Incrémenter le compteur et récupérer la nouvelle valeur
+    const updated = await this.prisma.comment.update({
+      where: { id: commentId },
+      data: { likesCount: { increment: 1 } },
+      select: { likesCount: true },
+    });
+
+    return {
+      liked: true,
+      likesCount: updated.likesCount,
+    };
   }
 }
