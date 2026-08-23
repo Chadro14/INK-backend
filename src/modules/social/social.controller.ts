@@ -39,9 +39,24 @@ export class SocialController {
     return this.likesService.like(req.user.id, mangaId);
   }
 
+  // ✅ ROUTE POUR LIKER UN CHAPITRE (avec slash)
   @Post('like/chapter/:chapterId')
   @UseGuards(JwtAuthGuard)
   async likeChapter(@Req() req, @Param('chapterId') chapterId: string) {
+    const chapter = await this.prisma.chapter.findUnique({
+      where: { id: chapterId },
+      select: { mangaId: true },
+    });
+    if (!chapter) {
+      throw new NotFoundException('Chapitre non trouvé');
+    }
+    return this.likesService.like(req.user.id, chapter.mangaId, chapterId);
+  }
+
+  // ✅ ROUTE POUR LIKER UN CHAPITRE (sans slash - pour compatibilité frontend)
+  @Post('like-chapter/:chapterId')
+  @UseGuards(JwtAuthGuard)
+  async likeChapterDirect(@Req() req, @Param('chapterId') chapterId: string) {
     const chapter = await this.prisma.chapter.findUnique({
       where: { id: chapterId },
       select: { mangaId: true },
@@ -56,6 +71,20 @@ export class SocialController {
   @UseGuards(JwtAuthGuard)
   async hasLiked(@Req() req, @Param('mangaId') mangaId: string) {
     return this.likesService.hasLiked(req.user.id, mangaId);
+  }
+
+  // ✅ ROUTE POUR VÉRIFIER SI UN CHAPITRE EST LIKÉ
+  @Get('has-liked-chapter/:chapterId')
+  @UseGuards(JwtAuthGuard)
+  async hasLikedChapter(@Req() req, @Param('chapterId') chapterId: string) {
+    const chapter = await this.prisma.chapter.findUnique({
+      where: { id: chapterId },
+      select: { mangaId: true },
+    });
+    if (!chapter) {
+      throw new NotFoundException('Chapitre non trouvé');
+    }
+    return this.likesService.hasLiked(req.user.id, chapter.mangaId, chapterId);
   }
 
   // ============================================
