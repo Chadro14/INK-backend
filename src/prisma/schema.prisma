@@ -173,12 +173,13 @@ model Favorite {
 // ============================================
 model View {
   id          String   @id @default(uuid())
-  userId      String?  // NULL si utilisateur non connecté
+  userId      String?
+  user        User?    @relation(fields: [userId], references: [id], onDelete: Cascade)
   mangaId     String
   manga       Manga    @relation(fields: [mangaId], references: [id], onDelete: Cascade)
-  chapterId   String?  // NULL si vue sur le manga, non-NULL si vue sur un chapitre
+  chapterId   String?
   chapter     Chapter? @relation(fields: [chapterId], references: [id], onDelete: Cascade)
-  sessionId   String?  // Pour les utilisateurs non connectés
+  sessionId   String?
   userAgent   String?
   ipAddress   String?
   createdAt   DateTime @default(now())
