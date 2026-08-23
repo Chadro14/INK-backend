@@ -22,7 +22,8 @@ import { AiModule } from './modules/ai/ai.module';
 import { MangaApiModule } from './modules/manga-api/manga-api.module';
 import { CreatorsModule } from './modules/creators/creators.module';
 import { SecurityModule } from './modules/security/security.module';
-import { PremiumModule } from './modules/premium/premium.module'; // ✅ AJOUTÉ
+import { PremiumModule } from './modules/premium/premium.module';
+import { FavoritesModule } from './modules/favorites/favorites.module'; // ✅ AJOUTÉ
 
 @Module({
   imports: [
@@ -51,7 +52,8 @@ import { PremiumModule } from './modules/premium/premium.module'; // ✅ AJOUTÉ
     MangaApiModule,
     CreatorsModule,
     SecurityModule,
-    PremiumModule, // ✅ AJOUTÉ
+    PremiumModule,
+    FavoritesModule, // ✅ AJOUTÉ
   ],
 })
 export class AppModule {}
