@@ -139,6 +139,17 @@ export class SocialController {
     return this.commentsService.likeComment(req.user.id, commentId);
   }
 
+  // ✅ ROUTE POUR RÉCUPÉRER LES LIKES DE L'UTILISATEUR (AJOUTÉE)
+  @Get('comment-likes')
+  @UseGuards(JwtAuthGuard)
+  async getUserCommentLikes(@Req() req) {
+    const likes = await this.prisma.commentLike.findMany({
+      where: { userId: req.user.id },
+      select: { commentId: true },
+    });
+    return likes.map((like) => like.commentId);
+  }
+
   // ============================================
   // ABONNEMENTS
   // ============================================
