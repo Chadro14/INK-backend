@@ -12,6 +12,7 @@ export class LikesService {
     // Vérifier que le manga existe
     const manga = await this.prisma.manga.findUnique({
       where: { id: mangaId },
+      select: { id: true, likesCount: true },
     });
     if (!manga) {
       throw new NotFoundException('Manga non trouvé');
@@ -27,21 +28,26 @@ export class LikesService {
     });
 
     if (existingLike) {
-      // Si le like existe déjà, on le supprime (toggle)
+      // ✅ SUPPRIMER LE LIKE
       await this.prisma.like.delete({
         where: { id: existingLike.id },
       });
 
-      // Décrémenter le compteur
-      await this.prisma.manga.update({
+      // ✅ Décrémenter le compteur et récupérer la nouvelle valeur
+      const updated = await this.prisma.manga.update({
         where: { id: mangaId },
         data: { likesCount: { decrement: 1 } },
+        select: { likesCount: true },
       });
 
-      return { liked: false };
+      // ✅ RETOURNER LE NOUVEAU COMPTEUR
+      return { 
+        liked: false, 
+        likesCount: updated.likesCount 
+      };
     }
 
-    // Créer le like
+    // ✅ CRÉER LE LIKE
     await this.prisma.like.create({
       data: {
         userId,
@@ -50,13 +56,18 @@ export class LikesService {
       },
     });
 
-    // Incrémenter le compteur
-    await this.prisma.manga.update({
+    // ✅ Incrémenter le compteur et récupérer la nouvelle valeur
+    const updated = await this.prisma.manga.update({
       where: { id: mangaId },
       data: { likesCount: { increment: 1 } },
+      select: { likesCount: true },
     });
 
-    return { liked: true };
+    // ✅ RETOURNER LE NOUVEAU COMPTEUR
+    return { 
+      liked: true, 
+      likesCount: updated.likesCount 
+    };
   }
 
   // ============================================
@@ -71,7 +82,7 @@ export class LikesService {
       },
     });
 
-    return !!like;
+    return { liked: !!like };
   }
 
   // ============================================
