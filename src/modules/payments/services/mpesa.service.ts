@@ -9,6 +9,7 @@ export class MpesaService {
   private readonly apiUrl: string;
   private readonly consumerKey: string;
   private readonly consumerSecret: string;
+  private readonly shortcode: string;
   private accessToken: string | null = null;
   private tokenExpiry: number = 0;
 
@@ -17,9 +18,11 @@ export class MpesaService {
     private httpService: HttpService,
   ) {
     // ✅ RÉCUPÉRER LES CLÉS DEPUIS .env (PAS EN CLAIR)
-    this.apiUrl = this.configService.get('MPESA_API_URL') || 'https://api.vodacom.cd/mpesa';
-    this.consumerKey = this.configService.get('MPESA_CONSUMER_KEY') || '';
-    this.consumerSecret = this.configService.get('MPESA_CONSUMER_SECRET') || '';
+    // ✅ CORRIGÉ : Utilise MPSA_ (comme sur Vercel)
+    this.apiUrl = this.configService.get('MPSA_API_URL') || 'https://api.vodacom.cd/mpesa';
+    this.consumerKey = this.configService.get('MPSA_CONSUMER_KEY') || '';
+    this.consumerSecret = this.configService.get('MPSA_CONSUMER_SECRET') || '';
+    this.shortcode = this.configService.get('MPSA_SHORTCODE') || '174379';
 
     if (!this.consumerKey || !this.consumerSecret) {
       console.warn('⚠️ M-Pesa: Identifiants manquants dans .env');
@@ -72,14 +75,14 @@ export class MpesaService {
     const token = await this.getAccessToken();
 
     try {
-      // Enregistrer l'URL de confirmation
+      // ✅ Enregistrer l'URL de confirmation
       await firstValueFrom(
         this.httpService.post(
           `${this.apiUrl}/c2b/v1/registerurl`,
           {
-            ShortCode: this.configService.get('MPESA_SHORTCODE') || '174379',
+            ShortCode: this.shortcode,
             ResponseType: 'Completed',
-            ConfirmationURL: `${this.configService.get('API_URL')}/payments/webhooks/mpesa/confirmation`,
+            ConfirmationURL: `${this.configService.get('API_URL')}/payments/webhooks/mpesa`,
             ValidationURL: `${this.configService.get('API_URL')}/payments/webhooks/mpesa/validation`,
           },
           {
@@ -91,12 +94,12 @@ export class MpesaService {
         ),
       );
 
-      // Simuler la demande de paiement
+      // ✅ Simuler la demande de paiement
       const paymentResponse = await firstValueFrom(
         this.httpService.post(
           `${this.apiUrl}/c2b/v1/simulate`,
           {
-            ShortCode: this.configService.get('MPESA_SHORTCODE') || '174379',
+            ShortCode: this.shortcode,
             CommandID: 'CustomerPayBillOnline',
             Amount: params.amount,
             Msisdn: params.phoneNumber,
