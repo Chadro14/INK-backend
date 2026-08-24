@@ -100,4 +100,16 @@ export class PaymentsController {
   async handleMpesaValidation(@Body() payload: any) {
     return this.paymentsService.handleMpesaValidation(payload);
   }
+
+  // ============================================
+  // ✅ WEBHOOK PAWAPAY (AJOUTÉ)
+  // ============================================
+  @Post('webhooks/pawapay')
+  @HttpCode(HttpStatus.OK)
+  async handlePawaPayWebhook(
+    @Body() payload: any,
+    @Headers('x-signature') signature?: string,
+  ) {
+    return this.paymentsService.handlePawaPayWebhook(payload, signature);
+  }
 }
