@@ -1,18 +1,25 @@
 // src/modules/payments/services/payments.service.ts
-import { Injectable, BadRequestException, NotFoundException } from '@nestjs/common';
+import { Injectable, BadRequestException, NotFoundException, UnauthorizedException } from '@nestjs/common';
 import { PaymentType, PaymentStatus, PremiumPlan } from '@prisma/client';
 import { PrismaService } from '../../../prisma/prisma.service';
 import { OrangeMoneyService } from './orange-money.service';
 import { MpesaService } from './mpesa.service';
 import { InitiatePaymentDto, PaymentOperator } from '../dto/initiate-payment.dto';
+import { ConfigService } from '@nestjs/config';
+import * as crypto from 'crypto';
 
 @Injectable()
 export class PaymentsService {
+  private readonly webhookSecret: string;
+
   constructor(
     private prisma: PrismaService,
     private orangeMoneyService: OrangeMoneyService,
     private mpesaService: MpesaService,
-  ) {}
+    private configService: ConfigService,
+  ) {
+    this.webhookSecret = this.configService.get('PAWAPAY_WEBHOOK_SECRET') || '';
+  }
 
   // ============================================
   // 1. INITIER UN PAIEMENT
@@ -54,6 +61,7 @@ export class PaymentsService {
       },
     });
 
+    // ✅ MODE TEST
     if (dto.operator === PaymentOperator.TEST) {
       await this.prisma.payment.update({
         where: { id: payment.id },
@@ -130,54 +138,62 @@ export class PaymentsService {
   }
 
   // ============================================
-  // 2. TRAITER UN PAIEMENT RÉUSSI
+  // ✅ 2. TRAITER UN PAIEMENT RÉUSSI (AVEC TRANSACTION ATOMIQUE)
   // ============================================
   async processSuccessfulPayment(paymentId: string) {
-    const payment = await this.prisma.payment.findUnique({
-      where: { id: paymentId },
+    return this.prisma.$transaction(async (tx) => {
+      const payment = await tx.payment.findUnique({
+        where: { id: paymentId },
+      });
+
+      if (!payment) {
+        throw new NotFoundException('Paiement non trouvé');
+      }
+
+      // ✅ IDEMPOTENCE : Si déjà SUCCESS, ne pas retraiter
+      if (payment.status === PaymentStatus.SUCCESS) {
+        console.log(`⏭️ Paiement ${payment.transactionId} déjà traité (idempotence)`);
+        return payment;
+      }
+
+      // ✅ Activer le contenu selon le type
+      switch (payment.type) {
+        case PaymentType.PREMIUM:
+          await this.activatePremium(tx, payment.userId, payment.plan || PremiumPlan.MONTHLY);
+          break;
+        case PaymentType.CHAPTER:
+          if (payment.mangaId && payment.chapterNumber) {
+            await this.unlockChapter(tx, payment.userId, payment.mangaId, payment.chapterNumber);
+          }
+          break;
+        case PaymentType.TIP:
+          await this.processTip(tx, payment);
+          break;
+      }
+
+      // ✅ Mettre à jour le paiement
+      const updated = await tx.payment.update({
+        where: { id: payment.id },
+        data: {
+          status: PaymentStatus.SUCCESS,
+          completedAt: new Date(),
+        },
+      });
+
+      // ✅ Créer une notification
+      await tx.notification.create({
+        data: {
+          userId: payment.userId,
+          type: 'EARNING',
+          title: '✅ Paiement réussi',
+          body: `Votre paiement de ${payment.amount} USD a été confirmé.`,
+          metadata: { paymentId: payment.id },
+        },
+      });
+
+      console.log(`✅ Paiement ${payment.transactionId} traité avec succès`);
+      return updated;
     });
-
-    if (!payment) {
-      throw new NotFoundException('Paiement non trouvé');
-    }
-
-    if (payment.status === PaymentStatus.SUCCESS) {
-      return payment;
-    }
-
-    switch (payment.type) {
-      case PaymentType.PREMIUM:
-        await this.activatePremium(payment.userId, payment.plan || PremiumPlan.MONTHLY);
-        break;
-      case PaymentType.CHAPTER:
-        if (payment.mangaId && payment.chapterNumber) {
-          await this.unlockChapter(payment.userId, payment.mangaId, payment.chapterNumber);
-        }
-        break;
-      case PaymentType.TIP:
-        await this.processTip(payment);
-        break;
-    }
-
-    await this.prisma.payment.update({
-      where: { id: payment.id },
-      data: {
-        status: PaymentStatus.SUCCESS,
-        completedAt: new Date(),
-      },
-    });
-
-    await this.prisma.notification.create({
-      data: {
-        userId: payment.userId,
-        type: 'EARNING',
-        title: '✅ Paiement réussi',
-        body: `Votre paiement de ${payment.amount} USD a été confirmé.`,
-        metadata: { paymentId: payment.id },
-      },
-    });
-
-    return payment;
   }
 
   // ============================================
@@ -244,10 +260,17 @@ export class PaymentsService {
   }
 
   // ============================================
-  // 6. WEBHOOK ORANGE MONEY
+  // ✅ 6. WEBHOOK ORANGE MONEY (AVEC SIGNATURE)
   // ============================================
-  async handleOrangeMoneyWebhook(payload: any) {
+  async handleOrangeMoneyWebhook(payload: any, signature?: string) {
     console.log('📩 Webhook Orange Money reçu:', JSON.stringify(payload, null, 2));
+
+    // ✅ Vérifier la signature (si configurée)
+    if (signature && this.webhookSecret) {
+      if (!this.verifySignature(payload, signature, this.webhookSecret)) {
+        throw new UnauthorizedException('Signature webhook invalide');
+      }
+    }
 
     const { transactionId, status } = payload;
 
@@ -260,25 +283,40 @@ export class PaymentsService {
       return { received: true, message: 'Transaction non trouvée' };
     }
 
+    // ✅ IDEMPOTENCE : Si déjà traité, ignorer
+    if (payment.status === PaymentStatus.SUCCESS) {
+      console.log(`⏭️ Webhook ignoré: paiement ${transactionId} déjà traité`);
+      return { received: true, alreadyProcessed: true };
+    }
+
     if (status === 'SUCCESS' || status === 'COMPLETED') {
       await this.processSuccessfulPayment(payment.id);
       console.log(`✅ Paiement ${transactionId} confirmé via Orange Money`);
-    } else {
+    } else if (status === 'REJECTED' || status === 'FAILED') {
       await this.prisma.payment.update({
         where: { id: payment.id },
-        data: { status: 'FAILED' },
+        data: { status: PaymentStatus.FAILED },
       });
-      console.log(`❌ Paiement ${transactionId} échoué via Orange Money`);
+      console.log(`❌ Paiement ${transactionId} rejeté/échoué via Orange Money`);
+    } else {
+      console.log(`⏳ Paiement ${transactionId} en attente (statut: ${status})`);
     }
 
     return { received: true };
   }
 
   // ============================================
-  // 7. WEBHOOK M-PESA
+  // ✅ 7. WEBHOOK M-PESA (AVEC SIGNATURE)
   // ============================================
-  async handleMpesaWebhook(payload: any) {
+  async handleMpesaWebhook(payload: any, signature?: string) {
     console.log('📩 Webhook M-Pesa reçu:', JSON.stringify(payload, null, 2));
+
+    // ✅ Vérifier la signature (si configurée)
+    if (signature && this.webhookSecret) {
+      if (!this.verifySignature(payload, signature, this.webhookSecret)) {
+        throw new UnauthorizedException('Signature webhook invalide');
+      }
+    }
 
     const { transactionId, ResultCode, ResultDesc } = payload;
 
@@ -291,27 +329,60 @@ export class PaymentsService {
       return { received: true, message: 'Transaction non trouvée' };
     }
 
+    // ✅ IDEMPOTENCE : Si déjà traité, ignorer
+    if (payment.status === PaymentStatus.SUCCESS) {
+      console.log(`⏭️ Webhook ignoré: paiement ${transactionId} déjà traité`);
+      return { received: true, alreadyProcessed: true };
+    }
+
     if (ResultCode === '0') {
       await this.processSuccessfulPayment(payment.id);
       console.log(`✅ Paiement ${transactionId} confirmé via M-Pesa`);
-    } else {
+    } else if (ResultCode === '1037' || ResultCode === '1032' || ResultCode === '1030') {
+      // ✅ Code M-Pesa pour rejet/échec
       await this.prisma.payment.update({
         where: { id: payment.id },
-        data: { status: 'FAILED' },
+        data: { status: PaymentStatus.FAILED },
       });
-      console.log(`❌ Paiement ${transactionId} échoué via M-Pesa: ${ResultDesc}`);
+      console.log(`❌ Paiement ${transactionId} rejeté via M-Pesa: ${ResultDesc}`);
+    } else {
+      console.log(`⏳ Paiement ${transactionId} en attente (ResultCode: ${ResultCode})`);
     }
 
     return { received: true };
   }
 
   // ============================================
-  // 8. ACTIVER L'ABONNEMENT PREMIUM
+  // ✅ 8. VALIDATION M-PESA
   // ============================================
-  private async activatePremium(userId: string, plan: PremiumPlan = PremiumPlan.MONTHLY) {
+  async handleMpesaValidation(payload: any) {
+    console.log('📩 Validation M-Pesa reçue:', JSON.stringify(payload, null, 2));
+    return { ResultCode: '0', ResultDesc: 'Accepté' };
+  }
+
+  // ============================================
+  // ✅ 9. VÉRIFIER LA SIGNATURE DU WEBHOOK
+  // ============================================
+  private verifySignature(payload: any, signature: string, secret: string): boolean {
+    try {
+      const expected = crypto
+        .createHmac('sha256', secret)
+        .update(JSON.stringify(payload))
+        .digest('hex');
+      return crypto.timingSafeEqual(Buffer.from(signature), Buffer.from(expected));
+    } catch (error) {
+      console.error('❌ Erreur vérification signature:', error);
+      return false;
+    }
+  }
+
+  // ============================================
+  // ✅ 10. ACTIVER L'ABONNEMENT PREMIUM (AVEC TRANSACTION)
+  // ============================================
+  private async activatePremium(tx: any, userId: string, plan: PremiumPlan = PremiumPlan.MONTHLY) {
     const duration = plan === PremiumPlan.YEARLY ? 365 : 30;
 
-    await this.prisma.user.update({
+    await tx.user.update({
       where: { id: userId },
       data: {
         premiumActive: true,
@@ -324,24 +395,25 @@ export class PaymentsService {
   }
 
   // ============================================
-  // 9. DÉBLOQUER UN CHAPITRE
+  // ✅ 11. DÉBLOQUER UN CHAPITRE (AVEC TRANSACTION)
   // ============================================
-  private async unlockChapter(userId: string, mangaId: string, chapterNumber: number) {
+  private async unlockChapter(tx: any, userId: string, mangaId: string, chapterNumber: number) {
+    // 🔹 À implémenter selon ton système de déblocage
+    // Exemple: créer une entrée dans une table UserChapterPurchase
     console.log(`📚 Chapitre ${chapterNumber} du manga ${mangaId} débloqué pour ${userId}`);
-    // Logique de déblocage à implémenter
   }
 
   // ============================================
-  // 10. TRAITER UN POURBOIRE
+  // ✅ 12. TRAITER UN POURBOIRE (AVEC TRANSACTION)
   // ============================================
-  private async processTip(payment: any) {
-    const manga = await this.prisma.manga.findUnique({
+  private async processTip(tx: any, payment: any) {
+    const manga = await tx.manga.findUnique({
       where: { id: payment.mangaId },
       select: { authorId: true },
     });
 
     if (manga) {
-      await this.prisma.creatorEarning.create({
+      await tx.creatorEarning.create({
         data: {
           creatorId: manga.authorId,
           source: 'TIP',
