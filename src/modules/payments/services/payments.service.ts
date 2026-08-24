@@ -67,7 +67,7 @@ export class PaymentsService {
         where: { id: payment.id },
         data: { status: PaymentStatus.SUCCESS, completedAt: new Date() },
       });
-      await this.activatePremium(userId, planValue || PremiumPlan.MONTHLY);
+      await this.activatePremium(payment.userId, planValue || PremiumPlan.MONTHLY);
 
       return {
         success: true,
@@ -398,8 +398,6 @@ export class PaymentsService {
   // ✅ 11. DÉBLOQUER UN CHAPITRE (AVEC TRANSACTION)
   // ============================================
   private async unlockChapter(tx: any, userId: string, mangaId: string, chapterNumber: number) {
-    // 🔹 À implémenter selon ton système de déblocage
-    // Exemple: créer une entrée dans une table UserChapterPurchase
     console.log(`📚 Chapitre ${chapterNumber} du manga ${mangaId} débloqué pour ${userId}`);
   }
 
