@@ -361,7 +361,55 @@ export class PaymentsService {
   }
 
   // ============================================
-  // ✅ 9. VÉRIFIER LA SIGNATURE DU WEBHOOK
+  // ✅ 9. WEBHOOK PAWAPAY (AJOUTÉ)
+  // ============================================
+  async handlePawaPayWebhook(payload: any, signature?: string) {
+    console.log('📩 Webhook PawaPay reçu:', JSON.stringify(payload, null, 2));
+
+    // ✅ Vérifier la signature (si configurée)
+    if (signature && this.webhookSecret) {
+      if (!this.verifySignature(payload, signature, this.webhookSecret)) {
+        throw new UnauthorizedException('Signature webhook invalide');
+      }
+    }
+
+    const { depositId, status, amount, currency, providerTransactionId } = payload;
+
+    // ✅ Rechercher la transaction
+    const payment = await this.prisma.payment.findFirst({
+      where: { transactionId: depositId },
+    });
+
+    if (!payment) {
+      console.log('❌ Paiement non trouvé:', depositId);
+      return { received: true, message: 'Transaction non trouvée' };
+    }
+
+    // ✅ IDEMPOTENCE
+    if (payment.status === PaymentStatus.SUCCESS) {
+      console.log(`⏭️ Webhook ignoré: paiement ${depositId} déjà traité`);
+      return { received: true, alreadyProcessed: true };
+    }
+
+    // ✅ Traiter selon le statut
+    if (status === 'COMPLETED') {
+      await this.processSuccessfulPayment(payment.id);
+      console.log(`✅ Paiement ${depositId} confirmé via PawaPay`);
+    } else if (status === 'FAILED' || status === 'REJECTED') {
+      await this.prisma.payment.update({
+        where: { id: payment.id },
+        data: { status: PaymentStatus.FAILED },
+      });
+      console.log(`❌ Paiement ${depositId} échoué via PawaPay`);
+    } else {
+      console.log(`⏳ Paiement ${depositId} en attente (statut: ${status})`);
+    }
+
+    return { received: true };
+  }
+
+  // ============================================
+  // ✅ 10. VÉRIFIER LA SIGNATURE DU WEBHOOK
   // ============================================
   private verifySignature(payload: any, signature: string, secret: string): boolean {
     try {
@@ -377,7 +425,7 @@ export class PaymentsService {
   }
 
   // ============================================
-  // ✅ 10. ACTIVER L'ABONNEMENT PREMIUM (AVEC TRANSACTION)
+  // ✅ 11. ACTIVER L'ABONNEMENT PREMIUM (AVEC TRANSACTION)
   // ============================================
   private async activatePremium(tx: any, userId: string, plan: PremiumPlan = PremiumPlan.MONTHLY) {
     const duration = plan === PremiumPlan.YEARLY ? 365 : 30;
@@ -395,14 +443,14 @@ export class PaymentsService {
   }
 
   // ============================================
-  // ✅ 11. DÉBLOQUER UN CHAPITRE (AVEC TRANSACTION)
+  // ✅ 12. DÉBLOQUER UN CHAPITRE (AVEC TRANSACTION)
   // ============================================
   private async unlockChapter(tx: any, userId: string, mangaId: string, chapterNumber: number) {
     console.log(`📚 Chapitre ${chapterNumber} du manga ${mangaId} débloqué pour ${userId}`);
   }
 
   // ============================================
-  // ✅ 12. TRAITER UN POURBOIRE (AVEC TRANSACTION)
+  // ✅ 13. TRAITER UN POURBOIRE (AVEC TRANSACTION)
   // ============================================
   private async processTip(tx: any, payment: any) {
     const manga = await tx.manga.findUnique({
