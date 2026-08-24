@@ -12,6 +12,26 @@ import * as crypto from 'crypto';
 export class PaymentsService {
   private readonly webhookSecret: string;
 
+  // ✅ MAP PAYS → PAYS PAWAPAY
+  private readonly countryMap: Record<string, { code: string; providers: string[] }> = {
+    'RDC': { code: 'CD', providers: ['ORANGE_CD', 'VODACOM_CD'] },
+    'Kenya': { code: 'KE', providers: ['SAFARICOM_MPESA'] },
+    'Ghana': { code: 'GH', providers: ['MTN_MOMO_GH', 'VODAFONE_GH'] },
+    'Zambie': { code: 'ZM', providers: ['MTN_MOMO_ZMB', 'AIRTEL_ZMB'] },
+    'Côte d\'Ivoire': { code: 'CI', providers: ['ORANGE_CI', 'MTN_MOMO_CI'] },
+    'Sénégal': { code: 'SN', providers: ['ORANGE_SN', 'WAVE_SN'] },
+    'Cameroun': { code: 'CM', providers: ['ORANGE_CM', 'MTN_MOMO_CM'] },
+    'Bénin': { code: 'BJ', providers: ['MTN_MOMO_BJ', 'MOOV_BJ'] },
+    'Burkina Faso': { code: 'BF', providers: ['ORANGE_BF', 'MOOV_BF'] },
+    'Gabon': { code: 'GA', providers: ['ORANGE_GA', 'AIRTEL_GA'] },
+    'Mozambique': { code: 'MZ', providers: ['VODACOM_MZ', 'MPESA_MZ'] },
+    'Niger': { code: 'NE', providers: ['ORANGE_NE', 'MOOV_NE'] },
+    'Rwanda': { code: 'RW', providers: ['MTN_MOMO_RW'] },
+    'Sierra Leone': { code: 'SL', providers: ['ORANGE_SL'] },
+    'Tanzanie': { code: 'TZ', providers: ['VODACOM_TZ', 'AIRTEL_TZ'] },
+    'Ouganda': { code: 'UG', providers: ['MTN_MOMO_UG', 'AIRTEL_UG'] },
+  };
+
   constructor(
     private prisma: PrismaService,
     private orangeMoneyService: OrangeMoneyService,
@@ -22,7 +42,55 @@ export class PaymentsService {
   }
 
   // ============================================
-  // 1. INITIER UN PAIEMENT
+  // ✅ 1. VALIDER LE NUMÉRO SELON L'OPÉRATEUR
+  // ============================================
+  private validatePhoneNumber(operator: PaymentOperator, phoneNumber: string): boolean {
+    const clean = phoneNumber.replace(/\D/g, '');
+
+    // ✅ Validation de base : longueur
+    if (clean.length < 7 || clean.length > 15) {
+      return false;
+    }
+
+    // ✅ Validation spécifique selon l'opérateur
+    switch (operator) {
+      case PaymentOperator.MPESA:
+        // M-Pesa : commence par 08, 09, ou 7 (Kenya)
+        return /^(07|08|09|7)\d{7,13}$/.test(clean);
+
+      case PaymentOperator.ORANGE:
+        // Orange Money : commence par 07, 08, ou 77
+        return /^(07|08|77|78|79)\d{7,13}$/.test(clean);
+
+      default:
+        return true;
+    }
+  }
+
+  // ============================================
+  // ✅ 2. DÉTECTER OU RETOURNER LE PROVIDER PAWAPAY
+  // ============================================
+  private getProvider(operator: PaymentOperator, country?: string): string {
+    // Si le pays est spécifié, utiliser le mapping
+    if (country && this.countryMap[country]) {
+      const countryData = this.countryMap[country];
+      // Retourner le premier provider du pays
+      return countryData.providers[0] || 'ORANGE_CD';
+    }
+
+    // Fallback selon l'opérateur
+    switch (operator) {
+      case PaymentOperator.MPESA:
+        return 'VODACOM_CD';
+      case PaymentOperator.ORANGE:
+        return 'ORANGE_CD';
+      default:
+        return 'ORANGE_CD';
+    }
+  }
+
+  // ============================================
+  // 3. INITIER UN PAIEMENT
   // ============================================
   async initiatePayment(userId: string, dto: InitiatePaymentDto) {
     const user = await this.prisma.user.findUnique({
@@ -31,6 +99,13 @@ export class PaymentsService {
 
     if (!user) {
       throw new NotFoundException('Utilisateur non trouvé');
+    }
+
+    // ✅ VALIDER LE NUMÉRO DE TÉLÉPHONE
+    if (!this.validatePhoneNumber(dto.operator, dto.phoneNumber)) {
+      throw new BadRequestException(
+        `Numéro de téléphone invalide pour ${dto.operator}. Veuillez vérifier votre numéro.`
+      );
     }
 
     const transactionId = `INK-${Date.now()}-${Math.random().toString(36).slice(2, 7)}`;
@@ -56,6 +131,8 @@ export class PaymentsService {
         plan: planValue,
         metadata: {
           operator: dto.operator,
+          country: dto.country || 'RDC',
+          provider: this.getProvider(dto.operator, dto.country),
           description: dto.description || `Paiement ${dto.type}`,
         },
       },
@@ -81,6 +158,7 @@ export class PaymentsService {
 
     let result;
     try {
+      // ✅ Appel au bon service selon l'opérateur
       if (dto.operator === PaymentOperator.ORANGE) {
         result = await this.orangeMoneyService.initiatePayment({
           amount: dto.amount,
@@ -138,7 +216,7 @@ export class PaymentsService {
   }
 
   // ============================================
-  // ✅ 2. TRAITER UN PAIEMENT RÉUSSI (AVEC TRANSACTION ATOMIQUE)
+  // 4. TRAITER UN PAIEMENT RÉUSSI (AVEC TRANSACTION ATOMIQUE)
   // ============================================
   async processSuccessfulPayment(paymentId: string) {
     return this.prisma.$transaction(async (tx) => {
@@ -150,13 +228,11 @@ export class PaymentsService {
         throw new NotFoundException('Paiement non trouvé');
       }
 
-      // ✅ IDEMPOTENCE : Si déjà SUCCESS, ne pas retraiter
       if (payment.status === PaymentStatus.SUCCESS) {
         console.log(`⏭️ Paiement ${payment.transactionId} déjà traité (idempotence)`);
         return payment;
       }
 
-      // ✅ Activer le contenu selon le type
       switch (payment.type) {
         case PaymentType.PREMIUM:
           await this.activatePremium(tx, payment.userId, payment.plan || PremiumPlan.MONTHLY);
@@ -171,7 +247,6 @@ export class PaymentsService {
           break;
       }
 
-      // ✅ Mettre à jour le paiement
       const updated = await tx.payment.update({
         where: { id: payment.id },
         data: {
@@ -180,7 +255,6 @@ export class PaymentsService {
         },
       });
 
-      // ✅ Créer une notification
       await tx.notification.create({
         data: {
           userId: payment.userId,
@@ -197,7 +271,7 @@ export class PaymentsService {
   }
 
   // ============================================
-  // 3. CONFIRMER UN PAIEMENT MANUEL
+  // 5. CONFIRMER UN PAIEMENT MANUEL
   // ============================================
   async confirmManualPayment(transactionId: string, userId: string) {
     const payment = await this.prisma.payment.findFirst({
@@ -216,7 +290,7 @@ export class PaymentsService {
   }
 
   // ============================================
-  // 4. LISTE DES PAIEMENTS D'UN UTILISATEUR
+  // 6. LISTE DES PAIEMENTS D'UN UTILISATEUR
   // ============================================
   async getUserPayments(userId: string, page = 1, limit = 20) {
     const skip = (page - 1) * limit;
@@ -240,7 +314,7 @@ export class PaymentsService {
   }
 
   // ============================================
-  // 5. STATUT D'UN PAIEMENT
+  // 7. STATUT D'UN PAIEMENT
   // ============================================
   async getPaymentStatus(transactionId: string, userId: string) {
     const payment = await this.prisma.payment.findFirst({
@@ -260,12 +334,11 @@ export class PaymentsService {
   }
 
   // ============================================
-  // ✅ 6. WEBHOOK ORANGE MONEY (AVEC SIGNATURE)
+  // 8. WEBHOOK ORANGE MONEY (AVEC SIGNATURE)
   // ============================================
   async handleOrangeMoneyWebhook(payload: any, signature?: string) {
     console.log('📩 Webhook Orange Money reçu:', JSON.stringify(payload, null, 2));
 
-    // ✅ Vérifier la signature (si configurée)
     if (signature && this.webhookSecret) {
       if (!this.verifySignature(payload, signature, this.webhookSecret)) {
         throw new UnauthorizedException('Signature webhook invalide');
@@ -283,7 +356,6 @@ export class PaymentsService {
       return { received: true, message: 'Transaction non trouvée' };
     }
 
-    // ✅ IDEMPOTENCE : Si déjà traité, ignorer
     if (payment.status === PaymentStatus.SUCCESS) {
       console.log(`⏭️ Webhook ignoré: paiement ${transactionId} déjà traité`);
       return { received: true, alreadyProcessed: true };
@@ -306,12 +378,11 @@ export class PaymentsService {
   }
 
   // ============================================
-  // ✅ 7. WEBHOOK M-PESA (AVEC SIGNATURE)
+  // 9. WEBHOOK M-PESA (AVEC SIGNATURE)
   // ============================================
   async handleMpesaWebhook(payload: any, signature?: string) {
     console.log('📩 Webhook M-Pesa reçu:', JSON.stringify(payload, null, 2));
 
-    // ✅ Vérifier la signature (si configurée)
     if (signature && this.webhookSecret) {
       if (!this.verifySignature(payload, signature, this.webhookSecret)) {
         throw new UnauthorizedException('Signature webhook invalide');
@@ -329,7 +400,6 @@ export class PaymentsService {
       return { received: true, message: 'Transaction non trouvée' };
     }
 
-    // ✅ IDEMPOTENCE : Si déjà traité, ignorer
     if (payment.status === PaymentStatus.SUCCESS) {
       console.log(`⏭️ Webhook ignoré: paiement ${transactionId} déjà traité`);
       return { received: true, alreadyProcessed: true };
@@ -339,7 +409,6 @@ export class PaymentsService {
       await this.processSuccessfulPayment(payment.id);
       console.log(`✅ Paiement ${transactionId} confirmé via M-Pesa`);
     } else if (ResultCode === '1037' || ResultCode === '1032' || ResultCode === '1030') {
-      // ✅ Code M-Pesa pour rejet/échec
       await this.prisma.payment.update({
         where: { id: payment.id },
         data: { status: PaymentStatus.FAILED },
@@ -353,7 +422,7 @@ export class PaymentsService {
   }
 
   // ============================================
-  // ✅ 8. VALIDATION M-PESA
+  // 10. VALIDATION M-PESA
   // ============================================
   async handleMpesaValidation(payload: any) {
     console.log('📩 Validation M-Pesa reçue:', JSON.stringify(payload, null, 2));
@@ -361,21 +430,19 @@ export class PaymentsService {
   }
 
   // ============================================
-  // ✅ 9. WEBHOOK PAWAPAY (AJOUTÉ)
+  // 11. WEBHOOK PAWAPAY
   // ============================================
   async handlePawaPayWebhook(payload: any, signature?: string) {
     console.log('📩 Webhook PawaPay reçu:', JSON.stringify(payload, null, 2));
 
-    // ✅ Vérifier la signature (si configurée)
     if (signature && this.webhookSecret) {
       if (!this.verifySignature(payload, signature, this.webhookSecret)) {
         throw new UnauthorizedException('Signature webhook invalide');
       }
     }
 
-    const { depositId, status, amount, currency, providerTransactionId } = payload;
+    const { depositId, status } = payload;
 
-    // ✅ Rechercher la transaction
     const payment = await this.prisma.payment.findFirst({
       where: { transactionId: depositId },
     });
@@ -385,13 +452,11 @@ export class PaymentsService {
       return { received: true, message: 'Transaction non trouvée' };
     }
 
-    // ✅ IDEMPOTENCE
     if (payment.status === PaymentStatus.SUCCESS) {
       console.log(`⏭️ Webhook ignoré: paiement ${depositId} déjà traité`);
       return { received: true, alreadyProcessed: true };
     }
 
-    // ✅ Traiter selon le statut
     if (status === 'COMPLETED') {
       await this.processSuccessfulPayment(payment.id);
       console.log(`✅ Paiement ${depositId} confirmé via PawaPay`);
@@ -409,7 +474,7 @@ export class PaymentsService {
   }
 
   // ============================================
-  // ✅ 10. VÉRIFIER LA SIGNATURE DU WEBHOOK
+  // 12. VÉRIFIER LA SIGNATURE DU WEBHOOK
   // ============================================
   private verifySignature(payload: any, signature: string, secret: string): boolean {
     try {
@@ -425,7 +490,7 @@ export class PaymentsService {
   }
 
   // ============================================
-  // ✅ 11. ACTIVER L'ABONNEMENT PREMIUM (AVEC TRANSACTION)
+  // 13. ACTIVER L'ABONNEMENT PREMIUM (AVEC TRANSACTION)
   // ============================================
   private async activatePremium(tx: any, userId: string, plan: PremiumPlan = PremiumPlan.MONTHLY) {
     const duration = plan === PremiumPlan.YEARLY ? 365 : 30;
@@ -443,14 +508,14 @@ export class PaymentsService {
   }
 
   // ============================================
-  // ✅ 12. DÉBLOQUER UN CHAPITRE (AVEC TRANSACTION)
+  // 14. DÉBLOQUER UN CHAPITRE (AVEC TRANSACTION)
   // ============================================
   private async unlockChapter(tx: any, userId: string, mangaId: string, chapterNumber: number) {
     console.log(`📚 Chapitre ${chapterNumber} du manga ${mangaId} débloqué pour ${userId}`);
   }
 
   // ============================================
-  // ✅ 13. TRAITER UN POURBOIRE (AVEC TRANSACTION)
+  // 15. TRAITER UN POURBOIRE (AVEC TRANSACTION)
   // ============================================
   private async processTip(tx: any, payment: any) {
     const manga = await tx.manga.findUnique({
