@@ -38,7 +38,8 @@ SUPABASE_SERVICE_ROLE_KEY=ton_service_role_key
 # ============================================
 ORANGE_CLIENT_ID=25eb3eec-65c6-429a-b930-b2a93021e89c
 ORANGE_CLIENT_SECRET=61cffc3d-aeb4-42b2-90c5-f4b38ff9d14d
-ORANGE_API_URL=https://api.orange.com/sonatel/webservice
+# ✅ URL CORRIGÉE POUR LE SANDBOX ORANGE MONEY
+ORANGE_API_URL=https://api.sandbox.orange.com/sonatel/webservice
 
 # ============================================
 # M-PESA PAYMENT
