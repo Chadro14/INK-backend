@@ -10,6 +10,7 @@ import {
   Req,
   HttpCode,
   HttpStatus,
+  Headers,
 } from '@nestjs/common';
 import { JwtAuthGuard } from '../../../common/guards/jwt-auth.guard';
 import { PaymentsService } from '../services/payments.service';
@@ -68,20 +69,35 @@ export class PaymentsController {
   }
 
   // ============================================
-  // ✅ WEBHOOK ORANGE MONEY
+  // ✅ WEBHOOK ORANGE MONEY (AVEC SIGNATURE)
   // ============================================
   @Post('webhooks/orange-money')
   @HttpCode(HttpStatus.OK)
-  async handleOrangeMoneyWebhook(@Body() payload: any) {
-    return this.paymentsService.handleOrangeMoneyWebhook(payload);
+  async handleOrangeMoneyWebhook(
+    @Body() payload: any,
+    @Headers('x-signature') signature?: string,
+  ) {
+    return this.paymentsService.handleOrangeMoneyWebhook(payload, signature);
   }
 
   // ============================================
-  // ✅ WEBHOOK M-PESA
+  // ✅ WEBHOOK M-PESA (AVEC SIGNATURE)
   // ============================================
   @Post('webhooks/mpesa')
   @HttpCode(HttpStatus.OK)
-  async handleMpesaWebhook(@Body() payload: any) {
-    return this.paymentsService.handleMpesaWebhook(payload);
+  async handleMpesaWebhook(
+    @Body() payload: any,
+    @Headers('x-signature') signature?: string,
+  ) {
+    return this.paymentsService.handleMpesaWebhook(payload, signature);
+  }
+
+  // ============================================
+  // ✅ WEBHOOK DE VALIDATION M-PESA
+  // ============================================
+  @Post('webhooks/mpesa/validation')
+  @HttpCode(HttpStatus.OK)
+  async handleMpesaValidation(@Body() payload: any) {
+    return this.paymentsService.handleMpesaValidation(payload);
   }
 }
