@@ -17,6 +17,7 @@ FRONTEND_URL=https://ink-drop-one.vercel.app
 # BACKEND
 # ============================================
 BASE_URL=https://ink-backend.vercel.app
+API_URL=https://ink-backend.vercel.app
 JWT_SECRET=ton_secret_jwt_super_securise
 
 # ============================================
@@ -38,3 +39,23 @@ SUPABASE_SERVICE_ROLE_KEY=ton_service_role_key
 ORANGE_CLIENT_ID=25eb3eec-65c6-429a-b930-b2a93021e89c
 ORANGE_CLIENT_SECRET=61cffc3d-aeb4-42b2-90c5-f4b38ff9d14d
 ORANGE_API_URL=https://api.orange.com/sonatel/webservice
+
+# ============================================
+# M-PESA PAYMENT
+# ============================================
+MPESA_CONSUMER_KEY=ton_mpesa_consumer_key
+MPESA_CONSUMER_SECRET=ton_mpesa_consumer_secret
+MPESA_API_URL=https://api.vodacom.cd/mpesa
+MPESA_SHORTCODE=174379
+
+# ============================================
+# PAWAPAY PAYMENT (PRODUCTION)
+# ============================================
+PAWAPAY_API_KEY=eyJraWQiOiIxIiwiYWxnIjoiRVMyNTYifQ.eyJ0dCI6IkFBVCIsInN1YiI6IjI0NDI4IiwibWF2IjoiMSIsImV4cCI6MjEwMzE5MzEzNSwiaWF0IjoxNzg3NTczOTM1LCJwbSI6IkRBRixQQUYiLCJqdGkiOiJkOTBjZTRjYi00MzYwLTQ5MzYtOGZlZC03YTI5M2M4ZTFmMWIifQ.UR0wdoT5A-x_knMv-HZ38lFWgNMzPzIagvBKNflh-KOlKTsupWy0HjvMP07FWkayDgxA9JoZFBHHdj0GrmKlzQ
+PAWAPAY_BASE_URL=https://api.pawapay.io/v2
+PAWAPAY_WEBHOOK_SECRET=ZEXhaIdl4uruekKieWGYHCEj5z7nuApoUjGCtAvuLFflnkMR5zCeiogTmYEVxWya6nCyNhhjBHf6GYvBLnNzhG9w83H1s8eV394q
+
+# ============================================
+# MODE DE PAIEMENT
+# ============================================
+PAYMENT_MODE=production
