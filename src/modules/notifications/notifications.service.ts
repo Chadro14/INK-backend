@@ -20,7 +20,7 @@ export class NotificationsService {
       metadata?: any;
     },
   ) {
-    // ✅ NETTOYAGE DES EMOJIS SANS SUPPRIMER LES ACCENTS
+    // NETTOYAGE DES EMOJIS SANS SUPPRIMER LES ACCENTS
     const cleanTitle = data.title.replace(/[\u{1F300}-\u{1FAFF}\u{2600}-\u{27BF}]/gu, '').trim();
     const cleanBody = data.body.replace(/[\u{1F300}-\u{1FAFF}\u{2600}-\u{27BF}]/gu, '').trim();
 
@@ -42,7 +42,7 @@ export class NotificationsService {
   async findByUser(
     userId: string,
     page: number = 1,
-    limit: number = 20,
+    limit: number = 50,
     unreadOnly: boolean = false,
   ) {
     const skip = (page - 1) * limit;
@@ -66,6 +66,7 @@ export class NotificationsService {
       data,
       total,
       page,
+      limit,
       totalPages: Math.ceil(total / limit),
     };
   }
