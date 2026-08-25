@@ -68,6 +68,7 @@ model User {
   watchHistory       InkStreamWatchHistory[]
   favorites          Favorite[]
   views              View[]
+  manasTransactions  ManasTransaction[]
   manas              Int       @default(0)
 
   following          UserFollow[] @relation("Follower")
@@ -169,7 +170,7 @@ model Favorite {
 }
 
 // ============================================
-// ✅ VUES (SYSTÈME TIKTOK - 1 VUE = 1 PERSONNE)
+// VUES (SYSTÈME TIKTOK - 1 VUE = 1 PERSONNE)
 // ============================================
 model View {
   id          String   @id @default(uuid())
@@ -187,6 +188,40 @@ model View {
   @@unique([userId, mangaId, chapterId])
   @@unique([sessionId, mangaId, chapterId])
   @@index([mangaId, chapterId, createdAt])
+}
+
+// ============================================
+// ✅ MANAS TRANSACTIONS
+// ============================================
+model ManasTransaction {
+  id          String   @id @default(uuid())
+  userId      String
+  user        User     @relation(fields: [userId], references: [id], onDelete: Cascade)
+  amount      Int      // Positif = gain, Négatif = dépense
+  type        ManasTransactionType
+  description String
+  metadata    Json?
+  createdAt   DateTime @default(now())
+
+  @@index([userId, createdAt])
+}
+
+enum ManasTransactionType {
+  DAILY_BONUS
+  READING
+  LIKE_RECEIVED
+  COMMENT_RECEIVED
+  SUBSCRIBER
+  CHAPTER_PURCHASE
+  TIP_SENT
+  TIP_RECEIVED
+  PREMIUM_BONUS
+  ADMIN_GRANT
+  BALANCE_WITHDRAWAL
+  BALANCE_DEPOSIT
+  GIFT_SENT
+  GIFT_RECEIVED
+  COLLABORATION
 }
 
 // ============================================
