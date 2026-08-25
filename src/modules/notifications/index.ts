@@ -1,3 +1,5 @@
-export * from './notifications.module';
-export * from './notifications.service';
-export * from './notifications.gateway';
+// src/modules/notifications/index.ts
+export { NotificationsModule } from './notifications.module';
+export { NotificationsService } from './notifications.service';
+export { NotificationsGateway } from './notifications.gateway';
+export { NotificationsController } from './notifications.controller';
