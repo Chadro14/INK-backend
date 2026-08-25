@@ -21,9 +21,9 @@ API_URL=https://ink-backend.vercel.app
 JWT_SECRET=ton_secret_jwt_super_securise
 
 # ============================================
-# DATABASE (Supabase)
+# DATABASE (Supabase) - AVEC CONNECTION_LIMIT
 # ============================================
-DATABASE_URL=postgresql://postgres.abcdefghijklmnop:password@aws-0-eu-west-3.pooler.supabase.com:6543/postgres
+DATABASE_URL=postgresql://postgres.abcdefghijklmnop:password@aws-0-eu-west-3.pooler.supabase.com:6543/postgres?connection_limit=5
 DIRECT_URL=postgresql://postgres.abcdefghijklmnop:password@aws-0-eu-west-3.pooler.supabase.com:5432/postgres
 
 # ============================================
@@ -38,7 +38,6 @@ SUPABASE_SERVICE_ROLE_KEY=ton_service_role_key
 # ============================================
 ORANGE_CLIENT_ID=25eb3eec-65c6-429a-b930-b2a93021e89c
 ORANGE_CLIENT_SECRET=61cffc3d-aeb4-42b2-90c5-f4b38ff9d14d
-# ✅ URL CORRIGÉE POUR LE SANDBOX ORANGE MONEY
 ORANGE_API_URL=https://api.sandbox.orange.com/sonatel/webservice
 
 # ============================================
