@@ -108,7 +108,7 @@ export class ChaptersService {
   }
 
   // ============================================
-  // 2. FINALISATION DU CHAPITRE
+  // 2. FINALISATION DU CHAPITRE (CORRIGÉ)
   // ============================================
   async finalizeChapter(mangaId: string, userId: string, dto: FinalizeChapterDto) {
     console.log('🔍 === FINALIZE CHAPTER DEBUG ===');
@@ -160,11 +160,12 @@ export class ChaptersService {
       const totalPages = dto.keys.length;
       const paidPagesCount = totalPages - freeIndexes.length;
 
-      if (paidPagesCount > 2) {
-        throw new BadRequestException(
-          `Un chapitre en mode photos ne peut contenir que 2 pages payantes maximum. (Actuellement: ${paidPagesCount})`,
-        );
-      }
+      // ✅ SUPPRESSION DE LA LIMITE DE 2 PAGES PAYANTES
+      // if (paidPagesCount > 2) {
+      //   throw new BadRequestException(
+      //     `Un chapitre en mode photos ne peut contenir que 2 pages payantes maximum. (Actuellement: ${paidPagesCount})`,
+      //   );
+      // }
 
       calculatedPrice = paidPagesCount > 0 ? paidPagesCount * 0.55 : 0;
     }
