@@ -5,12 +5,11 @@ import { PrismaClient } from '@prisma/client';
 export class PrismaService extends PrismaClient implements OnModuleInit, OnModuleDestroy {
   constructor() {
     super({
-      // ✅ CONFIGURATION AVEC LOGS ET LIMITE DE CONNEXIONS
+      // ✅ LOGS - seulement en développement
       log: process.env.NODE_ENV === 'development' 
         ? ['query', 'info', 'warn', 'error'] 
         : ['error'],
-      // ✅ LIMITER LE NOMBRE DE CONNEXIONS POUR ÉVITER EMAXCONN
-      connectionLimit: 10,
+      // ✅ SUPPRIME connectionLimit (il ne fonctionne pas ici)
       datasources: {
         db: {
           url: process.env.DATABASE_URL,
