@@ -5,6 +5,8 @@ import { ManasTransactionType, DailyActionType } from '@prisma/client';
 
 @Injectable()
 export class ManasService {
+  private readonly VIEW_TO_MANAS_RATE = 1000; // 1000 vues = 1 MANAS
+
   constructor(private prisma: PrismaService) {}
 
   // ============================================
@@ -13,7 +15,7 @@ export class ManasService {
   async getBalance(userId: string) {
     const user = await this.prisma.user.findUnique({
       where: { id: userId },
-      select: { manas: true, username: true, role: true },
+      select: { manas: true, username: true, role: true, premiumActive: true },
     });
 
     if (!user) {
@@ -24,6 +26,7 @@ export class ManasService {
       balance: user.manas,
       username: user.username,
       role: user.role,
+      premiumActive: user.premiumActive,
     };
   }
 
@@ -79,11 +82,20 @@ export class ManasService {
 
     const user = await this.prisma.user.findUnique({
       where: { id: userId },
-      select: { manas: true },
+      select: { manas: true, premiumActive: true },
     });
 
     if (!user) {
       throw new NotFoundException('Utilisateur non trouvé');
+    }
+
+    // ✅ LES PREMIUM N'ONT PAS BESOIN DE MANAS POUR LIRE
+    if (user.premiumActive && type === ManasTransactionType.CHAPTER_PURCHASE) {
+      return {
+        success: true,
+        message: 'Accès Premium - Chapitre débloqué',
+        balance: user.manas,
+      };
     }
 
     if (user.manas < amount) {
@@ -172,17 +184,6 @@ export class ManasService {
   }
 
   // ============================================
-  // ✅ VÉRIFIER SI L'UTILISATEUR EST LECTEUR
-  // ============================================
-  private async isReader(userId: string): Promise<boolean> {
-    const user = await this.prisma.user.findUnique({
-      where: { id: userId },
-      select: { role: true },
-    });
-    return user?.role === 'READER';
-  }
-
-  // ============================================
   // ✅ VÉRIFIER LA LIMITE QUOTIDIENNE
   // ============================================
   private async checkDailyLimit(
@@ -239,10 +240,75 @@ export class ManasService {
   }
 
   // ============================================
-  // ✅ ACTIONS QUI GAGNENT DES MANAS (AVEC LIMITE)
+  // ✅ GAIN DE MANAS POUR LES VUES (1000 VUES = 1 MANAS)
+  // ============================================
+  async onViewsEarned(userId: string) {
+    // 1. Vérifier que l'utilisateur est créateur
+    if (!(await this.isCreator(userId))) {
+      return {
+        success: false,
+        message: 'Seuls les créateurs peuvent gagner des MANAS avec les vues',
+        balance: (await this.getBalance(userId)).balance,
+      };
+    }
+
+    // 2. Calculer le nombre total de vues sur tous ses mangas
+    const totalViews = await this.prisma.manga.aggregate({
+      where: { authorId: userId },
+      _sum: { viewsCount: true },
+    });
+
+    const views = totalViews._sum.viewsCount || 0;
+    const manasToAdd = Math.floor(views / this.VIEW_TO_MANAS_RATE); // 1000 vues = 1 MANAS
+
+    // 3. Vérifier si le créateur a déjà été crédité pour ce nombre de vues
+    const lastViewTransaction = await this.prisma.manasTransaction.findFirst({
+      where: {
+        userId,
+        type: 'VIEWS_EARNED',
+      },
+      orderBy: { createdAt: 'desc' },
+    });
+
+    let lastViewsCount = 0;
+    if (lastViewTransaction?.metadata) {
+      const metadata = lastViewTransaction.metadata as any;
+      lastViewsCount = metadata?.viewsCount || 0;
+    }
+
+    const newManas = manasToAdd - Math.floor(lastViewsCount / this.VIEW_TO_MANAS_RATE);
+
+    if (newManas <= 0) {
+      return {
+        success: false,
+        message: 'Aucun nouveau MANAS à gagner (vues: ' + views + ')',
+        balance: (await this.getBalance(userId)).balance,
+      };
+    }
+
+    // 4. Ajouter les MANAS
+    const result = await this.addManas(
+      userId,
+      newManas,
+      ManasTransactionType.VIEWS_EARNED,
+      `${newManas} MANAS pour ${views} vues (1000 vues = 1 MANAS)`,
+      { viewsCount: views, manasEarned: newManas },
+    );
+
+    return {
+      success: true,
+      message: `+${newManas} MANAS pour ${views} vues`,
+      balance: result.balance,
+      views,
+      manasEarned: newManas,
+    };
+  }
+
+  // ============================================
+  // ✅ ACTIONS QUI GAGNENT DES MANAS
   // ============================================
 
-  // 📖 Lecture d'un chapitre (max 10/jour) - TOUT LE MONDE
+  // 📖 Lecture d'un chapitre (max 10/jour)
   async onChapterRead(userId: string, chapterId: string, mangaId: string) {
     const canEarn = await this.checkDailyLimit(userId, DailyActionType.READ, 10);
     if (!canEarn) {
@@ -270,107 +336,7 @@ export class ManasService {
     };
   }
 
-  // ❤️ Like reçu sur un manga (max 5/jour) - UNIQUEMENT CRÉATEUR
-  async onLikeReceived(userId: string, mangaId: string) {
-    // ✅ Vérifier que l'utilisateur est créateur
-    if (!(await this.isCreator(userId))) {
-      return {
-        success: false,
-        message: 'Seuls les créateurs peuvent gagner des MANAS avec des likes',
-        balance: (await this.getBalance(userId)).balance,
-      };
-    }
-
-    const canEarn = await this.checkDailyLimit(userId, DailyActionType.LIKE, 5);
-    if (!canEarn) {
-      return {
-        success: false,
-        message: 'Limite quotidienne de likes atteinte (5/jour)',
-        balance: (await this.getBalance(userId)).balance,
-      };
-    }
-
-    const result = await this.addManas(
-      userId,
-      2,
-      ManasTransactionType.LIKE_RECEIVED,
-      'Like reçu sur votre manga',
-      { mangaId },
-    );
-
-    await this.incrementDailyCount(userId, DailyActionType.LIKE);
-
-    return {
-      success: true,
-      message: '+2 MANAS pour le like reçu',
-      balance: result.balance,
-    };
-  }
-
-  // 💬 Commentaire reçu (max 5/jour) - UNIQUEMENT CRÉATEUR
-  async onCommentReceived(userId: string, mangaId: string) {
-    // ✅ Vérifier que l'utilisateur est créateur
-    if (!(await this.isCreator(userId))) {
-      return {
-        success: false,
-        message: 'Seuls les créateurs peuvent gagner des MANAS avec des commentaires',
-        balance: (await this.getBalance(userId)).balance,
-      };
-    }
-
-    const canEarn = await this.checkDailyLimit(userId, DailyActionType.COMMENT, 5);
-    if (!canEarn) {
-      return {
-        success: false,
-        message: 'Limite quotidienne de commentaires atteinte (5/jour)',
-        balance: (await this.getBalance(userId)).balance,
-      };
-    }
-
-    const result = await this.addManas(
-      userId,
-      3,
-      ManasTransactionType.COMMENT_RECEIVED,
-      'Commentaire reçu sur votre manga',
-      { mangaId },
-    );
-
-    await this.incrementDailyCount(userId, DailyActionType.COMMENT);
-
-    return {
-      success: true,
-      message: '+3 MANAS pour le commentaire reçu',
-      balance: result.balance,
-    };
-  }
-
-  // 👥 Nouvel abonné (pas de limite) - UNIQUEMENT CRÉATEUR
-  async onNewSubscriber(userId: string, followerId: string) {
-    // ✅ Vérifier que l'utilisateur est créateur
-    if (!(await this.isCreator(userId))) {
-      return {
-        success: false,
-        message: 'Seuls les créateurs peuvent gagner des MANAS avec des abonnés',
-        balance: (await this.getBalance(userId)).balance,
-      };
-    }
-
-    const result = await this.addManas(
-      userId,
-      5,
-      ManasTransactionType.SUBSCRIBER,
-      'Nouvel abonné',
-      { followerId },
-    );
-
-    return {
-      success: true,
-      message: '+5 MANAS pour le nouvel abonné',
-      balance: result.balance,
-    };
-  }
-
-  // 🎁 Bonus quotidien (1 MANAS tous les 2 jours) - TOUT LE MONDE
+  // 🎁 Bonus quotidien (1 MANAS tous les 2 jours)
   async dailyBonus(userId: string) {
     const today = new Date();
     today.setHours(0, 0, 0, 0);
