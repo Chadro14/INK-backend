@@ -39,23 +39,19 @@ model User {
 
   appState           Json?
 
-  // CHAMPS POUR LES PARAMÈTRES
   notificationSettings Json?
   preferences         Json?
 
-  // CHAMPS DE SÉCURITÉ
   failedLoginAttempts Int     @default(0)
   isLocked            Boolean @default(false)
   lastLoginAt         DateTime?
   lastLoginIP         String?
 
-  // CHAMPS POUR LE BANNISSEMENT ET LA MODÉRATION
   warningsCount       Int     @default(0)
   banReason           String?
   bannedAt            DateTime?
   bannedBy            String?
 
-  // RELATIONS
   mangas             Manga[]
   comments           Comment[]
   commentLikes       CommentLike[]
@@ -69,6 +65,7 @@ model User {
   favorites          Favorite[]
   views              View[]
   manasTransactions  ManasTransaction[]
+  dailyManasActions  DailyManasAction[]
   manas              Int       @default(0)
 
   following          UserFollow[] @relation("Follower")
@@ -170,7 +167,7 @@ model Favorite {
 }
 
 // ============================================
-// VUES (SYSTÈME TIKTOK - 1 VUE = 1 PERSONNE)
+// VUES
 // ============================================
 model View {
   id          String   @id @default(uuid())
@@ -191,13 +188,13 @@ model View {
 }
 
 // ============================================
-// ✅ MANAS TRANSACTIONS
+// MANAS TRANSACTIONS
 // ============================================
 model ManasTransaction {
   id          String   @id @default(uuid())
   userId      String
   user        User     @relation(fields: [userId], references: [id], onDelete: Cascade)
-  amount      Int      // Positif = gain, Négatif = dépense
+  amount      Int
   type        ManasTransactionType
   description String
   metadata    Json?
@@ -222,6 +219,28 @@ enum ManasTransactionType {
   GIFT_SENT
   GIFT_RECEIVED
   COLLABORATION
+}
+
+// ============================================
+// ✅ DAILY MANAS ACTIONS (LIMITE QUOTIDIENNE)
+// ============================================
+model DailyManasAction {
+  id          String   @id @default(uuid())
+  userId      String
+  user        User     @relation(fields: [userId], references: [id], onDelete: Cascade)
+  actionType  DailyActionType
+  count       Int      @default(1)
+  date        DateTime @default(now())
+  updatedAt   DateTime @updatedAt
+
+  @@unique([userId, actionType, date])
+  @@index([userId, date])
+}
+
+enum DailyActionType {
+  LIKE
+  COMMENT
+  READ
 }
 
 // ============================================
