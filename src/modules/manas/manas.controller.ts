@@ -53,6 +53,16 @@ export class ManasController {
   }
 
   // ============================================
+  // ✅ GAGNER DES MANAS POUR LES VUES
+  // ============================================
+  @Post('views-earned')
+  @UseGuards(JwtAuthGuard)
+  async onViewsEarned(@Req() req: any) {
+    const userId = req.user?.id || req.user?.sub;
+    return this.manasService.onViewsEarned(userId);
+  }
+
+  // ============================================
   // ENVOYER DES MANAS À UN AMI
   // ============================================
   @Post('send')
@@ -84,7 +94,7 @@ export class ManasController {
   }
 
   // ============================================
-  // COLLABORER AVEC UN DESSINATEUR
+  // COLLABORATION AVEC UN DESSINATEUR
   // ============================================
   @Post('collaborate')
   @UseGuards(JwtAuthGuard)
@@ -101,10 +111,8 @@ export class ManasController {
   }
 
   // ============================================
-  // (INTERNE) ACTIONS QUI GAGNENT DES MANAS
+  // 📖 LECTURE D'UN CHAPITRE
   // ============================================
-
-  // 📖 Lecture d'un chapitre
   @Post('event/chapter-read')
   @UseGuards(JwtAuthGuard)
   async onChapterRead(
@@ -113,38 +121,5 @@ export class ManasController {
   ) {
     const userId = req.user?.id || req.user?.sub;
     return this.manasService.onChapterRead(userId, body.chapterId, body.mangaId);
-  }
-
-  // ❤️ Like reçu
-  @Post('event/like-received')
-  @UseGuards(JwtAuthGuard)
-  async onLikeReceived(
-    @Req() req: any,
-    @Body() body: { mangaId: string },
-  ) {
-    const userId = req.user?.id || req.user?.sub;
-    return this.manasService.onLikeReceived(userId, body.mangaId);
-  }
-
-  // 💬 Commentaire reçu
-  @Post('event/comment-received')
-  @UseGuards(JwtAuthGuard)
-  async onCommentReceived(
-    @Req() req: any,
-    @Body() body: { mangaId: string },
-  ) {
-    const userId = req.user?.id || req.user?.sub;
-    return this.manasService.onCommentReceived(userId, body.mangaId);
-  }
-
-  // 👥 Nouvel abonné
-  @Post('event/new-subscriber')
-  @UseGuards(JwtAuthGuard)
-  async onNewSubscriber(
-    @Req() req: any,
-    @Body() body: { followerId: string },
-  ) {
-    const userId = req.user?.id || req.user?.sub;
-    return this.manasService.onNewSubscriber(userId, body.followerId);
   }
 }
