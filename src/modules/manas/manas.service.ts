@@ -13,7 +13,7 @@ export class ManasService {
   async getBalance(userId: string) {
     const user = await this.prisma.user.findUnique({
       where: { id: userId },
-      select: { manas: true, username: true },
+      select: { manas: true, username: true, role: true },
     });
 
     if (!user) {
@@ -23,6 +23,7 @@ export class ManasService {
     return {
       balance: user.manas,
       username: user.username,
+      role: user.role,
     };
   }
 
@@ -168,6 +169,17 @@ export class ManasService {
       select: { role: true },
     });
     return user?.role === 'CREATOR' || user?.role === 'ADMIN';
+  }
+
+  // ============================================
+  // ✅ VÉRIFIER SI L'UTILISATEUR EST LECTEUR
+  // ============================================
+  private async isReader(userId: string): Promise<boolean> {
+    const user = await this.prisma.user.findUnique({
+      where: { id: userId },
+      select: { role: true },
+    });
+    return user?.role === 'READER';
   }
 
   // ============================================
