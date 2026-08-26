@@ -11,7 +11,7 @@ export class BalanceService {
   constructor(private prisma: PrismaService) {}
 
   // ============================================
-  // DEMANDE DE RETRAIT
+  // DEMANDE DE RETRAIT (CORRIGÉ)
   // ============================================
   async requestWithdrawal(
     userId: string,
@@ -47,22 +47,24 @@ export class BalanceService {
     const netAmount = usdAmount - fee;
 
     // 3. Créer la demande de retrait
-    const [withdrawal, updatedUser] = await this.prisma.$transaction([
-      this.prisma.payout.create({
-        data: {
-          creatorId: userId,
-          amount: netAmount,
-          currency: 'USD',
-          mobileNumber: mobileNumber,
-          status: 'PENDING',
-          metadata: {
-            manasAmount,
-            operator,
-            fee,
-            grossAmount: usdAmount,
-          },
+    const payout = await this.prisma.payout.create({
+      data: {
+        creatorId: userId,
+        amount: netAmount,
+        currency: 'USD',
+        mobileNumber: mobileNumber,
+        status: 'PENDING',
+        metadata: {
+          manasAmount,
+          operator,
+          fee,
+          grossAmount: usdAmount,
         },
-      }),
+      },
+    });
+
+    // 4. Mettre à jour le solde et créer la transaction
+    const [updatedUser] = await this.prisma.$transaction([
       this.prisma.user.update({
         where: { id: userId },
         data: { manas: { decrement: manasAmount } },
@@ -77,7 +79,7 @@ export class BalanceService {
             manasAmount,
             usdAmount: netAmount,
             fee,
-            payoutId: withdrawal.id,
+            payoutId: payout.id,
           },
         },
       }),
@@ -87,9 +89,9 @@ export class BalanceService {
       success: true,
       message: 'Demande de retrait envoyée',
       withdrawal: {
-        id: withdrawal.id,
+        id: payout.id,
         amount: netAmount,
-        status: withdrawal.status,
+        status: payout.status,
         manasAmount,
       },
       balance: updatedUser.manas,
@@ -148,9 +150,6 @@ export class BalanceService {
         transactionId: `PAY-${Date.now()}`,
       },
     });
-
-    // TODO: Envoyer une notification au créateur
-    // TODO: Intégrer l'API de paiement mobile (Orange Money / M-Pesa)
 
     return updated;
   }
@@ -216,23 +215,22 @@ export class BalanceService {
       throw new BadRequestException('Ce retrait ne peut pas être rejeté');
     }
 
-    // Rembourser les MANAS
-    const [updated] = await this.prisma.$transaction([
-      this.prisma.payout.update({
-        where: { id: payoutId },
-        data: {
-          status: 'FAILED',
-          metadata: {
-            ...(payout.metadata as any || {}),
-            rejectionReason: reason,
-          },
+    const updated = await this.prisma.payout.update({
+      where: { id: payoutId },
+      data: {
+        status: 'FAILED',
+        metadata: {
+          ...(payout.metadata as any || {}),
+          rejectionReason: reason,
         },
-      }),
-      this.prisma.user.update({
-        where: { id: payout.creatorId },
-        data: { manas: { increment: (payout.metadata as any)?.manasAmount || 0 } },
-      }),
-    ]);
+      },
+    });
+
+    // Rembourser les MANAS
+    await this.prisma.user.update({
+      where: { id: payout.creatorId },
+      data: { manas: { increment: (payout.metadata as any)?.manasAmount || 0 } },
+    });
 
     return updated;
   }
