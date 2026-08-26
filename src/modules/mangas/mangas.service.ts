@@ -90,10 +90,25 @@ export class MangasService {
   }
 
   // ============================================
-  // 1. CRÉATION D'UN MANGA
+  // 1. CRÉATION D'UN MANGA (CORRIGÉ)
   // ============================================
   async create(userId: string, dto: any) {
     const slug = await this.generateUniqueSlug(dto.title);
+
+    // ✅ VÉRIFIER SI L'UTILISATEUR EST DÉJÀ CRÉATEUR
+    const user = await this.prisma.user.findUnique({
+      where: { id: userId },
+      select: { role: true },
+    });
+
+    // ✅ SI C'EST UN READER, LE PASSER EN CREATOR
+    if (user?.role === 'READER') {
+      await this.prisma.user.update({
+        where: { id: userId },
+        data: { role: 'CREATOR' },
+      });
+      console.log(`✅ Utilisateur ${userId} promu au rôle CREATOR`);
+    }
 
     return this.prisma.manga.create({
       data: {
@@ -508,18 +523,15 @@ export class MangasService {
   }
 
   // ============================================
-  // ✅ 11. INCRÉMENTER LES VUES (AJOUTÉ)
+  // ✅ 11. INCRÉMENTER LES VUES
   // ============================================
   async incrementView(identifier: string, userId?: string) {
-    // 1. Récupérer le manga
     const manga = await this.findByIdOrSlug(identifier);
     
-    // 2. Ne pas compter les vues du propriétaire
     if (userId && manga.authorId === userId) {
       return { viewsCount: manga.viewsCount };
     }
 
-    // 3. Incrémenter les vues
     const updated = await this.prisma.manga.update({
       where: { id: manga.id },
       data: { viewsCount: { increment: 1 } },
