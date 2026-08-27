@@ -283,13 +283,44 @@ export class InkstreamService {
   }
 
   // ============================================
-  // ✅ REGARDER UN ÉPISODE (AVEC MANAS)
+  // ✅ REGARDER UN ÉPISODE (AVEC MANAS) - CORRIGÉ
   // ============================================
   async watchEpisode(userId: string, animeId: string, episodeNumber: number) {
-    // 1. Vérifier l'anime
-    const anime = await this.prisma.inkStreamAnime.findUnique({
+    // 1. Vérifier l'anime en base
+    let anime = await this.prisma.inkStreamAnime.findUnique({
       where: { id: animeId },
     });
+
+    // 2. Si l'anime n'est pas en base, le chercher sur AniList et le créer
+    if (!anime) {
+      const isNumeric = /^\d+$/.test(animeId);
+      if (isNumeric) {
+        try {
+          const anilistAnime = await this.movieboxService.getAnimeDetails(animeId);
+          if (anilistAnime) {
+            // Créer l'anime en base
+            anime = await this.prisma.inkStreamAnime.create({
+              data: {
+                title: anilistAnime.title,
+                description: anilistAnime.description || '',
+                coverImage: anilistAnime.coverImage || '',
+                genre: anilistAnime.genre || [],
+                source: 'anilist',
+                externalId: animeId,
+                externalUrl: `https://anilist.co/anime/${animeId}`,
+                rating: anilistAnime.rating || 0,
+                episodesCount: anilistAnime.episodesCount || 0,
+                isActive: true,
+                lastSyncAt: new Date(),
+              },
+            });
+            console.log(`✅ Anime "${anilistAnime.title}" créé en base avec ID ${anime.id}`);
+          }
+        } catch (error) {
+          console.warn('⚠️ Erreur récupération AniList:', error.message);
+        }
+      }
+    }
 
     if (!anime) {
       throw new NotFoundException('Anime non trouvé');
@@ -299,7 +330,7 @@ export class InkstreamService {
     let episode = await this.prisma.inkStreamEpisode.findUnique({
       where: {
         animeId_episodeNumber: {
-          animeId,
+          animeId: anime.id,
           episodeNumber,
         },
       },
@@ -309,7 +340,7 @@ export class InkstreamService {
     if (!episode) {
       episode = await this.prisma.inkStreamEpisode.create({
         data: {
-          animeId,
+          animeId: anime.id,
           episodeNumber,
           title: `Épisode ${episodeNumber}`,
           videoUrl: '',
@@ -321,7 +352,7 @@ export class InkstreamService {
     // 4. Consommer 1 MANA
     let remainingManas = 0;
     try {
-      const result = await this.manasService.consumeMana(userId, animeId, episodeNumber);
+      const result = await this.manasService.consumeMana(userId, anime.id, episodeNumber);
       remainingManas = result.remainingManas;
     } catch (error) {
       throw new BadRequestException(error.message || 'MANAS insuffisants');
@@ -329,7 +360,7 @@ export class InkstreamService {
 
     // 5. Récupérer le lien de streaming
     const videoResult = await this.movieboxService.getEpisodeVideo(
-      anime.externalId || animeId,
+      anime.externalId || anime.id,
       episodeNumber
     );
 
@@ -356,7 +387,7 @@ export class InkstreamService {
       create: {
         userId,
         episodeId: episode.id,
-        animeId,
+        animeId: anime.id,
         progress: 0,
       },
     });
