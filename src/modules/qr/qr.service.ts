@@ -8,27 +8,39 @@ export class QrService {
   constructor(private prisma: PrismaService) {}
 
   // ============================================
-  // GÉNÉRER UN QR CODE POUR UN UTILISATEUR
+  // GÉNÉRER UN QR CODE POUR UN UTILISATEUR (AVEC COULEUR)
   // ============================================
   async generateQRCode(userId: string) {
     const user = await this.prisma.user.findUnique({
       where: { id: userId },
-      select: { id: true, username: true, avatarUrl: true, isCertified: true },
+      select: {
+        id: true,
+        username: true,
+        avatarUrl: true,
+        isCertified: true,
+        premiumActive: true,
+        qrColor: true,
+        badgeColor: true,
+      },
     });
 
     if (!user) {
       throw new NotFoundException('Utilisateur non trouvé');
     }
 
+    // ✅ Utiliser la couleur QR ou la couleur du badge ou la couleur par défaut
+    const qrColor = user.qrColor || user.badgeColor || '#3B82F6';
+
     const baseUrl = process.env.FRONTEND_URL || 'https://ink-frontend.vercel.app';
     const qrData = `${baseUrl}/qr/${user.id}`;
 
+    // ✅ Générer le QR avec la couleur personnalisée
     const qrImage = await QRCode.toDataURL(qrData, {
       errorCorrectionLevel: 'H',
       margin: 2,
       width: 300,
       color: {
-        dark: '#000000',
+        dark: qrColor,
         light: '#FFFFFF',
       },
     });
@@ -43,7 +55,40 @@ export class QrService {
       qrData,
       qrImage,
       scanCount,
+      qrColor,
+      isPremium: user.premiumActive,
+      isCertified: user.isCertified,
     };
+  }
+
+  // ============================================
+  // METTRE À JOUR LA COULEUR DU QR (PREMIUM UNIQUEMENT)
+  // ============================================
+  async updateQRColor(userId: string, color: string) {
+    const user = await this.prisma.user.findUnique({
+      where: { id: userId },
+      select: { premiumActive: true },
+    });
+
+    if (!user) {
+      throw new NotFoundException('Utilisateur non trouvé');
+    }
+
+    // ✅ Seuls les utilisateurs Premium peuvent changer la couleur
+    if (!user.premiumActive) {
+      throw new BadRequestException('Cette fonctionnalité est réservée aux utilisateurs Premium');
+    }
+
+    // Valider la couleur (format hexadécimal)
+    const hexRegex = /^#([A-Fa-f0-9]{6}|[A-Fa-f0-9]{3})$/;
+    if (!hexRegex.test(color)) {
+      throw new BadRequestException('Couleur invalide. Utilisez un format hexadécimal (ex: #3B82F6)');
+    }
+
+    return this.prisma.user.update({
+      where: { id: userId },
+      data: { qrColor: color },
+    });
   }
 
   // ============================================
