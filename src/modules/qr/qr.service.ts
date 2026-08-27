@@ -40,7 +40,6 @@ export class QrService {
 
     if (isPremium) {
       // ✅ PREMIUM : QR avec dégradé de couleurs
-      // On génère le QR en noir/blanc d'abord
       qrBuffer = await QRCode.toBuffer(qrData, {
         errorCorrectionLevel: 'H',
         margin: 0,
@@ -51,7 +50,6 @@ export class QrService {
         },
       });
 
-      // Créer un dégradé coloré
       const gradientColors = [
         baseColor,
         this.adjustBrightness(baseColor, 30),
@@ -59,7 +57,6 @@ export class QrService {
         this.shiftHue(baseColor, -30),
       ];
 
-      // Coloriser le QR avec le dégradé
       qrBuffer = await this.applyGradientToQR(qrBuffer, gradientColors);
     } else {
       // ✅ STANDARD : QR avec couleur unie
@@ -166,6 +163,7 @@ export class QrService {
       qrImage,
       scanCount,
       qrColor: baseColor,
+      badgeColor: user.badgeColor, // ✅ AJOUTÉ
       isPremium,
       isCertified: user.isCertified,
       avatarUrl: user.avatarUrl,
@@ -176,16 +174,12 @@ export class QrService {
   // 🎨 APPLIQUER UN DÉGRADÉ SUR LE QR
   // ============================================
   private async applyGradientToQR(qrBuffer: Buffer, colors: string[]): Promise<Buffer> {
-    // Convertir le QR en image avec les couleurs du dégradé
-    // On utilise sharp pour coloriser les zones noires avec le dégradé
     const image = sharp(qrBuffer);
     const metadata = await image.metadata();
     
-    // Créer un dégradé horizontal
     const gradientWidth = metadata.width || 600;
     const gradientHeight = metadata.height || 600;
     
-    // Générer un dégradé SVG
     const stops = colors.map((color, i) => 
       `<stop offset="${(i / (colors.length - 1)) * 100}%" stop-color="${color}" />`
     ).join('');
@@ -203,7 +197,6 @@ export class QrService {
 
     const gradientImage = await sharp(gradientSvg).png().toBuffer();
 
-    // Appliquer le dégradé sur les parties noires du QR
     return await sharp(qrBuffer)
       .composite([
         {
@@ -262,7 +255,6 @@ export class QrService {
   }
 
   private shiftHue(hex: string, degrees: number): string {
-    // Simplifié : retourne une variante de la couleur
     const rgb = this.hexToRgb(hex);
     const r = Math.min(255, Math.max(0, rgb.r + degrees));
     const g = Math.min(255, Math.max(0, rgb.g - degrees));
