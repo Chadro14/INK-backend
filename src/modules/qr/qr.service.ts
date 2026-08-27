@@ -68,21 +68,21 @@ export class QrService {
     const baseUrl = process.env.FRONTEND_URL || 'https://ink-frontend.vercel.app';
     const qrData = `${baseUrl}/qr/${user.id}`;
 
-    // 1. Générer le QR code en buffer
-    let qrBuffer;
+    // 1. Générer le QR code en utilisant toDataURL (compatible toutes versions)
+    let qrBuffer: Buffer;
 
     if (isPremium) {
       // ✅ PREMIUM : QR avec dégradé de couleurs
-      const rgb = this.hexToRgb(baseColor);
-      qrBuffer = await QRCode.toBuffer(qrData, {
-        level: 'H',        // ✅ CORRECTION : errorCorrectionLevel → level
+      const qrDataUrl = await QRCode.toDataURL(qrData, {
+        errorCorrectionLevel: 'H',
         margin: 0,
         width: 600,
         color: {
-          dark: rgb,
-          light: { r: 255, g: 255, b: 255 },
+          dark: baseColor,  // on garde la couleur en hex
+          light: '#FFFFFF',
         },
       });
+      qrBuffer = Buffer.from(qrDataUrl.split(',')[1], 'base64');
 
       const gradientColors = [
         baseColor,
@@ -94,16 +94,16 @@ export class QrService {
       qrBuffer = await this.applyGradientToQR(qrBuffer, gradientColors);
     } else {
       // ✅ STANDARD : QR avec couleur unie
-      const rgb = this.hexToRgb(baseColor);
-      qrBuffer = await QRCode.toBuffer(qrData, {
-        level: 'H',        // ✅ CORRECTION
+      const qrDataUrl = await QRCode.toDataURL(qrData, {
+        errorCorrectionLevel: 'H',
         margin: 0,
         width: 600,
         color: {
-          dark: rgb,
-          light: { r: 255, g: 255, b: 255 },
+          dark: baseColor,
+          light: '#FFFFFF',
         },
       });
+      qrBuffer = Buffer.from(qrDataUrl.split(',')[1], 'base64');
     }
 
     // 2. Ajouter une marge blanche
