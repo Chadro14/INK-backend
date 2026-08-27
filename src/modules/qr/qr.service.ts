@@ -10,6 +10,39 @@ export class QrService {
   constructor(private prisma: PrismaService) {}
 
   // ============================================
+  // 🛠 UTILITAIRES COULEURS (déplacées en haut)
+  // ============================================
+  private hexToRgb(hex: string): { r: number; g: number; b: number } {
+    const result = /^#?([a-f\d]{2})([a-f\d]{2})([a-f\d]{2})$/i.exec(hex);
+    return result ? {
+      r: parseInt(result[1], 16),
+      g: parseInt(result[2], 16),
+      b: parseInt(result[3], 16),
+    } : { r: 59, g: 130, b: 246 };
+  }
+
+  private hexToRgba(hex: string, alpha: number = 1): { r: number; g: number; b: number; alpha: number } {
+    const rgb = this.hexToRgb(hex);
+    return { ...rgb, alpha };
+  }
+
+  private adjustBrightness(hex: string, percent: number): string {
+    const rgb = this.hexToRgb(hex);
+    const r = Math.min(255, Math.max(0, rgb.r + percent));
+    const g = Math.min(255, Math.max(0, rgb.g + percent));
+    const b = Math.min(255, Math.max(0, rgb.b + percent));
+    return `#${[r, g, b].map(c => c.toString(16).padStart(2, '0')).join('')}`;
+  }
+
+  private shiftHue(hex: string, degrees: number): string {
+    const rgb = this.hexToRgb(hex);
+    const r = Math.min(255, Math.max(0, rgb.r + degrees));
+    const g = Math.min(255, Math.max(0, rgb.g - degrees));
+    const b = Math.min(255, Math.max(0, rgb.b + degrees / 2));
+    return `#${[r, g, b].map(c => c.toString(16).padStart(2, '0')).join('')}`;
+  }
+
+  // ============================================
   // GÉNÉRER UN QR CODE AVEC EFFETS PREMIUM
   // ============================================
   async generateQRCode(userId: string) {
@@ -40,13 +73,14 @@ export class QrService {
 
     if (isPremium) {
       // ✅ PREMIUM : QR avec dégradé de couleurs
+      const rgb = this.hexToRgb(baseColor);
       qrBuffer = await QRCode.toBuffer(qrData, {
         errorCorrectionLevel: 'H',
         margin: 0,
         width: 600,
         color: {
-          dark: '#000000',
-          light: '#FFFFFF',
+          dark: rgb, // ✅ CORRECTION : on passe un objet RGB
+          light: { r: 255, g: 255, b: 255 },
         },
       });
 
@@ -60,13 +94,14 @@ export class QrService {
       qrBuffer = await this.applyGradientToQR(qrBuffer, gradientColors);
     } else {
       // ✅ STANDARD : QR avec couleur unie
+      const rgb = this.hexToRgb(baseColor);
       qrBuffer = await QRCode.toBuffer(qrData, {
         errorCorrectionLevel: 'H',
         margin: 0,
         width: 600,
         color: {
-          dark: baseColor,
-          light: '#FFFFFF',
+          dark: rgb, // ✅ CORRECTION
+          light: { r: 255, g: 255, b: 255 },
         },
       });
     }
@@ -163,7 +198,7 @@ export class QrService {
       qrImage,
       scanCount,
       qrColor: baseColor,
-      badgeColor: user.badgeColor, // ✅ AJOUTÉ
+      badgeColor: user.badgeColor,
       isPremium,
       isCertified: user.isCertified,
       avatarUrl: user.avatarUrl,
@@ -212,8 +247,7 @@ export class QrService {
   // ============================================
   private async addGlowEffect(qrBuffer: Buffer, color: string): Promise<Buffer> {
     const glowSize = 20;
-    const glowColor = this.hexToRgb(color);
-    glowColor.a = 0.3;
+    const rgba = this.hexToRgba(color, 0.3);
 
     return await sharp(qrBuffer)
       .extend({
@@ -221,7 +255,7 @@ export class QrService {
         bottom: glowSize,
         left: glowSize,
         right: glowSize,
-        background: glowColor,
+        background: rgba,
       })
       .extend({
         top: 10,
@@ -231,35 +265,6 @@ export class QrService {
         background: { r: 255, g: 255, b: 255, alpha: 0.05 },
       })
       .toBuffer();
-  }
-
-  // ============================================
-  // 🛠 UTILITAIRES COULEURS
-  // ============================================
-  private hexToRgb(hex: string): { r: number; g: number; b: number; a: number } {
-    const result = /^#?([a-f\d]{2})([a-f\d]{2})([a-f\d]{2})$/i.exec(hex);
-    return result ? {
-      r: parseInt(result[1], 16),
-      g: parseInt(result[2], 16),
-      b: parseInt(result[3], 16),
-      a: 1
-    } : { r: 59, g: 130, b: 246, a: 1 };
-  }
-
-  private adjustBrightness(hex: string, percent: number): string {
-    const rgb = this.hexToRgb(hex);
-    const r = Math.min(255, Math.max(0, rgb.r + percent));
-    const g = Math.min(255, Math.max(0, rgb.g + percent));
-    const b = Math.min(255, Math.max(0, rgb.b + percent));
-    return `#${[r, g, b].map(c => c.toString(16).padStart(2, '0')).join('')}`;
-  }
-
-  private shiftHue(hex: string, degrees: number): string {
-    const rgb = this.hexToRgb(hex);
-    const r = Math.min(255, Math.max(0, rgb.r + degrees));
-    const g = Math.min(255, Math.max(0, rgb.g - degrees));
-    const b = Math.min(255, Math.max(0, rgb.b + degrees / 2));
-    return `#${[r, g, b].map(c => c.toString(16).padStart(2, '0')).join('')}`;
   }
 
   // ============================================
