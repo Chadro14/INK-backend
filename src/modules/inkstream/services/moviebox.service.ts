@@ -5,7 +5,6 @@ import axios from 'axios';
 @Injectable()
 export class MovieboxService {
   private readonly ANILIST_URL = 'https://graphql.anilist.co';
-  // ✅ NOUVELLE URL QUI FONCTIONNE
   private readonly CONSUMET_URL = 'https://consumet-api.onrender.com';
 
   // ============================================
@@ -252,20 +251,42 @@ export class MovieboxService {
   }
 
   // ============================================
-  // ✅ API 1 : STREAMING VIA CONSUMET (NOUVELLE URL)
+  // ✅ RÉCUPÉRER L'ID GOGOANIME DEPUIS ANILIST
+  // ============================================
+  async getGogoanimeIdFromAnilist(anilistId: string): Promise<string | null> {
+    try {
+      const response = await axios.get(
+        `${this.CONSUMET_URL}/meta/anilist/info/${anilistId}`,
+        { timeout: 10000 }
+      );
+      
+      const gogoId = response.data?.id;
+      if (gogoId) {
+        console.log(`✅ ID Gogoanime trouvé: ${gogoId} pour AniList ID ${anilistId}`);
+        return gogoId;
+      }
+      return null;
+    } catch (error) {
+      console.warn(`⚠️ Erreur récupération ID Gogoanime pour ${anilistId}:`, error.message);
+      return null;
+    }
+  }
+
+  // ============================================
+  // ✅ API 1 : STREAMING VIA CONSUMET
   // ============================================
   async getEpisodeStreamFromConsumet(animeId: string, episodeNumber: number): Promise<string> {
     try {
       // Essayer avec Gogoanime
-      const response = await axios.get(
-        `${this.CONSUMET_URL}/anime/gogoanime/watch/${animeId}-episode-${episodeNumber}`,
-        { timeout: 15000 }
-      );
-
+      const url = `${this.CONSUMET_URL}/anime/gogoanime/watch/${animeId}-episode-${episodeNumber}`;
+      console.log(`📡 Appel Consumet: ${url}`);
+      
+      const response = await axios.get(url, { timeout: 15000 });
       const sources = response.data?.sources || [];
+      
       if (sources.length > 0) {
-        // Prendre la meilleure qualité (1080p ou la première)
         const bestSource = sources.find((s: any) => s.quality === '1080p') || sources[0];
+        console.log(`✅ Source Consumet trouvée: ${bestSource?.url?.substring(0, 50)}...`);
         return bestSource?.url || '';
       }
 
@@ -277,12 +298,14 @@ export class MovieboxService {
       const zoroSources = zoroResponse.data?.sources || [];
       if (zoroSources.length > 0) {
         const bestZoro = zoroSources.find((s: any) => s.quality === '1080p') || zoroSources[0];
+        console.log(`✅ Source Zoro trouvée: ${bestZoro?.url?.substring(0, 50)}...`);
         return bestZoro?.url || '';
       }
 
+      console.log(`⚠️ Aucune source Consumet pour ${animeId}-ep-${episodeNumber}`);
       return '';
     } catch (error) {
-      console.warn('⚠️ Consumet stream failed:', error.message);
+      console.warn(`⚠️ Consumet stream failed pour ${animeId}:`, error.message);
       return '';
     }
   }
@@ -304,25 +327,42 @@ export class MovieboxService {
   }
 
   // ============================================
-  // ✅ MÉTHODE PRINCIPALE POUR OBTENIR UNE VIDÉO
+  // ✅ MÉTHODE PRINCIPALE POUR OBTENIR UNE VIDÉO (AVEC FALLBACK GOGOANIME)
   // ============================================
   async getEpisodeVideo(animeId: string, episodeNumber: number): Promise<{
     url: string;
     source: 'consumet' | 'moviebox' | 'none';
   }> {
-    // 1. Essayer Consumet
+    console.log(`🔍 Recherche vidéo pour animeId: ${animeId}, épisode: ${episodeNumber}`);
+
+    // 1. Essayer Consumet directement avec l'ID fourni
     let url = await this.getEpisodeStreamFromConsumet(animeId, episodeNumber);
     if (url) {
       return { url, source: 'consumet' };
     }
 
-    // 2. Essayer MovieBox
+    // 2. Essayer de trouver l'ID Gogoanime via AniList
+    const isNumeric = /^\d+$/.test(animeId);
+    if (isNumeric) {
+      console.log(`🔄 Tentative de récupération de l'ID Gogoanime pour l'ID AniList: ${animeId}`);
+      const gogoId = await this.getGogoanimeIdFromAnilist(animeId);
+      if (gogoId && gogoId !== animeId) {
+        console.log(`🔄 Réessai avec l'ID Gogoanime: ${gogoId}`);
+        url = await this.getEpisodeStreamFromConsumet(gogoId, episodeNumber);
+        if (url) {
+          return { url, source: 'consumet' };
+        }
+      }
+    }
+
+    // 3. Essayer MovieBox
     url = await this.getEpisodeStreamFromMovieBox(animeId, episodeNumber);
     if (url) {
       return { url, source: 'moviebox' };
     }
 
-    // 3. Aucune source
+    // 4. Aucune source
+    console.log(`❌ Aucune source trouvée pour animeId: ${animeId}, épisode: ${episodeNumber}`);
     return { url: '', source: 'none' };
   }
 
@@ -330,7 +370,6 @@ export class MovieboxService {
   // ✅ API 3 : FALLBACK ULTIME
   // ============================================
   async getFallbackVideo(animeId: string, episodeNumber: number): Promise<string> {
-    // Retourner une URL de recherche Google si tout échoue
     return `https://www.google.com/search?q=watch+${animeId}+episode+${episodeNumber}`;
   }
 }
