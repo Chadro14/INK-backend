@@ -1,9 +1,8 @@
-
 // src/modules/qr/qr.service.ts
 import { Injectable, NotFoundException, BadRequestException } from '@nestjs/common';
 import { PrismaService } from '../../prisma/prisma.service';
 import QRCode from 'qrcode';
-import sharp from 'sharp'; // ✅ IMPORT CORRIGÉ
+import sharp from 'sharp';
 import axios from 'axios';
 
 @Injectable()
@@ -11,7 +10,7 @@ export class QrService {
   constructor(private prisma: PrismaService) {}
 
   // ============================================
-  // GÉNÉRER UN QR CODE AVEC AVATAR AU CENTRE
+  // GÉNÉRER UN QR CODE AVEC EFFETS PREMIUM
   // ============================================
   async generateQRCode(userId: string) {
     const user = await this.prisma.user.findUnique({
@@ -31,22 +30,51 @@ export class QrService {
       throw new NotFoundException('Utilisateur non trouvé');
     }
 
-    const qrColor = user.qrColor || user.badgeColor || '#3B82F6';
+    const isPremium = user.premiumActive;
+    const baseColor = user.qrColor || user.badgeColor || '#3B82F6';
     const baseUrl = process.env.FRONTEND_URL || 'https://ink-frontend.vercel.app';
     const qrData = `${baseUrl}/qr/${user.id}`;
 
     // 1. Générer le QR code en buffer
-    const qrBuffer = await QRCode.toBuffer(qrData, {
-      errorCorrectionLevel: 'H',
-      margin: 0,
-      width: 600,
-      color: {
-        dark: qrColor,
-        light: '#FFFFFF',
-      },
-    });
+    let qrBuffer;
 
-    // 2. Ajouter une marge blanche autour du QR
+    if (isPremium) {
+      // ✅ PREMIUM : QR avec dégradé de couleurs
+      // On génère le QR en noir/blanc d'abord
+      qrBuffer = await QRCode.toBuffer(qrData, {
+        errorCorrectionLevel: 'H',
+        margin: 0,
+        width: 600,
+        color: {
+          dark: '#000000',
+          light: '#FFFFFF',
+        },
+      });
+
+      // Créer un dégradé coloré
+      const gradientColors = [
+        baseColor,
+        this.adjustBrightness(baseColor, 30),
+        this.shiftHue(baseColor, 30),
+        this.shiftHue(baseColor, -30),
+      ];
+
+      // Coloriser le QR avec le dégradé
+      qrBuffer = await this.applyGradientToQR(qrBuffer, gradientColors);
+    } else {
+      // ✅ STANDARD : QR avec couleur unie
+      qrBuffer = await QRCode.toBuffer(qrData, {
+        errorCorrectionLevel: 'H',
+        margin: 0,
+        width: 600,
+        color: {
+          dark: baseColor,
+          light: '#FFFFFF',
+        },
+      });
+    }
+
+    // 2. Ajouter une marge blanche
     let finalQr = await sharp(qrBuffer)
       .extend({
         top: 40,
@@ -57,7 +85,7 @@ export class QrService {
       })
       .toBuffer();
 
-    // 3. Ajouter l'avatar au centre (si disponible)
+    // 3. Ajouter l'avatar au centre
     if (user.avatarUrl) {
       try {
         const avatarResponse = await axios.get(user.avatarUrl, {
@@ -73,7 +101,6 @@ export class QrService {
           .resize(logoSize, logoSize, { fit: 'cover' })
           .toBuffer();
 
-        // Masque circulaire
         const mask = Buffer.from(
           `<svg width="${logoSize}" height="${logoSize}">
             <circle cx="${logoSize/2}" cy="${logoSize/2}" r="${logoSize/2}" fill="white"/>
@@ -121,6 +148,11 @@ export class QrService {
       }
     }
 
+    // 4. ✅ PREMIUM : Ajouter un effet "brillant" (glow)
+    if (isPremium) {
+      finalQr = await this.addGlowEffect(finalQr, baseColor);
+    }
+
     const qrImage = `data:image/png;base64,${finalQr.toString('base64')}`;
 
     const scanCount = await this.prisma.qrScan.count({
@@ -133,15 +165,113 @@ export class QrService {
       qrData,
       qrImage,
       scanCount,
-      qrColor,
-      isPremium: user.premiumActive,
+      qrColor: baseColor,
+      isPremium,
       isCertified: user.isCertified,
       avatarUrl: user.avatarUrl,
     };
   }
 
   // ============================================
-  // METTRE À JOUR LA COULEUR DU QR (PREMIUM UNIQUEMENT)
+  // 🎨 APPLIQUER UN DÉGRADÉ SUR LE QR
+  // ============================================
+  private async applyGradientToQR(qrBuffer: Buffer, colors: string[]): Promise<Buffer> {
+    // Convertir le QR en image avec les couleurs du dégradé
+    // On utilise sharp pour coloriser les zones noires avec le dégradé
+    const image = sharp(qrBuffer);
+    const metadata = await image.metadata();
+    
+    // Créer un dégradé horizontal
+    const gradientWidth = metadata.width || 600;
+    const gradientHeight = metadata.height || 600;
+    
+    // Générer un dégradé SVG
+    const stops = colors.map((color, i) => 
+      `<stop offset="${(i / (colors.length - 1)) * 100}%" stop-color="${color}" />`
+    ).join('');
+
+    const gradientSvg = Buffer.from(`
+      <svg width="${gradientWidth}" height="${gradientHeight}">
+        <defs>
+          <linearGradient id="g" x1="0%" y1="0%" x2="100%" y2="100%">
+            ${stops}
+          </linearGradient>
+        </defs>
+        <rect width="100%" height="100%" fill="url(#g)" />
+      </svg>
+    `);
+
+    const gradientImage = await sharp(gradientSvg).png().toBuffer();
+
+    // Appliquer le dégradé sur les parties noires du QR
+    return await sharp(qrBuffer)
+      .composite([
+        {
+          input: gradientImage,
+          blend: 'multiply',
+        },
+      ])
+      .toBuffer();
+  }
+
+  // ============================================
+  // ✨ AJOUTER UN EFFET BRILLANT (GLOW)
+  // ============================================
+  private async addGlowEffect(qrBuffer: Buffer, color: string): Promise<Buffer> {
+    const glowSize = 20;
+    const glowColor = this.hexToRgb(color);
+    glowColor.a = 0.3;
+
+    return await sharp(qrBuffer)
+      .extend({
+        top: glowSize,
+        bottom: glowSize,
+        left: glowSize,
+        right: glowSize,
+        background: glowColor,
+      })
+      .extend({
+        top: 10,
+        bottom: 10,
+        left: 10,
+        right: 10,
+        background: { r: 255, g: 255, b: 255, alpha: 0.05 },
+      })
+      .toBuffer();
+  }
+
+  // ============================================
+  // 🛠 UTILITAIRES COULEURS
+  // ============================================
+  private hexToRgb(hex: string): { r: number; g: number; b: number; a: number } {
+    const result = /^#?([a-f\d]{2})([a-f\d]{2})([a-f\d]{2})$/i.exec(hex);
+    return result ? {
+      r: parseInt(result[1], 16),
+      g: parseInt(result[2], 16),
+      b: parseInt(result[3], 16),
+      a: 1
+    } : { r: 59, g: 130, b: 246, a: 1 };
+  }
+
+  private adjustBrightness(hex: string, percent: number): string {
+    const rgb = this.hexToRgb(hex);
+    const r = Math.min(255, Math.max(0, rgb.r + percent));
+    const g = Math.min(255, Math.max(0, rgb.g + percent));
+    const b = Math.min(255, Math.max(0, rgb.b + percent));
+    return `#${[r, g, b].map(c => c.toString(16).padStart(2, '0')).join('')}`;
+  }
+
+  private shiftHue(hex: string, degrees: number): string {
+    // Simplifié : retourne une variante de la couleur
+    const rgb = this.hexToRgb(hex);
+    const r = Math.min(255, Math.max(0, rgb.r + degrees));
+    const g = Math.min(255, Math.max(0, rgb.g - degrees));
+    const b = Math.min(255, Math.max(0, rgb.b + degrees / 2));
+    return `#${[r, g, b].map(c => c.toString(16).padStart(2, '0')).join('')}`;
+  }
+
+  // ============================================
+  // METTRE À JOUR LA COULEUR DU QR
   // ============================================
   async updateQRColor(userId: string, color: string) {
     const user = await this.prisma.user.findUnique({
@@ -169,7 +299,7 @@ export class QrService {
   }
 
   // ============================================
-  // RÉCUPÉRER LES STATISTIQUES DE SCAN
+  // STATISTIQUES DE SCAN
   // ============================================
   async getQRStats(userId: string) {
     const [user, scans, lastScan] = await Promise.all([
@@ -250,7 +380,7 @@ export class QrService {
   }
 
   // ============================================
-  // OBTENIR LES SCANS D'UN UTILISATEUR
+  // LISTE DES SCANS
   // ============================================
   async getUserScans(userId: string, page: number = 1, limit: number = 20) {
     const skip = (page - 1) * limit;
