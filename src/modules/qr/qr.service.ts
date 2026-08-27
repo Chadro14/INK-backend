@@ -2,13 +2,15 @@
 import { Injectable, NotFoundException, BadRequestException } from '@nestjs/common';
 import { PrismaService } from '../../prisma/prisma.service';
 import QRCode from 'qrcode';
+import * as sharp from 'sharp';
+import axios from 'axios';
 
 @Injectable()
 export class QrService {
   constructor(private prisma: PrismaService) {}
 
   // ============================================
-  // GÉNÉRER UN QR CODE POUR UN UTILISATEUR (AVEC COULEUR)
+  // GÉNÉRER UN QR CODE AVEC AVATAR AU CENTRE
   // ============================================
   async generateQRCode(userId: string) {
     const user = await this.prisma.user.findUnique({
@@ -28,22 +30,109 @@ export class QrService {
       throw new NotFoundException('Utilisateur non trouvé');
     }
 
-    // ✅ Utiliser la couleur QR ou la couleur du badge ou la couleur par défaut
+    // Utiliser la couleur QR ou la couleur du badge
     const qrColor = user.qrColor || user.badgeColor || '#3B82F6';
-
     const baseUrl = process.env.FRONTEND_URL || 'https://ink-frontend.vercel.app';
     const qrData = `${baseUrl}/qr/${user.id}`;
 
-    // ✅ Générer le QR avec la couleur personnalisée
-    const qrImage = await QRCode.toDataURL(qrData, {
+    // 1. Générer le QR code en buffer
+    const qrBuffer = await QRCode.toBuffer(qrData, {
       errorCorrectionLevel: 'H',
-      margin: 2,
-      width: 300,
+      margin: 0,
+      width: 600,
       color: {
         dark: qrColor,
         light: '#FFFFFF',
       },
     });
+
+    // 2. Ajouter une marge blanche autour du QR
+    let finalQr = await sharp(qrBuffer)
+      .extend({
+        top: 40,
+        bottom: 40,
+        left: 40,
+        right: 40,
+        background: { r: 255, g: 255, b: 255, alpha: 1 },
+      })
+      .toBuffer();
+
+    // 3. Ajouter l'avatar au centre (si disponible)
+    if (user.avatarUrl) {
+      try {
+        // Télécharger l'avatar
+        const avatarResponse = await axios.get(user.avatarUrl, {
+          responseType: 'arraybuffer',
+          timeout: 10000,
+        });
+        const avatarBuffer = Buffer.from(avatarResponse.data);
+
+        // Taille du logo
+        const logoSize = 80;
+        const logoOffset = (600 + 80 - logoSize) / 2; // QR size + margins
+
+        // Redimensionner l'avatar
+        const resizedAvatar = await sharp(avatarBuffer)
+          .resize(logoSize, logoSize, { fit: 'cover' })
+          .toBuffer();
+
+        // Créer un masque circulaire
+        const mask = Buffer.from(
+          `<svg width="${logoSize}" height="${logoSize}">
+            <circle cx="${logoSize/2}" cy="${logoSize/2}" r="${logoSize/2}" fill="white"/>
+          </svg>`
+        );
+
+        // Appliquer le masque circulaire
+        const avatarWithMask = await sharp(resizedAvatar)
+          .composite([
+            {
+              input: await sharp(mask).png().toBuffer(),
+              blend: 'dest-in',
+            },
+          ])
+          .png()
+          .toBuffer();
+
+        // Ajouter une bordure blanche autour de l'avatar
+        const avatarWithBorder = await sharp(avatarWithMask)
+          .extend({
+            top: 6,
+            bottom: 6,
+            left: 6,
+            right: 6,
+            background: { r: 255, g: 255, b: 255, alpha: 1 },
+          })
+          .extend({
+            top: 3,
+            bottom: 3,
+            left: 3,
+            right: 3,
+            background: { r: 255, g: 255, b: 255, alpha: 1 },
+          })
+          .toBuffer();
+
+        // Insérer l'avatar au centre du QR
+        finalQr = await sharp(finalQr)
+          .composite([
+            {
+              input: avatarWithBorder,
+              top: logoOffset - 9,
+              left: logoOffset - 9,
+            },
+          ])
+          .toBuffer();
+      } catch (error) {
+        console.warn('⚠️ Erreur ajout avatar au QR:', error.message);
+        // Si l'avatar ne peut pas être chargé, on garde le QR sans logo
+      }
+    }
+
+    // 4. Ajouter un cadre inférieur avec le nom d'utilisateur
+    // (Cette partie est complexe avec sharp, on va la faire côté frontend)
+
+    // 5. Convertir en base64
+    const qrImage = `data:image/png;base64,${finalQr.toString('base64')}`;
 
     const scanCount = await this.prisma.qrScan.count({
       where: { userId },
@@ -58,6 +147,7 @@ export class QrService {
       qrColor,
       isPremium: user.premiumActive,
       isCertified: user.isCertified,
+      avatarUrl: user.avatarUrl,
     };
   }
 
@@ -74,12 +164,10 @@ export class QrService {
       throw new NotFoundException('Utilisateur non trouvé');
     }
 
-    // ✅ Seuls les utilisateurs Premium peuvent changer la couleur
     if (!user.premiumActive) {
       throw new BadRequestException('Cette fonctionnalité est réservée aux utilisateurs Premium');
     }
 
-    // Valider la couleur (format hexadécimal)
     const hexRegex = /^#([A-Fa-f0-9]{6}|[A-Fa-f0-9]{3})$/;
     if (!hexRegex.test(color)) {
       throw new BadRequestException('Couleur invalide. Utilisez un format hexadécimal (ex: #3B82F6)');
