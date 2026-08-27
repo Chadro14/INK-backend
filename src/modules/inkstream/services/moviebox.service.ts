@@ -5,7 +5,8 @@ import axios from 'axios';
 @Injectable()
 export class MovieboxService {
   private readonly ANILIST_URL = 'https://graphql.anilist.co';
-  private readonly CONSUMET_URL = 'https://api.consumet.org';
+  // ✅ NOUVELLE URL QUI FONCTIONNE
+  private readonly CONSUMET_URL = 'https://consumet-api.onrender.com';
 
   // ============================================
   // RECHERCHE ANILIST
@@ -251,25 +252,27 @@ export class MovieboxService {
   }
 
   // ============================================
-  // ✅ API 1 : STREAMING VIA CONSUMET
+  // ✅ API 1 : STREAMING VIA CONSUMET (NOUVELLE URL)
   // ============================================
   async getEpisodeStreamFromConsumet(animeId: string, episodeNumber: number): Promise<string> {
     try {
       // Essayer avec Gogoanime
       const response = await axios.get(
-        `${this.CONSUMET_URL}/anime/gogoanime/watch/${animeId}-episode-${episodeNumber}`
+        `${this.CONSUMET_URL}/anime/gogoanime/watch/${animeId}-episode-${episodeNumber}`,
+        { timeout: 15000 }
       );
 
       const sources = response.data?.sources || [];
       if (sources.length > 0) {
-        // Prendre la meilleure qualité (la première ou la plus haute)
+        // Prendre la meilleure qualité (1080p ou la première)
         const bestSource = sources.find((s: any) => s.quality === '1080p') || sources[0];
         return bestSource?.url || '';
       }
 
       // Essayer avec Zoro (fallback)
       const zoroResponse = await axios.get(
-        `${this.CONSUMET_URL}/anime/zoro/watch/${animeId}-${episodeNumber}`
+        `${this.CONSUMET_URL}/anime/zoro/watch/${animeId}-${episodeNumber}`,
+        { timeout: 15000 }
       );
       const zoroSources = zoroResponse.data?.sources || [];
       if (zoroSources.length > 0) {
@@ -289,9 +292,9 @@ export class MovieboxService {
   // ============================================
   async getEpisodeStreamFromMovieBox(animeId: string, episodeNumber: number): Promise<string> {
     try {
-      // URL à adapter selon l'API MovieBox réelle
       const response = await axios.get(
-        `https://api.moviebox.com/anime/${animeId}/episode/${episodeNumber}/stream`
+        `https://api.moviebox.com/anime/${animeId}/episode/${episodeNumber}/stream`,
+        { timeout: 10000 }
       );
       return response.data?.url || '';
     } catch (error) {
@@ -301,12 +304,33 @@ export class MovieboxService {
   }
 
   // ============================================
-  // ✅ API 3 : RECUPERER UNE VIDÉO DE FALLBACK
+  // ✅ MÉTHODE PRINCIPALE POUR OBTENIR UNE VIDÉO
+  // ============================================
+  async getEpisodeVideo(animeId: string, episodeNumber: number): Promise<{
+    url: string;
+    source: 'consumet' | 'moviebox' | 'none';
+  }> {
+    // 1. Essayer Consumet
+    let url = await this.getEpisodeStreamFromConsumet(animeId, episodeNumber);
+    if (url) {
+      return { url, source: 'consumet' };
+    }
+
+    // 2. Essayer MovieBox
+    url = await this.getEpisodeStreamFromMovieBox(animeId, episodeNumber);
+    if (url) {
+      return { url, source: 'moviebox' };
+    }
+
+    // 3. Aucune source
+    return { url: '', source: 'none' };
+  }
+
+  // ============================================
+  // ✅ API 3 : FALLBACK ULTIME
   // ============================================
   async getFallbackVideo(animeId: string, episodeNumber: number): Promise<string> {
-    // Cette méthode peut être utilisée si les autres API échouent
-    // Exemple : utiliser un lien YouTube ou Dailymotion
-    // Ou rediriger vers une page externe
-    return '';
+    // Retourner une URL de recherche Google si tout échoue
+    return `https://www.google.com/search?q=watch+${animeId}+episode+${episodeNumber}`;
   }
 }
