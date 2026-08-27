@@ -1,4 +1,3 @@
-
 generator client {
   provider      = "prisma-client-js"
   binaryTargets = ["native", "rhel-openssl-3.0.x"]
@@ -31,6 +30,7 @@ model User {
   isCertified        Boolean   @default(false)
   certifiedAt        DateTime?
   badgeColor         String?   @default("#2563EB")
+  qrColor            String?   @default("#3B82F6") // ✅ AJOUTÉ
   mobileNumber       String?
   mobileVerified     Boolean   @default(false)
   premiumActive      Boolean   @default(false)
