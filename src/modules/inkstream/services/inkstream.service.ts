@@ -1,535 +1,475 @@
-// src/modules/manas/manas.service.ts
+// src/modules/inkstream/services/inkstream.service.ts
 import { Injectable, NotFoundException, BadRequestException } from '@nestjs/common';
-import { PrismaService } from '../../prisma/prisma.service';
-import { ManasTransactionType, DailyActionType } from '@prisma/client';
+import { PrismaService } from '../../../prisma/prisma.service'; // ✅ CORRIGÉ
+import { MovieboxService } from './moviebox.service';
+import { ManasService } from '../../manas/manas.service';
+import { SearchAnimeDto } from '../dto/search-anime.dto';
 
 @Injectable()
-export class ManasService {
-  private readonly VIEW_TO_MANAS_RATE = 1000; // 1000 vues = 1 MANAS
-
-  constructor(private prisma: PrismaService) {}
+export class InkstreamService { // ✅ CORRECTEMENT EXPORTÉ
+  constructor(
+    private prisma: PrismaService,
+    private movieboxService: MovieboxService,
+    private manasService: ManasService,
+  ) {}
 
   // ============================================
-  // RÉCUPÉRER LE SOLDE D'UN UTILISATEUR
+  // RECHERCHER DES ANIMES (AVEC FALLBACK)
   // ============================================
-  async getBalance(userId: string) {
-    const user = await this.prisma.user.findUnique({
-      where: { id: userId },
-      select: { manas: true, username: true, role: true, premiumActive: true },
+  async searchAnimes(dto: SearchAnimeDto) {
+    const { q, page = 1, limit = 20, genre, source } = dto;
+    const skip = (page - 1) * limit;
+
+    // 1. Recherche AniList
+    if (q) {
+      try {
+        const results = await this.movieboxService.searchAnimes(q, limit);
+        if (results.length > 0) {
+          return {
+            data: results,
+            meta: {
+              total: results.length,
+              page,
+              limit,
+              source: 'anilist',
+            },
+          };
+        }
+      } catch (error) {
+        console.warn('⚠️ Anilist search failed:', error.message);
+      }
+    }
+
+    // 2. Recherche par genre
+    if (genre) {
+      try {
+        const results = await this.movieboxService.getAnimesByGenre(genre, limit);
+        if (results.length > 0) {
+          return {
+            data: results,
+            meta: {
+              total: results.length,
+              page,
+              limit,
+              source: 'anilist',
+            },
+          };
+        }
+      } catch (error) {
+        console.warn('⚠️ Anilist genre search failed:', error.message);
+      }
+    }
+
+    // 3. Fallback : Base de données
+    const where: any = {};
+    if (q) where.title = { contains: q, mode: 'insensitive' };
+    if (genre) where.genre = { has: genre };
+    if (source) where.source = source;
+
+    const dbAnimes = await this.prisma.inkStreamAnime.findMany({
+      where,
+      skip,
+      take: limit,
+      orderBy: { rating: 'desc' },
     });
 
-    if (!user) {
-      throw new NotFoundException('Utilisateur non trouvé');
+    // 4. Fallback : Tendances AniList
+    if (dbAnimes.length === 0 && !q && !genre) {
+      try {
+        const trending = await this.movieboxService.getTrendingAnimes(limit);
+        if (trending.length > 0) {
+          return {
+            data: trending,
+            meta: {
+              total: trending.length,
+              page,
+              limit,
+              source: 'anilist-trending',
+            },
+          };
+        }
+      } catch (error) {
+        console.warn('⚠️ Anilist trending failed:', error.message);
+      }
     }
 
     return {
-      balance: user.manas,
-      username: user.username,
-      role: user.role,
-      premiumActive: user.premiumActive,
-    };
-  }
-
-  // ============================================
-  // ✅ CONSOMMER 1 MANA POUR REGARDER UN ANIME
-  // ============================================
-  async consumeMana(userId: string, animeId: string, episodeNumber: number) {
-    const user = await this.prisma.user.findUnique({
-      where: { id: userId },
-      select: { manas: true, premiumActive: true },
-    });
-
-    if (!user) {
-      throw new NotFoundException('Utilisateur non trouvé');
-    }
-
-    // ✅ Les utilisateurs Premium ne paient pas en MANAS
-    if (user.premiumActive) {
-      return {
-        success: true,
-        message: 'Accès Premium - Visionnage gratuit',
-        remainingManas: user.manas,
-      };
-    }
-
-    if (user.manas < 1) {
-      throw new BadRequestException('MANAS insuffisants pour regarder cet épisode (1 MANAS requis)');
-    }
-
-    // Consommer 1 MANAS
-    const updatedUser = await this.prisma.user.update({
-      where: { id: userId },
-      data: { manas: { decrement: 1 } },
-    });
-
-    // Enregistrer la transaction
-    await this.prisma.manasTransaction.create({
-      data: {
-        userId,
-        amount: -1,
-        type: ManasTransactionType.READING,
-        description: `Visionnage de l'épisode ${episodeNumber}`,
-        metadata: { animeId, episodeNumber },
+      data: dbAnimes,
+      meta: {
+        total: dbAnimes.length,
+        page,
+        limit,
+        source: 'database',
       },
-    });
-
-    return {
-      success: true,
-      message: '1 MANAS consommé',
-      remainingManas: updatedUser.manas,
     };
   }
 
   // ============================================
-  // AJOUTER DES MANAS
+  // RÉCUPÉRER UN ANIME PAR ID
   // ============================================
-  async addManas(
-    userId: string,
-    amount: number,
-    type: ManasTransactionType,
-    description: string,
-    metadata?: any,
-  ) {
-    if (amount <= 0) {
-      throw new BadRequestException('Le montant doit être positif');
-    }
-
-    const [user, transaction] = await this.prisma.$transaction([
-      this.prisma.user.update({
-        where: { id: userId },
-        data: { manas: { increment: amount } },
-      }),
-      this.prisma.manasTransaction.create({
-        data: {
-          userId,
-          amount,
-          type,
-          description,
-          metadata: metadata || null,
-        },
-      }),
-    ]);
-
-    return {
-      balance: user.manas,
-      transaction,
-    };
-  }
-
-  // ============================================
-  // DÉPENSER DES MANAS
-  // ============================================
-  async spendManas(
-    userId: string,
-    amount: number,
-    type: ManasTransactionType,
-    description: string,
-    metadata?: any,
-  ) {
-    if (amount <= 0) {
-      throw new BadRequestException('Le montant doit être positif');
-    }
-
-    const user = await this.prisma.user.findUnique({
-      where: { id: userId },
-      select: { manas: true, premiumActive: true },
+  async getAnime(id: string) {
+    // 1. Vérifier en base
+    const anime = await this.prisma.inkStreamAnime.findUnique({
+      where: { id },
+      include: { episodes: true },
     });
 
-    if (!user) {
-      throw new NotFoundException('Utilisateur non trouvé');
+    if (anime) {
+      return anime;
     }
 
-    // ✅ LES PREMIUM N'ONT PAS BESOIN DE MANAS POUR LIRE
-    if (user.premiumActive && type === ManasTransactionType.CHAPTER_PURCHASE) {
-      return {
-        success: true,
-        message: 'Accès Premium - Chapitre débloqué',
-        balance: user.manas,
-      };
+    // 2. Chercher sur AniList
+    const isNumeric = /^\d+$/.test(id);
+    if (isNumeric) {
+      try {
+        const anilistAnime = await this.movieboxService.getAnimeDetails(id);
+        if (anilistAnime) {
+          return anilistAnime;
+        }
+      } catch (error) {
+        console.warn('⚠️ Anilist details failed:', error.message);
+      }
     }
 
-    if (user.manas < amount) {
-      throw new BadRequestException('Solde de MANAS insuffisant');
-    }
-
-    const [updated, transaction] = await this.prisma.$transaction([
-      this.prisma.user.update({
-        where: { id: userId },
-        data: { manas: { decrement: amount } },
-      }),
-      this.prisma.manasTransaction.create({
-        data: {
-          userId,
-          amount: -amount,
-          type,
-          description,
-          metadata: metadata || null,
-        },
-      }),
-    ]);
-
-    return {
-      balance: updated.manas,
-      transaction,
-    };
+    throw new NotFoundException('Anime non trouvé');
   }
 
   // ============================================
-  // ENVOYER DES MANAS À UN AMI
+  // RÉCUPÉRER LES ANIMES POPULAIRES
   // ============================================
-  async sendManas(
-    senderId: string,
-    receiverId: string,
-    amount: number,
-  ) {
-    if (senderId === receiverId) {
-      throw new BadRequestException('Vous ne pouvez pas vous envoyer des MANAS à vous-même');
-    }
-
-    if (amount <= 0) {
-      throw new BadRequestException('Le montant doit être positif');
-    }
-
-    const receiver = await this.prisma.user.findUnique({
-      where: { id: receiverId },
-      select: { id: true, username: true },
+  async getPopularAnimes() {
+    // 1. Base de données
+    const dbAnimes = await this.prisma.inkStreamAnime.findMany({
+      where: { isActive: true },
+      orderBy: { rating: 'desc' },
+      take: 10,
     });
 
-    if (!receiver) {
-      throw new NotFoundException('Utilisateur non trouvé');
+    if (dbAnimes.length > 0) {
+      return dbAnimes;
     }
 
-    await this.spendManas(
-      senderId,
-      amount,
-      ManasTransactionType.GIFT_SENT,
-      `Envoi de ${amount} MANAS à ${receiver.username}`,
-      { receiverId, receiverUsername: receiver.username },
-    );
+    // 2. AniList
+    try {
+      const anilistAnimes = await this.movieboxService.getPopularAnimes(10);
+      if (anilistAnimes.length > 0) {
+        return anilistAnimes;
+      }
+    } catch (error) {
+      console.warn('⚠️ Anilist popular failed:', error.message);
+    }
 
-    const result = await this.addManas(
-      receiverId,
-      amount,
-      ManasTransactionType.GIFT_RECEIVED,
-      `Reçu ${amount} MANAS de ${senderId}`,
-      { senderId },
-    );
-
-    return {
-      success: true,
-      message: `${amount} MANAS envoyés à ${receiver.username}`,
-      balance: result.balance,
-    };
+    return [];
   }
 
   // ============================================
-  // ✅ VÉRIFIER SI L'UTILISATEUR EST CRÉATEUR
+  // RÉCUPÉRER LES ANIMES TENDANCES
   // ============================================
-  private async isCreator(userId: string): Promise<boolean> {
-    const user = await this.prisma.user.findUnique({
-      where: { id: userId },
-      select: { role: true },
+  async getTrendingAnimes() {
+    try {
+      const trending = await this.movieboxService.getTrendingAnimes(10);
+      if (trending.length > 0) {
+        return trending;
+      }
+    } catch (error) {
+      console.warn('⚠️ Anilist trending failed:', error.message);
+    }
+
+    return this.prisma.inkStreamAnime.findMany({
+      where: { isActive: true },
+      orderBy: { rating: 'desc' },
+      take: 10,
     });
-    return user?.role === 'CREATOR' || user?.role === 'ADMIN';
   }
 
   // ============================================
-  // ✅ VÉRIFIER LA LIMITE QUOTIDIENNE
+  // RÉCUPÉRER LES ANIMES PAR GENRE
   // ============================================
-  private async checkDailyLimit(
-    userId: string,
-    actionType: DailyActionType,
-    maxPerDay: number,
-  ): Promise<boolean> {
-    const today = new Date();
-    today.setHours(0, 0, 0, 0);
+  async getAnimesByGenre(genre: string, limit: number = 20) {
+    try {
+      const results = await this.movieboxService.getAnimesByGenre(genre, limit);
+      if (results.length > 0) {
+        return results;
+      }
+    } catch (error) {
+      console.warn('⚠️ Anilist genre failed:', error.message);
+    }
 
-    const existing = await this.prisma.dailyManasAction.findUnique({
+    return this.prisma.inkStreamAnime.findMany({
+      where: { genre: { has: genre } },
+      take: limit,
+    });
+  }
+
+  // ============================================
+  // ✅ RÉCUPÉRER LA VIDÉO D'UN ÉPISODE (SANS MANAS)
+  // ============================================
+  async getEpisodeVideoOnly(animeId: string, episodeNumber: number) {
+    // 1. Vérifier l'anime
+    const anime = await this.prisma.inkStreamAnime.findUnique({
+      where: { id: animeId },
+    });
+
+    if (!anime) {
+      throw new NotFoundException('Anime non trouvé');
+    }
+
+    // 2. Vérifier l'épisode
+    let episode = await this.prisma.inkStreamEpisode.findUnique({
       where: {
-        userId_actionType_date: {
-          userId,
-          actionType,
-          date: today,
+        animeId_episodeNumber: {
+          animeId,
+          episodeNumber,
         },
       },
     });
 
-    if (!existing) return true;
-    return existing.count < maxPerDay;
+    // 3. Si l'épisode n'existe pas en base, le créer
+    if (!episode) {
+      episode = await this.prisma.inkStreamEpisode.create({
+        data: {
+          animeId,
+          episodeNumber,
+          title: `Épisode ${episodeNumber}`,
+          videoUrl: '',
+          isAvailable: true,
+        },
+      });
+    }
+
+    // 4. Récupérer le lien de streaming
+    const videoResult = await this.movieboxService.getEpisodeVideo(
+      anime.externalId || animeId,
+      episodeNumber
+    );
+
+    // 5. Mettre à jour l'épisode avec le lien trouvé
+    if (videoResult.url) {
+      await this.prisma.inkStreamEpisode.update({
+        where: { id: episode.id },
+        data: { videoUrl: videoResult.url },
+      });
+    }
+
+    return {
+      success: !!videoResult.url,
+      anime: {
+        id: anime.id,
+        title: anime.title,
+      },
+      episode: {
+        number: episodeNumber,
+        title: episode.title || `Épisode ${episodeNumber}`,
+        videoUrl: videoResult.url || '',
+        source: videoResult.source || 'none',
+      },
+      message: videoResult.url ? 'Vidéo trouvée' : 'Aucune source disponible',
+    };
   }
 
   // ============================================
-  // ✅ INCRÉMENTER LE COMPTEUR QUOTIDIEN
+  // ✅ REGARDER UN ÉPISODE (AVEC MANAS)
   // ============================================
-  private async incrementDailyCount(
-    userId: string,
-    actionType: DailyActionType,
-  ): Promise<void> {
-    const today = new Date();
-    today.setHours(0, 0, 0, 0);
+  async watchEpisode(userId: string, animeId: string, episodeNumber: number) {
+    // 1. Vérifier l'anime
+    const anime = await this.prisma.inkStreamAnime.findUnique({
+      where: { id: animeId },
+    });
 
-    await this.prisma.dailyManasAction.upsert({
+    if (!anime) {
+      throw new NotFoundException('Anime non trouvé');
+    }
+
+    // 2. Vérifier l'épisode
+    let episode = await this.prisma.inkStreamEpisode.findUnique({
       where: {
-        userId_actionType_date: {
+        animeId_episodeNumber: {
+          animeId,
+          episodeNumber,
+        },
+      },
+    });
+
+    // 3. Si l'épisode n'existe pas, le créer
+    if (!episode) {
+      episode = await this.prisma.inkStreamEpisode.create({
+        data: {
+          animeId,
+          episodeNumber,
+          title: `Épisode ${episodeNumber}`,
+          videoUrl: '',
+          isAvailable: true,
+        },
+      });
+    }
+
+    // 4. Consommer 1 MANA
+    let remainingManas = 0;
+    try {
+      const result = await this.manasService.consumeMana(userId, animeId, episodeNumber);
+      remainingManas = result.remainingManas;
+    } catch (error) {
+      throw new BadRequestException(error.message || 'MANAS insuffisants');
+    }
+
+    // 5. Récupérer le lien de streaming
+    let videoResult = await this.movieboxService.getEpisodeVideo(
+      anime.externalId || animeId,
+      episodeNumber
+    );
+
+    // 6. Mettre à jour l'épisode si un lien est trouvé
+    if (videoResult.url) {
+      await this.prisma.inkStreamEpisode.update({
+        where: { id: episode.id },
+        data: { videoUrl: videoResult.url },
+      });
+    }
+
+    // 7. Créer/mettre à jour l'historique de visionnage
+    const watchHistory = await this.prisma.inkStreamWatchHistory.upsert({
+      where: {
+        userId_episodeId: {
           userId,
-          actionType,
-          date: today,
+          episodeId: episode.id,
         },
       },
       update: {
-        count: { increment: 1 },
-        updatedAt: new Date(),
+        lastWatchedAt: new Date(),
+        progress: 0,
       },
       create: {
         userId,
-        actionType,
-        count: 1,
-        date: today,
+        episodeId: episode.id,
+        animeId,
+        progress: 0,
       },
     });
-  }
 
-  // ============================================
-  // ✅ GAIN DE MANAS POUR LES VUES (1000 VUES = 1 MANAS)
-  // ============================================
-  async onViewsEarned(userId: string) {
-    // 1. Vérifier que l'utilisateur est créateur
-    if (!(await this.isCreator(userId))) {
-      return {
-        success: false,
-        message: 'Seuls les créateurs peuvent gagner des MANAS avec les vues',
-        balance: (await this.getBalance(userId)).balance,
-      };
-    }
-
-    // 2. Calculer le nombre total de vues sur tous ses mangas
-    const totalViews = await this.prisma.manga.aggregate({
-      where: { authorId: userId },
-      _sum: { viewsCount: true },
-    });
-
-    const views = totalViews._sum.viewsCount || 0;
-    const manasToAdd = Math.floor(views / this.VIEW_TO_MANAS_RATE); // 1000 vues = 1 MANAS
-
-    // 3. Vérifier si le créateur a déjà été crédité pour ce nombre de vues
-    const lastViewTransaction = await this.prisma.manasTransaction.findFirst({
-      where: {
-        userId,
-        type: 'VIEWS_EARNED',
-      },
-      orderBy: { createdAt: 'desc' },
-    });
-
-    let lastViewsCount = 0;
-    if (lastViewTransaction?.metadata) {
-      const metadata = lastViewTransaction.metadata as any;
-      lastViewsCount = metadata?.viewsCount || 0;
-    }
-
-    const newManas = manasToAdd - Math.floor(lastViewsCount / this.VIEW_TO_MANAS_RATE);
-
-    if (newManas <= 0) {
-      return {
-        success: false,
-        message: 'Aucun nouveau MANAS à gagner (vues: ' + views + ')',
-        balance: (await this.getBalance(userId)).balance,
-      };
-    }
-
-    // 4. Ajouter les MANAS
-    const result = await this.addManas(
-      userId,
-      newManas,
-      ManasTransactionType.VIEWS_EARNED,
-      `${newManas} MANAS pour ${views} vues (1000 vues = 1 MANAS)`,
-      { viewsCount: views, manasEarned: newManas },
-    );
-
+    // 8. Retourner le résultat
     return {
       success: true,
-      message: `+${newManas} MANAS pour ${views} vues`,
-      balance: result.balance,
-      views,
-      manasEarned: newManas,
+      remainingManas,
+      anime: {
+        id: anime.id,
+        title: anime.title,
+      },
+      episode: {
+        number: episodeNumber,
+        title: episode.title || `Épisode ${episodeNumber}`,
+        videoUrl: videoResult.url || '',
+        source: videoResult.source || 'none',
+        duration: episode.duration || 0,
+      },
+      watchHistory: {
+        id: watchHistory.id,
+        progress: 0,
+        createdAt: new Date(),
+        lastWatchedAt: watchHistory.lastWatchedAt,
+      },
+      message: videoResult.url ? 'Lecture en cours' : 'Aucune source disponible pour cet épisode',
     };
   }
 
   // ============================================
-  // ✅ ACTIONS QUI GAGNENT DES MANAS
+  // AJOUTER UN ANIME EN BASE
   // ============================================
+  async addAnimeFromAnilist(anilistId: string) {
+    try {
+      const details = await this.movieboxService.getAnimeDetails(anilistId);
+      
+      if (!details) {
+        throw new NotFoundException('Anime non trouvé sur AniList');
+      }
 
-  // 📖 Lecture d'un chapitre (max 10/jour)
-  async onChapterRead(userId: string, chapterId: string, mangaId: string) {
-    const canEarn = await this.checkDailyLimit(userId, DailyActionType.READ, 10);
-    if (!canEarn) {
-      return {
-        success: false,
-        message: 'Limite quotidienne de lecture atteinte (10/jour)',
-        balance: (await this.getBalance(userId)).balance,
-      };
-    }
-
-    const result = await this.addManas(
-      userId,
-      1,
-      ManasTransactionType.READING,
-      'Lecture d\'un chapitre',
-      { chapterId, mangaId },
-    );
-
-    await this.incrementDailyCount(userId, DailyActionType.READ);
-
-    return {
-      success: true,
-      message: '+1 MANAS pour la lecture',
-      balance: result.balance,
-    };
-  }
-
-  // 🎁 Bonus quotidien (1 MANAS tous les 2 jours)
-  async dailyBonus(userId: string) {
-    const today = new Date();
-    today.setHours(0, 0, 0, 0);
-
-    const existing = await this.prisma.manasTransaction.findFirst({
-      where: {
-        userId,
-        type: ManasTransactionType.DAILY_BONUS,
-        createdAt: { gte: today },
-      },
-    });
-
-    if (existing) {
-      throw new BadRequestException('Bonus déjà réclamé aujourd\'hui');
-    }
-
-    return this.addManas(
-      userId,
-      1,
-      ManasTransactionType.DAILY_BONUS,
-      'Bonus quotidien (1 MANAS)',
-      { date: new Date().toISOString() },
-    );
-  }
-
-  // ============================================
-  // ACHETER UN CHAPITRE AVEC DES MANAS
-  // ============================================
-  async purchaseChapter(
-    userId: string,
-    mangaId: string,
-    chapterNumber: number,
-    priceInManas: number = 50,
-  ) {
-    const chapter = await this.prisma.chapter.findUnique({
-      where: {
-        mangaId_number: {
-          mangaId,
-          number: chapterNumber,
+      const existing = await this.prisma.inkStreamAnime.findUnique({
+        where: {
+          source_externalId: {
+            source: 'anilist',
+            externalId: anilistId,
+          },
         },
+      });
+
+      if (existing) {
+        return existing;
+      }
+
+      const anime = await this.prisma.inkStreamAnime.create({
+        data: {
+          title: details.title,
+          description: details.description || '',
+          coverImage: details.coverImage || '',
+          genre: details.genre || [],
+          source: 'anilist',
+          externalId: anilistId,
+          externalUrl: `https://anilist.co/anime/${anilistId}`,
+          rating: details.rating || 0,
+          episodesCount: details.episodesCount || 0,
+          isActive: true,
+          lastSyncAt: new Date(),
+        },
+      });
+
+      return anime;
+    } catch (error) {
+      console.error('❌ Erreur ajout anime:', error.message);
+      throw new BadRequestException('Impossible d\'ajouter l\'anime');
+    }
+  }
+
+  // ============================================
+  // SYNC DES ÉPISODES
+  // ============================================
+  async syncEpisodes(animeId: string, episodeData: any[]) {
+    const anime = await this.prisma.inkStreamAnime.findUnique({
+      where: { id: animeId },
+    });
+
+    if (!anime) {
+      throw new NotFoundException('Anime non trouvé');
+    }
+
+    await this.prisma.inkStreamEpisode.deleteMany({
+      where: { animeId },
+    });
+
+    for (const ep of episodeData) {
+      await this.prisma.inkStreamEpisode.create({
+        data: {
+          animeId,
+          episodeNumber: ep.episodeNumber,
+          title: ep.title || `Épisode ${ep.episodeNumber}`,
+          videoUrl: ep.videoUrl || '',
+          thumbnail: ep.thumbnail || '',
+          duration: ep.duration || 0,
+        },
+      });
+    }
+
+    await this.prisma.inkStreamAnime.update({
+      where: { id: animeId },
+      data: { 
+        episodesCount: episodeData.length,
+        lastSyncAt: new Date(),
       },
-      select: { id: true, title: true, mangaId: true },
     });
 
-    if (!chapter) {
-      throw new NotFoundException('Chapitre non trouvé');
-    }
-
-    const result = await this.spendManas(
-      userId,
-      priceInManas,
-      ManasTransactionType.CHAPTER_PURCHASE,
-      `Achat du chapitre ${chapterNumber}`,
-      { mangaId, chapterNumber, chapterId: chapter.id },
-    );
-
-    return {
-      success: true,
-      message: `Chapitre ${chapterNumber} débloqué avec succès`,
-      balance: result.balance,
-    };
+    return { success: true, count: episodeData.length };
   }
 
   // ============================================
-  // COLLABORATION AVEC UN DESSINATEUR
+  // HISTORIQUE DE VISIONNAGE
   // ============================================
-  async collaborateWithCreator(
-    userId: string,
-    creatorId: string,
-    amountInManas: number = 250,
-  ) {
-    if (userId === creatorId) {
-      throw new BadRequestException('Vous ne pouvez pas collaborer avec vous-même');
-    }
-
-    const creator = await this.prisma.user.findUnique({
-      where: { id: creatorId },
-      select: { id: true, username: true, role: true },
+  async getWatchHistory(userId: string) {
+    return this.prisma.inkStreamWatchHistory.findMany({
+      where: { userId },
+      include: {
+        anime: true,
+        episode: true,
+      },
+      orderBy: { lastWatchedAt: 'desc' },
+      take: 50,
     });
-
-    if (!creator) {
-      throw new NotFoundException('Créateur non trouvé');
-    }
-
-    if (creator.role !== 'CREATOR' && creator.role !== 'ADMIN') {
-      throw new BadRequestException('Cet utilisateur n\'est pas un créateur');
-    }
-
-    const result = await this.spendManas(
-      userId,
-      amountInManas,
-      ManasTransactionType.COLLABORATION,
-      `Collaboration avec ${creator.username}`,
-      { creatorId, creatorUsername: creator.username },
-    );
-
-    await this.addManas(
-      creatorId,
-      amountInManas * 0.7,
-      ManasTransactionType.COLLABORATION,
-      `Collaboration de ${userId}`,
-      { userId },
-    );
-
-    return {
-      success: true,
-      message: `Collaboration avec ${creator.username} réussie`,
-      balance: result.balance,
-    };
-  }
-
-  // ============================================
-  // HISTORIQUE DES TRANSACTIONS
-  // ============================================
-  async getHistory(
-    userId: string,
-    page: number = 1,
-    limit: number = 20,
-    type?: ManasTransactionType,
-  ) {
-    const skip = (page - 1) * limit;
-
-    const where: any = { userId };
-    if (type) {
-      where.type = type;
-    }
-
-    const [transactions, total] = await Promise.all([
-      this.prisma.manasTransaction.findMany({
-        where,
-        orderBy: { createdAt: 'desc' },
-        skip,
-        take: limit,
-      }),
-      this.prisma.manasTransaction.count({ where }),
-    ]);
-
-    return {
-      transactions,
-      total,
-      page,
-      limit,
-      totalPages: Math.ceil(total / limit),
-    };
   }
 }
