@@ -273,41 +273,43 @@ export class MovieboxService {
   }
 
   // ============================================
-  // ✅ API 1 : STREAMING VIA CONSUMET
+  // ✅ API 1 : STREAMING VIA CONSUMET (MULTIPLES FORMATS)
   // ============================================
   async getEpisodeStreamFromConsumet(animeId: string, episodeNumber: number): Promise<string> {
-    try {
-      // Essayer avec Gogoanime
-      const url = `${this.CONSUMET_URL}/anime/gogoanime/watch/${animeId}-episode-${episodeNumber}`;
-      console.log(`📡 Appel Consumet: ${url}`);
-      
-      const response = await axios.get(url, { timeout: 15000 });
-      const sources = response.data?.sources || [];
-      
-      if (sources.length > 0) {
-        const bestSource = sources.find((s: any) => s.quality === '1080p') || sources[0];
-        console.log(`✅ Source Consumet trouvée: ${bestSource?.url?.substring(0, 50)}...`);
-        return bestSource?.url || '';
-      }
+    // Différents formats d'URL possibles
+    const urlPatterns = [
+      `${this.CONSUMET_URL}/anime/gogoanime/watch/${animeId}-episode-${episodeNumber}`,
+      `${this.CONSUMET_URL}/anime/gogoanime/watch/${animeId}-${episodeNumber}`,
+      `${this.CONSUMET_URL}/anime/gogoanime/watch/${animeId}-episode-${String(episodeNumber).padStart(2, '0')}`,
+      `${this.CONSUMET_URL}/anime/zoro/watch/${animeId}-episode-${episodeNumber}`,
+      `${this.CONSUMET_URL}/anime/zoro/watch/${animeId}-${episodeNumber}`,
+    ];
 
-      // Essayer avec Zoro (fallback)
-      const zoroResponse = await axios.get(
-        `${this.CONSUMET_URL}/anime/zoro/watch/${animeId}-${episodeNumber}`,
-        { timeout: 15000 }
-      );
-      const zoroSources = zoroResponse.data?.sources || [];
-      if (zoroSources.length > 0) {
-        const bestZoro = zoroSources.find((s: any) => s.quality === '1080p') || zoroSources[0];
-        console.log(`✅ Source Zoro trouvée: ${bestZoro?.url?.substring(0, 50)}...`);
-        return bestZoro?.url || '';
+    for (const url of urlPatterns) {
+      try {
+        console.log(`📡 Tentative Consumet: ${url}`);
+        const response = await axios.get(url, { timeout: 15000 });
+        
+        // Vérifier si la réponse contient des sources
+        const sources = response.data?.sources || [];
+        if (sources.length > 0) {
+          const bestSource = sources.find((s: any) => s.quality === '1080p') || sources[0];
+          console.log(`✅ Source trouvée: ${bestSource?.url?.substring(0, 60)}...`);
+          return bestSource?.url || '';
+        }
+        
+        // Vérifier si la réponse contient un lien direct
+        if (response.data?.url) {
+          console.log(`✅ Lien direct trouvé: ${response.data.url.substring(0, 60)}...`);
+          return response.data.url;
+        }
+      } catch (error) {
+        // Ignorer et continuer avec le prochain format
       }
-
-      console.log(`⚠️ Aucune source Consumet pour ${animeId}-ep-${episodeNumber}`);
-      return '';
-    } catch (error) {
-      console.warn(`⚠️ Consumet stream failed pour ${animeId}:`, error.message);
-      return '';
     }
+
+    console.log(`⚠️ Aucune source Consumet pour ${animeId}-ep-${episodeNumber}`);
+    return '';
   }
 
   // ============================================
@@ -327,13 +329,57 @@ export class MovieboxService {
   }
 
   // ============================================
-  // ✅ MÉTHODE PRINCIPALE POUR OBTENIR UNE VIDÉO (AVEC FALLBACK GOGOANIME)
+  // ✅ API 3 : YOUTUBE (FALLBACK ULTIME)
   // ============================================
-  async getEpisodeVideo(animeId: string, episodeNumber: number): Promise<{
+  async searchYouTubeEpisode(animeTitle: string, episodeNumber: number): Promise<string> {
+    try {
+      const searchQuery = `${animeTitle} episode ${episodeNumber} english sub`;
+      const url = `https://www.googleapis.com/youtube/v3/search`;
+      
+      const apiKey = process.env.YOUTUBE_API_KEY;
+      if (!apiKey) {
+        console.warn('⚠️ Clé YouTube API manquante');
+        return '';
+      }
+
+      console.log(`📡 Recherche YouTube: "${searchQuery}"`);
+      const response = await axios.get(url, {
+        params: {
+          part: 'snippet',
+          q: searchQuery,
+          type: 'video',
+          maxResults: 3,
+          key: apiKey,
+          videoDuration: 'medium',
+        },
+        timeout: 10000,
+      });
+
+      const video = response.data?.items?.[0];
+      if (video) {
+        const videoId = video.id.videoId;
+        console.log(`✅ Vidéo YouTube trouvée: https://youtu.be/${videoId}`);
+        return `https://www.youtube.com/embed/${videoId}?autoplay=0&rel=0`;
+      }
+      return '';
+    } catch (error) {
+      console.warn('⚠️ YouTube search failed:', error.message);
+      return '';
+    }
+  }
+
+  // ============================================
+  // ✅ MÉTHODE PRINCIPALE (AVEC YOUTUBE EN FALLBACK)
+  // ============================================
+  async getEpisodeVideo(
+    animeId: string,
+    episodeNumber: number,
+    animeTitle?: string
+  ): Promise<{
     url: string;
-    source: 'consumet' | 'moviebox' | 'none';
+    source: 'consumet' | 'moviebox' | 'youtube' | 'none';
   }> {
-    console.log(`🔍 Recherche vidéo pour animeId: ${animeId}, épisode: ${episodeNumber}`);
+    console.log(`🔍 Recherche vidéo pour ID: ${animeId}, épisode: ${episodeNumber}`);
 
     // 1. Essayer Consumet directement avec l'ID fourni
     let url = await this.getEpisodeStreamFromConsumet(animeId, episodeNumber);
@@ -361,13 +407,22 @@ export class MovieboxService {
       return { url, source: 'moviebox' };
     }
 
-    // 4. Aucune source
+    // 4. ✅ ESSAYER YOUTUBE (FALLBACK ULTIME)
+    if (animeTitle) {
+      console.log(`🔄 Tentative YouTube pour: "${animeTitle}"`);
+      url = await this.searchYouTubeEpisode(animeTitle, episodeNumber);
+      if (url) {
+        return { url, source: 'youtube' };
+      }
+    }
+
+    // 5. Aucune source
     console.log(`❌ Aucune source trouvée pour animeId: ${animeId}, épisode: ${episodeNumber}`);
     return { url: '', source: 'none' };
   }
 
   // ============================================
-  // ✅ API 3 : FALLBACK ULTIME
+  // ✅ API 4 : FALLBACK ULTIME (GOOGLE SEARCH)
   // ============================================
   async getFallbackVideo(animeId: string, episodeNumber: number): Promise<string> {
     return `https://www.google.com/search?q=watch+${animeId}+episode+${episodeNumber}`;
