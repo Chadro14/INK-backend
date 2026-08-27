@@ -202,7 +202,73 @@ export class InkstreamService {
   }
 
   // ============================================
-  // ✅ REGARDER UN ÉPISODE (AVEC DOUBLE API DE STREAMING)
+  // ✅ RÉCUPÉRER LA VIDÉO D'UN ÉPISODE (SANS MANAS)
+  // ============================================
+  async getEpisodeVideoOnly(animeId: string, episodeNumber: number) {
+    // 1. Vérifier l'anime
+    const anime = await this.prisma.inkStreamAnime.findUnique({
+      where: { id: animeId },
+    });
+
+    if (!anime) {
+      throw new NotFoundException('Anime non trouvé');
+    }
+
+    // 2. Vérifier l'épisode
+    let episode = await this.prisma.inkStreamEpisode.findUnique({
+      where: {
+        animeId_episodeNumber: {
+          animeId,
+          episodeNumber,
+        },
+      },
+    });
+
+    // 3. Si l'épisode n'existe pas en base, le créer
+    if (!episode) {
+      episode = await this.prisma.inkStreamEpisode.create({
+        data: {
+          animeId,
+          episodeNumber,
+          title: `Épisode ${episodeNumber}`,
+          videoUrl: '',
+          isAvailable: true,
+        },
+      });
+    }
+
+    // 4. Récupérer le lien de streaming
+    const videoResult = await this.movieboxService.getEpisodeVideo(
+      anime.externalId || animeId,
+      episodeNumber
+    );
+
+    // 5. Mettre à jour l'épisode avec le lien trouvé
+    if (videoResult.url) {
+      await this.prisma.inkStreamEpisode.update({
+        where: { id: episode.id },
+        data: { videoUrl: videoResult.url },
+      });
+    }
+
+    return {
+      success: !!videoResult.url,
+      anime: {
+        id: anime.id,
+        title: anime.title,
+      },
+      episode: {
+        number: episodeNumber,
+        title: episode.title || `Épisode ${episodeNumber}`,
+        videoUrl: videoResult.url || '',
+        source: videoResult.source || 'none',
+      },
+      message: videoResult.url ? 'Vidéo trouvée' : 'Aucune source disponible',
+    };
+  }
+
+  // ============================================
+  // ✅ REGARDER UN ÉPISODE (AVEC MANAS)
   // ============================================
   async watchEpisode(userId: string, animeId: string, episodeNumber: number) {
     // 1. Vérifier l'anime
@@ -215,7 +281,7 @@ export class InkstreamService {
     }
 
     // 2. Vérifier l'épisode
-    const episode = await this.prisma.inkStreamEpisode.findUnique({
+    let episode = await this.prisma.inkStreamEpisode.findUnique({
       where: {
         animeId_episodeNumber: {
           animeId,
@@ -224,11 +290,20 @@ export class InkstreamService {
       },
     });
 
+    // 3. Si l'épisode n'existe pas, le créer
     if (!episode) {
-      throw new NotFoundException('Épisode non trouvé');
+      episode = await this.prisma.inkStreamEpisode.create({
+        data: {
+          animeId,
+          episodeNumber,
+          title: `Épisode ${episodeNumber}`,
+          videoUrl: '',
+          isAvailable: true,
+        },
+      });
     }
 
-    // 3. Consommer 1 MANA
+    // 4. Consommer 1 MANA
     let remainingManas = 0;
     try {
       const result = await this.manasService.consumeMana(userId, animeId, episodeNumber);
@@ -237,54 +312,41 @@ export class InkstreamService {
       throw new BadRequestException(error.message || 'MANAS insuffisants');
     }
 
-    // 4. ✅ RÉCUPÉRER LE LIEN DE STREAMING (DOUBLE API)
-    let streamUrl = '';
+    // 5. Récupérer le lien de streaming
+    let videoResult = await this.movieboxService.getEpisodeVideo(
+      anime.externalId || animeId,
+      episodeNumber
+    );
 
-    // API 1 : Consumet (Gogoanime, Zoro, etc.)
-    try {
-      streamUrl = await this.movieboxService.getEpisodeStreamFromConsumet(
-        anime.externalId || animeId,
-        episodeNumber
-      );
-    } catch (error) {
-      console.warn('⚠️ Consumet stream failed:', error.message);
+    // 6. Mettre à jour l'épisode si un lien est trouvé
+    if (videoResult.url) {
+      await this.prisma.inkStreamEpisode.update({
+        where: { id: episode.id },
+        data: { videoUrl: videoResult.url },
+      });
     }
 
-    // API 2 : Fallback sur MovieBox (si Consumet échoue)
-    if (!streamUrl) {
-      try {
-        streamUrl = await this.movieboxService.getEpisodeStreamFromMovieBox(
-          anime.externalId || animeId,
-          episodeNumber
-        );
-      } catch (error) {
-        console.warn('⚠️ MovieBox stream failed:', error.message);
-      }
-    }
+    // 7. Créer/mettre à jour l'historique de visionnage
+    const watchHistory = await this.prisma.inkStreamWatchHistory.upsert({
+      where: {
+        userId_episodeId: {
+          userId,
+          episodeId: episode.id,
+        },
+      },
+      update: {
+        lastWatchedAt: new Date(),
+        progress: 0,
+      },
+      create: {
+        userId,
+        episodeId: episode.id,
+        animeId,
+        progress: 0,
+      },
+    });
 
-    // 5. Si aucune API ne donne de lien
-    if (!streamUrl) {
-      return {
-        success: true,
-        remainingManas,
-        anime: {
-          id: anime.id,
-          title: anime.title,
-        },
-        episode: {
-          number: episodeNumber,
-          title: episode.title || `Épisode ${episodeNumber}`,
-          videoUrl: '',
-          duration: episode.duration || 0,
-        },
-        watchHistory: {
-          createdAt: new Date(),
-        },
-        error: 'Aucune source de streaming disponible pour cet épisode.',
-      };
-    }
-
-    // 6. Retourner le lien de streaming
+    // 8. Retourner le résultat
     return {
       success: true,
       remainingManas,
@@ -295,12 +357,17 @@ export class InkstreamService {
       episode: {
         number: episodeNumber,
         title: episode.title || `Épisode ${episodeNumber}`,
-        videoUrl: streamUrl, // ✅ LIEN DE STREAMING
+        videoUrl: videoResult.url || '',
+        source: videoResult.source || 'none',
         duration: episode.duration || 0,
       },
       watchHistory: {
-        createdAt: new Date(),
+        id: watchHistory.id,
+        progress: 0,
+        createdAt: watchHistory.createdAt,
+        lastWatchedAt: watchHistory.lastWatchedAt,
       },
+      message: videoResult.url ? 'Lecture en cours' : 'Aucune source disponible pour cet épisode',
     };
   }
 
