@@ -15,10 +15,14 @@ import { JwtAuthGuard } from '../../../common/guards/jwt-auth.guard';
 import { InkstreamService } from '../services/inkstream.service';
 import { SearchAnimeDto } from '../dto/search-anime.dto';
 import { SyncAnimeDto } from '../dto/sync-anime.dto';
+import { PrismaService } from '../../../prisma/prisma.service';
 
 @Controller('animes')
 export class InkstreamController {
-  constructor(private readonly inkstreamService: InkstreamService) {}
+  constructor(
+    private readonly inkstreamService: InkstreamService,
+    private readonly prisma: PrismaService, // ✅ AJOUTÉ
+  ) {}
 
   // ============================================
   // RECHERCHE D'ANIMES
