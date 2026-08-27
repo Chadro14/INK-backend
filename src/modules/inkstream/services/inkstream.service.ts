@@ -254,8 +254,9 @@ export class InkstreamService {
 
     // 4. Récupérer le lien de streaming
     const videoResult = await this.movieboxService.getEpisodeVideo(
-      anime.externalId || animeId,
-      episodeNumber
+      anime.externalId || anime.id,
+      episodeNumber,
+      anime.title // ✅ PASSER LE TITRE POUR YOUTUBE
     );
 
     // 5. Mettre à jour l'épisode avec le lien trouvé
@@ -283,7 +284,7 @@ export class InkstreamService {
   }
 
   // ============================================
-  // ✅ REGARDER UN ÉPISODE (AVEC MANAS) - CORRIGÉ
+  // ✅ REGARDER UN ÉPISODE (AVEC MANAS) - CORRIGÉ AVEC YOUTUBE
   // ============================================
   async watchEpisode(userId: string, animeId: string, episodeNumber: number) {
     // 1. Vérifier l'anime en base
@@ -358,10 +359,11 @@ export class InkstreamService {
       throw new BadRequestException(error.message || 'MANAS insuffisants');
     }
 
-    // 5. Récupérer le lien de streaming
+    // 5. Récupérer le lien de streaming (AVEC LE TITRE POUR YOUTUBE)
     const videoResult = await this.movieboxService.getEpisodeVideo(
       anime.externalId || anime.id,
-      episodeNumber
+      episodeNumber,
+      anime.title // ✅ PASSER LE TITRE POUR LE FALLBACK YOUTUBE
     );
 
     // 6. Mettre à jour l'épisode si un lien est trouvé
@@ -413,7 +415,9 @@ export class InkstreamService {
         createdAt: new Date(),
         lastWatchedAt: watchHistory.lastWatchedAt,
       },
-      message: videoResult.url ? 'Lecture en cours' : 'Aucune source disponible pour cet épisode',
+      message: videoResult.url 
+        ? `Lecture en cours (source: ${videoResult.source})` 
+        : 'Aucune source disponible pour cet épisode. Essayez un autre épisode.',
     };
   }
 
