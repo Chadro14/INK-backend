@@ -2,7 +2,7 @@
 import { Injectable, NotFoundException, BadRequestException } from '@nestjs/common';
 import { PrismaService } from '../../../prisma/prisma.service';
 import { MovieboxService } from './moviebox.service';
-import { ManasService } from './manas.service';
+import { ManasService } from '../../manas/manas.service'; // ✅ CORRIGÉ (ligne 5)
 import { SearchAnimeDto } from '../dto/search-anime.dto';
 
 @Injectable()
@@ -364,7 +364,7 @@ export class InkstreamService {
       watchHistory: {
         id: watchHistory.id,
         progress: 0,
-        createdAt: watchHistory.createdAt,
+        createdAt: new Date(), // ✅ CORRIGÉ (ligne 367)
         lastWatchedAt: watchHistory.lastWatchedAt,
       },
       message: videoResult.url ? 'Lecture en cours' : 'Aucune source disponible pour cet épisode',
