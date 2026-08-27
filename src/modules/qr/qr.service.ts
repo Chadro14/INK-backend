@@ -78,7 +78,7 @@ export class QrService {
         margin: 0,
         width: 600,
         color: {
-          dark: baseColor,  // on garde la couleur en hex
+          dark: baseColor,
           light: '#FFFFFF',
         },
       });
