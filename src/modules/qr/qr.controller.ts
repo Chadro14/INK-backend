@@ -3,12 +3,16 @@ import {
   Controller,
   Get,
   Post,
+  Put,
   Param,
+  Query,
   UseGuards,
   Req,
   Request,
+  Body,
   HttpException,
   HttpStatus,
+  BadRequestException,
 } from '@nestjs/common';
 import { JwtAuthGuard } from '../../common/guards/jwt-auth.guard';
 import { QrService } from './qr.service';
@@ -65,6 +69,30 @@ export class QrController {
   }
 
   // ============================================
+  // ✅ METTRE À JOUR LA COULEUR DU QR (PREMIUM UNIQUEMENT)
+  // ============================================
+  @Put('color')
+  @UseGuards(JwtAuthGuard)
+  async updateQRColor(@Request() req: any, @Body() body: { color: string }) {
+    try {
+      if (!body.color) {
+        throw new BadRequestException('Couleur requise');
+      }
+      const result = await this.qrService.updateQRColor(req.user.id, body.color);
+      return {
+        success: true,
+        message: 'Couleur du QR mise à jour',
+        qrColor: result.qrColor,
+      };
+    } catch (error) {
+      throw new HttpException(
+        error.message || 'Erreur lors de la mise à jour de la couleur',
+        error.status || HttpStatus.BAD_REQUEST,
+      );
+    }
+  }
+
+  // ============================================
   // ENREGISTRER UN SCAN (APPELÉ PAR LE FRONTEND)
   // ============================================
   @Post('scan/:userId')
@@ -78,7 +106,6 @@ export class QrController {
       const token = req.headers.authorization?.replace('Bearer ', '');
       if (token) {
         try {
-          // Décoder le token pour obtenir l'ID
           const jwt = require('jsonwebtoken');
           const decoded = jwt.verify(token, process.env.JWT_SECRET);
           scannedBy = decoded.sub;
@@ -108,12 +135,13 @@ export class QrController {
   @UseGuards(JwtAuthGuard)
   async getScans(
     @Request() req: any,
-    @Request() query: any,
+    @Query('page') page?: string,
+    @Query('limit') limit?: string,
   ) {
     try {
-      const page = parseInt(query.page) || 1;
-      const limit = parseInt(query.limit) || 20;
-      return await this.qrService.getUserScans(req.user.id, page, limit);
+      const pageNum = parseInt(page) || 1;
+      const limitNum = parseInt(limit) || 20;
+      return await this.qrService.getUserScans(req.user.id, pageNum, limitNum);
     } catch (error) {
       throw new HttpException(
         error.message || 'Erreur lors de la récupération des scans',
