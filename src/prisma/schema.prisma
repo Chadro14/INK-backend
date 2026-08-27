@@ -219,6 +219,7 @@ enum ManasTransactionType {
   GIFT_SENT
   GIFT_RECEIVED
   COLLABORATION
+  VIEWS_EARNED // ✅ AJOUTÉ
 }
 
 // ============================================
