@@ -1,7 +1,7 @@
 // src/modules/qr/qr.service.ts
 import { Injectable, NotFoundException, BadRequestException } from '@nestjs/common';
 import { PrismaService } from '../../prisma/prisma.service';
-import * as QRCode from 'qrcode';
+import QRCode from 'qrcode';
 
 @Injectable()
 export class QrService {
@@ -20,11 +20,9 @@ export class QrService {
       throw new NotFoundException('Utilisateur non trouvé');
     }
 
-    // URL du profil (frontend)
     const baseUrl = process.env.FRONTEND_URL || 'https://ink-frontend.vercel.app';
     const qrData = `${baseUrl}/qr/${user.id}`;
 
-    // Générer le QR code en base64
     const qrImage = await QRCode.toDataURL(qrData, {
       errorCorrectionLevel: 'H',
       margin: 2,
@@ -35,7 +33,6 @@ export class QrService {
       },
     });
 
-    // Compter les scans
     const scanCount = await this.prisma.qrScan.count({
       where: { userId },
     });
@@ -80,7 +77,7 @@ export class QrService {
   }
 
   // ============================================
-  // ENREGISTRER UN SCAN (QUAND UN UTILISATEUR SCANNE)
+  // ENREGISTRER UN SCAN
   // ============================================
   async registerScan(userId: string, scannedBy?: string, userAgent?: string, ip?: string) {
     const user = await this.prisma.user.findUnique({
@@ -91,7 +88,6 @@ export class QrService {
       throw new NotFoundException('Utilisateur non trouvé');
     }
 
-    // Éviter les doublons de scan (même IP, même journée)
     const today = new Date();
     today.setHours(0, 0, 0, 0);
 
@@ -114,11 +110,10 @@ export class QrService {
       });
     }
 
-    // Mettre à jour le compteur de l'utilisateur (si tu veux)
     await this.prisma.user.update({
       where: { id: userId },
       data: {
-        steamPoints: { increment: 1 }, // +1 point steam pour chaque scan
+        steamPoints: { increment: 1 },
       },
     });
 
@@ -144,16 +139,6 @@ export class QrService {
         orderBy: { createdAt: 'desc' },
         skip,
         take: limit,
-        include: {
-          scannedByUser: {
-            select: {
-              id: true,
-              username: true,
-              avatarUrl: true,
-              isCertified: true,
-            },
-          },
-        },
       }),
       this.prisma.qrScan.count({ where: { userId } }),
     ]);
