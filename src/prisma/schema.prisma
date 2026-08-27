@@ -1,3 +1,4 @@
+
 generator client {
   provider      = "prisma-client-js"
   binaryTargets = ["native", "rhel-openssl-3.0.x"]
@@ -81,6 +82,9 @@ model User {
 
   passwordResets     PasswordReset[]
   emailChangeRequests EmailChangeRequest[]
+
+  qrScans            QrScan[] // Relation inverse
+  qrScansMade        QrScan[] @relation("QRScans")
 
   createdAt          DateTime  @default(now())
   updatedAt          DateTime  @updatedAt
@@ -219,7 +223,7 @@ enum ManasTransactionType {
   GIFT_SENT
   GIFT_RECEIVED
   COLLABORATION
-  VIEWS_EARNED // ✅ AJOUTÉ
+  VIEWS_EARNED
 }
 
 // ============================================
@@ -682,4 +686,22 @@ model EventParticipation {
 
   @@unique([userId, eventId])
   @@index([eventId])
+}
+
+// ============================================
+// QR CODE SCANS
+// ============================================
+model QrScan {
+  id          String   @id @default(uuid())
+  userId      String
+  user        User     @relation(fields: [userId], references: [id], onDelete: Cascade)
+  scannedBy   String?
+  scannedByUser User?  @relation("QRScans", fields: [scannedBy], references: [id])
+  userAgent   String?
+  ipAddress   String?
+  createdAt   DateTime @default(now())
+
+  @@index([userId])
+  @@index([userId, createdAt])
+  @@index([scannedBy])
 }
