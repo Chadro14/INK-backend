@@ -1,12 +1,12 @@
 // src/modules/inkstream/services/inkstream.service.ts
 import { Injectable, NotFoundException, BadRequestException } from '@nestjs/common';
-import { PrismaService } from '../../../prisma/prisma.service'; // ✅ CORRIGÉ
+import { PrismaService } from '../../../prisma/prisma.service';
 import { MovieboxService } from './moviebox.service';
 import { ManasService } from '../../manas/manas.service';
 import { SearchAnimeDto } from '../dto/search-anime.dto';
 
 @Injectable()
-export class InkstreamService { // ✅ CORRECTEMENT EXPORTÉ
+export class InkstreamService {
   constructor(
     private prisma: PrismaService,
     private movieboxService: MovieboxService,
@@ -105,7 +105,7 @@ export class InkstreamService { // ✅ CORRECTEMENT EXPORTÉ
   }
 
   // ============================================
-  // RÉCUPÉRER UN ANIME PAR ID
+  // RÉCUPÉRER UN ANIME PAR ID (AVEC ÉPISODES FICTIFS)
   // ============================================
   async getAnime(id: string) {
     // 1. Vérifier en base
@@ -124,7 +124,22 @@ export class InkstreamService { // ✅ CORRECTEMENT EXPORTÉ
       try {
         const anilistAnime = await this.movieboxService.getAnimeDetails(id);
         if (anilistAnime) {
-          return anilistAnime;
+          // ✅ CRÉER DES ÉPISODES FICTIFS POUR L'AFFICHAGE
+          const totalEpisodes = anilistAnime.episodesCount || 12;
+          const episodes = [];
+          for (let i = 1; i <= Math.min(totalEpisodes, 50); i++) {
+            episodes.push({
+              id: `ep-${i}`,
+              episodeNumber: i,
+              title: `Épisode ${i}`,
+              duration: 24,
+            });
+          }
+          
+          return {
+            ...anilistAnime,
+            episodes: episodes,
+          };
         }
       } catch (error) {
         console.warn('⚠️ Anilist details failed:', error.message);
@@ -313,7 +328,7 @@ export class InkstreamService { // ✅ CORRECTEMENT EXPORTÉ
     }
 
     // 5. Récupérer le lien de streaming
-    let videoResult = await this.movieboxService.getEpisodeVideo(
+    const videoResult = await this.movieboxService.getEpisodeVideo(
       anime.externalId || animeId,
       episodeNumber
     );
