@@ -31,6 +31,56 @@ export class ManasService {
   }
 
   // ============================================
+  // ✅ CONSOMMER 1 MANA POUR REGARDER UN ANIME
+  // ============================================
+  async consumeMana(userId: string, animeId: string, episodeNumber: number) {
+    const user = await this.prisma.user.findUnique({
+      where: { id: userId },
+      select: { manas: true, premiumActive: true },
+    });
+
+    if (!user) {
+      throw new NotFoundException('Utilisateur non trouvé');
+    }
+
+    // ✅ Les utilisateurs Premium ne paient pas en MANAS
+    if (user.premiumActive) {
+      return {
+        success: true,
+        message: 'Accès Premium - Visionnage gratuit',
+        remainingManas: user.manas,
+      };
+    }
+
+    if (user.manas < 1) {
+      throw new BadRequestException('MANAS insuffisants pour regarder cet épisode (1 MANAS requis)');
+    }
+
+    // Consommer 1 MANAS
+    const updatedUser = await this.prisma.user.update({
+      where: { id: userId },
+      data: { manas: { decrement: 1 } },
+    });
+
+    // Enregistrer la transaction
+    await this.prisma.manasTransaction.create({
+      data: {
+        userId,
+        amount: -1,
+        type: ManasTransactionType.READING,
+        description: `Visionnage de l'épisode ${episodeNumber}`,
+        metadata: { animeId, episodeNumber },
+      },
+    });
+
+    return {
+      success: true,
+      message: '1 MANAS consommé',
+      remainingManas: updatedUser.manas,
+    };
+  }
+
+  // ============================================
   // AJOUTER DES MANAS
   // ============================================
   async addManas(
