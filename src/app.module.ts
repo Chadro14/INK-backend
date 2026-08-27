@@ -25,7 +25,8 @@ import { SecurityModule } from './modules/security/security.module';
 import { PremiumModule } from './modules/premium/premium.module';
 import { FavoritesModule } from './modules/favorites/favorites.module';
 import { ViewsModule } from './modules/views/views.module';
-import { ManasModule } from './modules/manas/manas.module'; // ✅ AJOUTÉ
+import { ManasModule } from './modules/manas/manas.module';
+import { QrModule } from './modules/qr/qr.module'; // ✅ AJOUTÉ
 
 @Module({
   imports: [
@@ -57,7 +58,8 @@ import { ManasModule } from './modules/manas/manas.module'; // ✅ AJOUTÉ
     PremiumModule,
     FavoritesModule,
     ViewsModule,
-    ManasModule, // ✅ AJOUTÉ
+    ManasModule,
+    QrModule, // ✅ AJOUTÉ
   ],
 })
 export class AppModule {}
