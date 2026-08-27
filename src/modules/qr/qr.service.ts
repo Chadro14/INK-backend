@@ -10,7 +10,7 @@ export class QrService {
   constructor(private prisma: PrismaService) {}
 
   // ============================================
-  // 🛠 UTILITAIRES COULEURS (déplacées en haut)
+  // 🛠 UTILITAIRES COULEURS
   // ============================================
   private hexToRgb(hex: string): { r: number; g: number; b: number } {
     const result = /^#?([a-f\d]{2})([a-f\d]{2})([a-f\d]{2})$/i.exec(hex);
@@ -75,11 +75,11 @@ export class QrService {
       // ✅ PREMIUM : QR avec dégradé de couleurs
       const rgb = this.hexToRgb(baseColor);
       qrBuffer = await QRCode.toBuffer(qrData, {
-        errorCorrectionLevel: 'H',
+        level: 'H',        // ✅ CORRECTION : errorCorrectionLevel → level
         margin: 0,
         width: 600,
         color: {
-          dark: rgb, // ✅ CORRECTION : on passe un objet RGB
+          dark: rgb,
           light: { r: 255, g: 255, b: 255 },
         },
       });
@@ -96,11 +96,11 @@ export class QrService {
       // ✅ STANDARD : QR avec couleur unie
       const rgb = this.hexToRgb(baseColor);
       qrBuffer = await QRCode.toBuffer(qrData, {
-        errorCorrectionLevel: 'H',
+        level: 'H',        // ✅ CORRECTION
         margin: 0,
         width: 600,
         color: {
-          dark: rgb, // ✅ CORRECTION
+          dark: rgb,
           light: { r: 255, g: 255, b: 255 },
         },
       });
