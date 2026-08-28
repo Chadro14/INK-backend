@@ -53,6 +53,25 @@ export class QrController {
   }
 
   // ============================================
+  // ✅ RÉCUPÉRER LES INFOS D'UN UTILISATEUR POUR LE SCAN
+  // ============================================
+  @Get(':userId')
+  async getUserInfo(@Param('userId') userId: string) {
+    try {
+      const user = await this.qrService.getUserInfo(userId);
+      if (!user) {
+        throw new HttpException('Utilisateur non trouvé', HttpStatus.NOT_FOUND);
+      }
+      return user;
+    } catch (error) {
+      throw new HttpException(
+        error.message || 'Utilisateur non trouvé',
+        HttpStatus.NOT_FOUND,
+      );
+    }
+  }
+
+  // ============================================
   // STATISTIQUES DE SCAN
   // ============================================
   @Get('stats')
