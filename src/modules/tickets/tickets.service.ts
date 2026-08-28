@@ -12,7 +12,7 @@ export class TicketsService {
   async getBalance(userId: string) {
     const user = await this.prisma.user.findUnique({
       where: { id: userId },
-      select: { username: true },
+      select: { username: true, premiumActive: true, premiumExpires: true },
     });
 
     if (!user) {
@@ -29,9 +29,14 @@ export class TicketsService {
       });
     }
 
+    const hasUnlimitedTickets = user.premiumActive && user.premiumExpires && user.premiumExpires > new Date();
+
     return {
       username: user.username,
       tickets: ticket.amount,
+      hasUnlimitedTickets,
+      isPremium: hasUnlimitedTickets,
+      premiumExpires: user.premiumExpires,
     };
   }
 
@@ -84,7 +89,7 @@ export class TicketsService {
   }
 
   // ============================================
-  // UTILISER UN TICKET
+  // UTILISER UN TICKET (AVEC VÉRIFICATION PREMIUM)
   // ============================================
   async useTicket(userId: string, chapterId: string) {
     const chapter = await this.prisma.chapter.findUnique({
@@ -96,6 +101,7 @@ export class TicketsService {
       throw new NotFoundException('Chapitre non trouvé');
     }
 
+    // Vérifier si déjà débloqué
     const existingUse = await this.prisma.ticketUse.findUnique({
       where: {
         userId_chapterId: { userId, chapterId },
@@ -106,6 +112,57 @@ export class TicketsService {
       throw new BadRequestException('Chapitre déjà débloqué avec un ticket');
     }
 
+    // ✅ VÉRIFIER SI L'UTILISATEUR EST PREMIUM (TICKETS ILLIMITÉS)
+    const user = await this.prisma.user.findUnique({
+      where: { id: userId },
+      select: { premiumActive: true, premiumExpires: true },
+    });
+
+    if (!user) {
+      throw new NotFoundException('Utilisateur non trouvé');
+    }
+
+    // ✅ SI PREMIUM ACTIF → TICKETS ILLIMITÉS
+    const isPremiumActive = user.premiumActive && user.premiumExpires && user.premiumExpires > new Date();
+
+    if (isPremiumActive) {
+      // Enregistrer l'utilisation (sans consommer de ticket)
+      await this.prisma.ticketUse.create({
+        data: {
+          userId,
+          ticketId: null, // Pas de ticket consommé
+          chapterId: chapter.id,
+          mangaId: chapter.mangaId,
+        },
+      });
+
+      // Enregistrer une transaction pour le suivi
+      await this.prisma.ticketTransaction.create({
+        data: {
+          userId,
+          ticketId: null,
+          amount: 0,
+          type: 'GIFT',
+          description: `Déblocage Premium du chapitre ${chapter.number} (tickets illimités)`,
+          metadata: { chapterId, mangaId: chapter.mangaId, method: 'premium_unlimited' },
+        },
+      });
+
+      return {
+        success: true,
+        message: `Chapitre ${chapter.number} débloqué (Premium - tickets illimités)`,
+        remainingTickets: 'illimité',
+        isPremium: true,
+        chapter: {
+          id: chapter.id,
+          number: chapter.number,
+          title: chapter.title,
+          manga: chapter.manga.title,
+        },
+      };
+    }
+
+    // ✅ SI PAS PREMIUM → VÉRIFIER LE SOLDE DE TICKETS
     const ticket = await this.prisma.ticket.findUnique({
       where: { userId },
     });
@@ -114,6 +171,7 @@ export class TicketsService {
       throw new BadRequestException('Vous n\'avez pas assez de tickets');
     }
 
+    // Consommer 1 ticket
     const [updatedTicket, transaction, use] = await this.prisma.$transaction([
       this.prisma.ticket.update({
         where: { id: ticket.id },
@@ -143,6 +201,7 @@ export class TicketsService {
       success: true,
       message: `Chapitre ${chapter.number} débloqué avec succès`,
       remainingTickets: updatedTicket.amount,
+      isPremium: false,
       chapter: {
         id: chapter.id,
         number: chapter.number,
