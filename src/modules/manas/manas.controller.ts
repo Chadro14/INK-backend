@@ -4,7 +4,6 @@ import {
   Get,
   Post,
   Body,
-  Param,
   Query,
   UseGuards,
   Req,
@@ -40,20 +39,6 @@ export class ManasController {
   ) {
     const userId = req.user?.id || req.user?.sub;
     return this.manasService.getHistory(userId, page, limit, type);
-  }
-
-  // ============================================
-  // ❌ BONUS QUOTIDIEN - SUPPRIMÉ
-  // ============================================
-
-  // ============================================
-  // ✅ GAGNER DES MANAS POUR LES VUES
-  // ============================================
-  @Post('views-earned')
-  @UseGuards(JwtAuthGuard)
-  async onViewsEarned(@Req() req: any) {
-    const userId = req.user?.id || req.user?.sub;
-    return this.manasService.onViewsEarned(userId);
   }
 
   // ============================================
@@ -102,18 +87,5 @@ export class ManasController {
       body.creatorId,
       body.amountInManas || 250,
     );
-  }
-
-  // ============================================
-  // 📖 LECTURE D'UN CHAPITRE
-  // ============================================
-  @Post('event/chapter-read')
-  @UseGuards(JwtAuthGuard)
-  async onChapterRead(
-    @Req() req: any,
-    @Body() body: { chapterId: string; mangaId: string },
-  ) {
-    const userId = req.user?.id || req.user?.sub;
-    return this.manasService.onChapterRead(userId, body.chapterId, body.mangaId);
   }
 }
