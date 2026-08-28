@@ -43,14 +43,8 @@ export class ManasController {
   }
 
   // ============================================
-  // BONUS QUOTIDIEN
+  // ❌ BONUS QUOTIDIEN - SUPPRIMÉ
   // ============================================
-  @Post('daily-bonus')
-  @UseGuards(JwtAuthGuard)
-  async dailyBonus(@Req() req: any) {
-    const userId = req.user?.id || req.user?.sub;
-    return this.manasService.dailyBonus(userId);
-  }
 
   // ============================================
   // ✅ GAGNER DES MANAS POUR LES VUES
