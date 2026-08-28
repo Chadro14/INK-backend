@@ -11,6 +11,7 @@ import {
   HttpCode,
   HttpStatus,
   Headers,
+  BadRequestException,
 } from '@nestjs/common';
 import { JwtAuthGuard } from '../../../common/guards/jwt-auth.guard';
 import { PaymentsService } from '../services/payments.service';
@@ -111,5 +112,25 @@ export class PaymentsController {
     @Headers('x-signature') signature?: string,
   ) {
     return this.paymentsService.handlePawaPayWebhook(payload, signature);
+  }
+
+  // ============================================
+  // ✅ ACHETER DES MANAS
+  // ============================================
+  @Post('manas')
+  @UseGuards(JwtAuthGuard)
+  @HttpCode(HttpStatus.OK)
+  async purchaseManas(
+    @Req() req: any,
+    @Body() body: { amount: number; currency?: string },
+  ) {
+    if (!body.amount || body.amount < 0.30) {
+      throw new BadRequestException('Le montant minimum est de 0.30 USD');
+    }
+    return this.paymentsService.purchaseManas(
+      req.user.id,
+      body.amount,
+      body.currency || 'USD',
+    );
   }
 }
