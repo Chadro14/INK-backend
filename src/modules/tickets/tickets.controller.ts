@@ -4,6 +4,7 @@ import {
   Post,
   Body,
   Param,
+  Query,
   UseGuards,
   Request,
   HttpException,
@@ -33,13 +34,13 @@ export class TicketsController {
   }
 
   // ============================================
-  // RÉCLAMER LE TICKET QUOTIDIEN
+  // ✅ RÉCOMPENSE QUOTIDIENNE (1 TICKET TOUS LES 2 JOURS)
   // ============================================
-  @Post('daily')
+  @Post('daily-reward')
   @UseGuards(JwtAuthGuard)
-  async claimDaily(@Request() req: any) {
+  async claimDailyReward(@Request() req: any) {
     try {
-      return await this.ticketsService.claimDailyTicket(req.user.id);
+      return await this.ticketsService.claimDailyReward(req.user.id);
     } catch (error) {
       throw new HttpException(
         error.message || 'Erreur lors de la réclamation du ticket',
@@ -85,14 +86,34 @@ export class TicketsController {
   // ============================================
   @Get('history')
   @UseGuards(JwtAuthGuard)
-  async getHistory(@Request() req: any, @Request() query: any) {
+  async getHistory(
+    @Request() req: any,
+    @Query('page') page?: string,
+    @Query('limit') limit?: string,
+  ) {
     try {
-      const page = parseInt(query.page) || 1;
-      const limit = parseInt(query.limit) || 20;
-      return await this.ticketsService.getHistory(req.user.id, page, limit);
+      const pageNum = parseInt(page) || 1;
+      const limitNum = parseInt(limit) || 20;
+      return await this.ticketsService.getHistory(req.user.id, pageNum, limitNum);
     } catch (error) {
       throw new HttpException(
         error.message || 'Erreur lors de la récupération de l\'historique',
+        HttpStatus.INTERNAL_SERVER_ERROR,
+      );
+    }
+  }
+
+  // ============================================
+  // LISTE DES ÉVÉNEMENTS DISPONIBLES
+  // ============================================
+  @Get('events')
+  @UseGuards(JwtAuthGuard)
+  async getEvents() {
+    try {
+      return await this.ticketsService.getActiveEvents();
+    } catch (error) {
+      throw new HttpException(
+        error.message || 'Erreur lors de la récupération des événements',
         HttpStatus.INTERNAL_SERVER_ERROR,
       );
     }
