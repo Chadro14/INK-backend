@@ -30,7 +30,7 @@ model User {
   isCertified        Boolean   @default(false)
   certifiedAt        DateTime?
   badgeColor         String?   @default("#2563EB")
-  qrColor            String?   @default("#3B82F6") // ✅ AJOUTÉ
+  qrColor            String?   @default("#3B82F6")
   mobileNumber       String?
   mobileVerified     Boolean   @default(false)
   premiumActive      Boolean   @default(false)
@@ -85,6 +85,12 @@ model User {
 
   qrScans            QrScan[] // Relation inverse
   qrScansMade        QrScan[] @relation("QRScans")
+
+  // ✅ TICKETS
+  tickets            Ticket[]
+  ticketTransactions TicketTransaction[]
+  ticketUses         TicketUse[]
+  ticketParticipations TicketParticipation[]
 
   createdAt          DateTime  @default(now())
   updatedAt          DateTime  @updatedAt
@@ -317,6 +323,7 @@ model Chapter {
 
   comments    Comment[]
   views       View[]
+  ticketUses  TicketUse[]
 
   @@unique([mangaId, number])
   @@index([mangaId, publishedAt])
@@ -704,4 +711,111 @@ model QrScan {
   @@index([userId])
   @@index([userId, createdAt])
   @@index([scannedBy])
+}
+
+// ============================================
+// TICKETS 🎟️
+// ============================================
+model Ticket {
+  id          String   @id @default(uuid())
+  userId      String
+  user        User     @relation(fields: [userId], references: [id], onDelete: Cascade)
+  amount      Int      @default(0)
+  createdAt   DateTime @default(now())
+  updatedAt   DateTime @updatedAt
+
+  transactions TicketTransaction[]
+  uses         TicketUse[]
+
+  @@unique([userId])
+  @@index([userId])
+}
+
+// ============================================
+// TRANSACTIONS DE TICKETS
+// ============================================
+model TicketTransaction {
+  id          String   @id @default(uuid())
+  userId      String
+  user        User     @relation(fields: [userId], references: [id], onDelete: Cascade)
+  ticketId    String
+  ticket      Ticket   @relation(fields: [ticketId], references: [id], onDelete: Cascade)
+  amount      Int      // positif = gagné, négatif = utilisé
+  type        TicketType
+  description String
+  metadata    Json?
+  createdAt   DateTime @default(now())
+
+  @@index([userId])
+  @@index([ticketId])
+  @@index([createdAt])
+}
+
+// ============================================
+// UTILISATION DES TICKETS
+// ============================================
+model TicketUse {
+  id          String   @id @default(uuid())
+  userId      String
+  user        User     @relation(fields: [userId], references: [id], onDelete: Cascade)
+  ticketId    String
+  ticket      Ticket   @relation(fields: [ticketId], references: [id], onDelete: Cascade)
+  chapterId   String
+  chapter     Chapter  @relation(fields: [chapterId], references: [id], onDelete: Cascade)
+  mangaId     String
+  manga       Manga    @relation(fields: [mangaId], references: [id], onDelete: Cascade)
+  createdAt   DateTime @default(now())
+
+  @@unique([userId, chapterId])
+  @@index([userId])
+  @@index([chapterId])
+  @@index([mangaId])
+}
+
+// ============================================
+// ÉVÉNEMENTS TICKETS
+// ============================================
+model TicketEvent {
+  id          String   @id @default(uuid())
+  name        String
+  description String?  @db.Text
+  tickets     Int      @default(1)
+  startDate   DateTime
+  endDate     DateTime
+  isActive    Boolean  @default(true)
+  createdAt   DateTime @default(now())
+  updatedAt   DateTime @updatedAt
+
+  participations TicketParticipation[]
+
+  @@index([isActive, startDate, endDate])
+}
+
+// ============================================
+// PARTICIPATION AUX ÉVÉNEMENTS TICKETS
+// ============================================
+model TicketParticipation {
+  id          String   @id @default(uuid())
+  userId      String
+  user        User     @relation(fields: [userId], references: [id], onDelete: Cascade)
+  eventId     String
+  event       TicketEvent @relation(fields: [eventId], references: [id], onDelete: Cascade)
+  claimedAt   DateTime @default(now())
+  ticketId    String?
+  ticket      Ticket?  @relation(fields: [ticketId], references: [id])
+
+  @@unique([userId, eventId])
+  @@index([userId])
+  @@index([eventId])
+}
+
+// ============================================
+// ENUM TICKET TYPE
+// ============================================
+enum TicketType {
+  EVENT        // Participation à un événement
+  REFERRAL     // Parrainage d'un ami
+  DAILY_REWARD // Récompense quotidienne
+  GIFT         // Cadeau de la plateforme
+  USED         // Utilisation d'un ticket
 }
