@@ -477,7 +477,7 @@ export class PaymentsService {
   }
 
   // ============================================
-  // 13. ACTIVER L'ABONNEMENT PREMIUM (AVEC TRANSACTION)
+  // 13. ACTIVER L'ABONNEMENT PREMIUM (AVEC TICKETS ILLIMITÉS)
   // ============================================
   private async activatePremium(tx: any, userId: string, plan: PremiumPlan = PremiumPlan.MONTHLY) {
     const duration = plan === PremiumPlan.YEARLY ? 365 : 30;
@@ -491,7 +491,41 @@ export class PaymentsService {
       },
     });
 
-    console.log(`✅ Abonnement Premium activé pour l'utilisateur ${userId}`);
+    // ✅ CRÉER UN TICKET POUR LE SUIVI (quantité = 0 = illimité)
+    let ticket = await tx.ticket.findUnique({
+      where: { userId },
+    });
+
+    if (!ticket) {
+      ticket = await tx.ticket.create({
+        data: { userId, amount: 0 },
+      });
+    }
+
+    // Enregistrer une transaction pour le suivi
+    await tx.ticketTransaction.create({
+      data: {
+        userId,
+        ticketId: ticket.id,
+        amount: 0,
+        type: 'GIFT',
+        description: `Abonnement Premium ${plan} activé - Tickets illimités pendant ${duration} jours`,
+        metadata: { plan, duration, method: 'premium_unlimited' },
+      },
+    });
+
+    // ✅ NOTIFICATION
+    await tx.notification.create({
+      data: {
+        userId,
+        type: 'SYSTEM',
+        title: '🎟️ Abonnement Premium activé',
+        body: `Vous avez maintenant accès aux tickets illimités pendant ${duration} jours !`,
+        metadata: { plan },
+      },
+    });
+
+    console.log(`✅ Abonnement Premium activé pour l'utilisateur ${userId} - Tickets illimités`);
   }
 
   // ============================================
