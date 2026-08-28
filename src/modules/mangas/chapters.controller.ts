@@ -11,6 +11,8 @@ import {
   ParseIntPipe,
   ForbiddenException,
   NotFoundException,
+  HttpException,
+  HttpStatus,
 } from '@nestjs/common';
 import { ChaptersService } from './chapters.service';
 import {
@@ -126,7 +128,24 @@ export class ChaptersController {
   }
 
   // ============================================
-  // 7. Récupérer un chapitre par ID
+  // ✅ 7. VÉRIFIER L'ACCÈS À UN CHAPITRE
+  // ✅ ROUTE SPÉCIFIQUE : DOIT ÊTRE AVANT @Get(':chapterId')
+  // ============================================
+  @Get(':chapterId/access')
+  @UseGuards(JwtAuthGuard)
+  async checkAccess(@Request() req: any, @Param('chapterId') chapterId: string) {
+    try {
+      return await this.chaptersService.checkChapterAccess(req.user.id, chapterId);
+    } catch (error) {
+      throw new HttpException(
+        error.message || 'Erreur lors de la vérification d\'accès',
+        error.status || HttpStatus.INTERNAL_SERVER_ERROR,
+      );
+    }
+  }
+
+  // ============================================
+  // 8. Récupérer un chapitre par ID
   // ⚠️ ROUTE GÉNÉRIQUE : DOIT ÊTRE EN DERNIER
   // ============================================
   @Get(':chapterId')
@@ -135,7 +154,7 @@ export class ChaptersController {
   }
 
   // ============================================
-  // 8. Mettre à jour un chapitre
+  // 9. Mettre à jour un chapitre
   // ============================================
   @Patch(':chapterId')
   @UseGuards(JwtAuthGuard)
@@ -147,7 +166,7 @@ export class ChaptersController {
   }
 
   // ============================================
-  // 9. Supprimer un chapitre
+  // 10. Supprimer un chapitre
   // ============================================
   @Delete(':chapterId')
   @UseGuards(JwtAuthGuard)
