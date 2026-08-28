@@ -82,8 +82,7 @@ export class ChaptersController {
   }
 
   // ============================================
-  // 5. Récupérer un chapitre par NUMÉRO (avec "number/")
-  // ✅ ROUTE SPÉCIFIQUE : DOIT ÊTRE AVANT @Get(':chapterId')
+  // 5. Récupérer un chapitre par NUMÉRO
   // ============================================
   @Get('number/:number')
   async findByNumber(
@@ -95,7 +94,6 @@ export class ChaptersController {
 
   // ============================================
   // 6. PUBLIER un chapitre (draft → publié)
-  // ✅ ROUTE SPÉCIFIQUE : DOIT ÊTRE AVANT @Get(':chapterId')
   // ============================================
   @Patch(':chapterId/publish')
   @UseGuards(JwtAuthGuard)
@@ -129,7 +127,6 @@ export class ChaptersController {
 
   // ============================================
   // ✅ 7. VÉRIFIER L'ACCÈS À UN CHAPITRE
-  // ✅ ROUTE SPÉCIFIQUE : DOIT ÊTRE AVANT @Get(':chapterId')
   // ============================================
   @Get(':chapterId/access')
   @UseGuards(JwtAuthGuard)
@@ -146,7 +143,6 @@ export class ChaptersController {
 
   // ============================================
   // 8. Récupérer un chapitre par ID
-  // ⚠️ ROUTE GÉNÉRIQUE : DOIT ÊTRE EN DERNIER
   // ============================================
   @Get(':chapterId')
   async findOne(@Param('chapterId') chapterId: string) {
