@@ -108,7 +108,7 @@ export class ChaptersService {
   }
 
   // ============================================
-  // 2. FINALISATION DU CHAPITRE (CORRIGÉ)
+  // 2. FINALISATION DU CHAPITRE
   // ============================================
   async finalizeChapter(mangaId: string, userId: string, dto: FinalizeChapterDto) {
     console.log('🔍 === FINALIZE CHAPTER DEBUG ===');
@@ -159,14 +159,6 @@ export class ChaptersService {
     if (!isPdfMode) {
       const totalPages = dto.keys.length;
       const paidPagesCount = totalPages - freeIndexes.length;
-
-      // ✅ SUPPRESSION DE LA LIMITE DE 2 PAGES PAYANTES
-      // if (paidPagesCount > 2) {
-      //   throw new BadRequestException(
-      //     `Un chapitre en mode photos ne peut contenir que 2 pages payantes maximum. (Actuellement: ${paidPagesCount})`,
-      //   );
-      // }
-
       calculatedPrice = paidPagesCount > 0 ? paidPagesCount * 0.55 : 0;
     }
 
@@ -363,7 +355,7 @@ export class ChaptersService {
   }
 
   // ============================================
-  // ✅ 5. RÉCUPÉRER UN CHAPITRE PAR ID - CORRIGÉ
+  // 5. RÉCUPÉRER UN CHAPITRE PAR ID
   // ============================================
   async findOne(chapterId: string) {
     const chapter = await this.prisma.chapter.findUnique({
@@ -388,7 +380,7 @@ export class ChaptersService {
   }
 
   // ============================================
-  // ✅ 6. RÉCUPÉRER UN CHAPITRE PAR NUMÉRO - CORRIGÉ
+  // 6. RÉCUPÉRER UN CHAPITRE PAR NUMÉRO
   // ============================================
   async findByNumber(mangaIdOrSlug: string, number: number) {
     const manga = await this.findMangaByIdOrSlug(mangaIdOrSlug);
@@ -537,5 +529,151 @@ export class ChaptersService {
     });
 
     return { message: 'Chapitre supprimé avec succès.' };
+  }
+
+  // ============================================
+  // ✅ 10. VÉRIFIER L'ACCÈS À UN CHAPITRE
+  // ============================================
+  async checkChapterAccess(userId: string, chapterId: string) {
+    const chapter = await this.prisma.chapter.findUnique({
+      where: { id: chapterId },
+      include: {
+        manga: {
+          select: {
+            id: true,
+            title: true,
+          },
+        },
+      },
+    });
+
+    if (!chapter) {
+      throw new NotFoundException('Chapitre non trouvé');
+    }
+
+    // 1. Chapitre gratuit
+    if (chapter.isFree) {
+      return {
+        hasAccess: true,
+        method: 'free',
+        chapter: {
+          id: chapter.id,
+          number: chapter.number,
+          title: chapter.title,
+          price: chapter.price,
+          isFree: chapter.isFree,
+        },
+        manga: {
+          id: chapter.mangaId,
+          title: chapter.manga.title,
+        },
+      };
+    }
+
+    // 2. Utilisateur Premium
+    const user = await this.prisma.user.findUnique({
+      where: { id: userId },
+      select: { premiumActive: true, manas: true },
+    });
+
+    if (user?.premiumActive) {
+      return {
+        hasAccess: true,
+        method: 'premium',
+        chapter: {
+          id: chapter.id,
+          number: chapter.number,
+          title: chapter.title,
+          price: chapter.price,
+          isFree: chapter.isFree,
+        },
+        manga: {
+          id: chapter.mangaId,
+          title: chapter.manga.title,
+        },
+      };
+    }
+
+    // 3. Déjà acheté avec MANAS
+    const manasPurchase = await this.prisma.manasTransaction.findFirst({
+      where: {
+        userId,
+        type: 'CHAPTER_PURCHASE',
+        metadata: {
+          path: ['chapterId'],
+          equals: chapterId,
+        },
+      },
+    });
+
+    if (manasPurchase) {
+      return {
+        hasAccess: true,
+        method: 'manas',
+        chapter: {
+          id: chapter.id,
+          number: chapter.number,
+          title: chapter.title,
+          price: chapter.price,
+          isFree: chapter.isFree,
+        },
+        manga: {
+          id: chapter.mangaId,
+          title: chapter.manga.title,
+        },
+      };
+    }
+
+    // 4. Déjà débloqué avec un Ticket
+    const ticketUse = await this.prisma.ticketUse.findUnique({
+      where: {
+        userId_chapterId: { userId, chapterId },
+      },
+    });
+
+    if (ticketUse) {
+      return {
+        hasAccess: true,
+        method: 'ticket',
+        chapter: {
+          id: chapter.id,
+          number: chapter.number,
+          title: chapter.title,
+          price: chapter.price,
+          isFree: chapter.isFree,
+        },
+        manga: {
+          id: chapter.mangaId,
+          title: chapter.manga.title,
+        },
+      };
+    }
+
+    // 5. Récupérer les MANAS et Tickets de l'utilisateur
+    const ticketBalance = await this.prisma.ticket.findUnique({
+      where: { userId },
+      select: { amount: true },
+    });
+
+    // 6. Pas d'accès → retourner les options de paiement
+    return {
+      hasAccess: false,
+      method: null,
+      chapter: {
+        id: chapter.id,
+        number: chapter.number,
+        title: chapter.title,
+        price: chapter.price,
+        isFree: chapter.isFree,
+      },
+      manga: {
+        id: chapter.mangaId,
+        title: chapter.manga.title,
+      },
+      userBalance: {
+        manas: user?.manas || 0,
+        tickets: ticketBalance?.amount || 0,
+      },
+    };
   }
 }
