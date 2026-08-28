@@ -47,21 +47,15 @@ export class PaymentsService {
   private validatePhoneNumber(operator: PaymentOperator, phoneNumber: string): boolean {
     const clean = phoneNumber.replace(/\D/g, '');
 
-    // ✅ Validation de base : longueur
     if (clean.length < 7 || clean.length > 15) {
       return false;
     }
 
-    // ✅ Validation spécifique selon l'opérateur
     switch (operator) {
       case PaymentOperator.MPESA:
-        // M-Pesa : commence par 08, 09, ou 7 (Kenya)
         return /^(07|08|09|7)\d{7,13}$/.test(clean);
-
       case PaymentOperator.ORANGE:
-        // Orange Money : commence par 07, 08, ou 77
         return /^(07|08|77|78|79)\d{7,13}$/.test(clean);
-
       default:
         return true;
     }
@@ -71,14 +65,10 @@ export class PaymentsService {
   // ✅ 2. DÉTECTER OU RETOURNER LE PROVIDER PAWAPAY
   // ============================================
   private getProvider(operator: PaymentOperator, country?: string): string {
-    // Si le pays est spécifié, utiliser le mapping
     if (country && this.countryMap[country]) {
       const countryData = this.countryMap[country];
-      // Retourner le premier provider du pays
       return countryData.providers[0] || 'ORANGE_CD';
     }
-
-    // Fallback selon l'opérateur
     switch (operator) {
       case PaymentOperator.MPESA:
         return 'VODACOM_CD';
@@ -101,7 +91,6 @@ export class PaymentsService {
       throw new NotFoundException('Utilisateur non trouvé');
     }
 
-    // ✅ VALIDER LE NUMÉRO DE TÉLÉPHONE
     if (!this.validatePhoneNumber(dto.operator, dto.phoneNumber)) {
       throw new BadRequestException(
         `Numéro de téléphone invalide pour ${dto.operator}. Veuillez vérifier votre numéro.`
@@ -138,7 +127,6 @@ export class PaymentsService {
       },
     });
 
-    // ✅ MODE TEST
     if (dto.operator === PaymentOperator.TEST) {
       await this.prisma.payment.update({
         where: { id: payment.id },
@@ -158,7 +146,6 @@ export class PaymentsService {
 
     let result;
     try {
-      // ✅ Appel au bon service selon l'opérateur
       if (dto.operator === PaymentOperator.ORANGE) {
         result = await this.orangeMoneyService.initiatePayment({
           amount: dto.amount,
@@ -536,5 +523,76 @@ export class PaymentsService {
       });
       console.log(`💰 Pourboire de ${payment.amount} USD envoyé au créateur ${manga.authorId}`);
     }
+  }
+
+  // ============================================
+  // ✅ 16. ACHETER DES MANAS
+  // ============================================
+  async purchaseManas(userId: string, amount: number, currency: string = 'USD') {
+    // 1. Vérifier le montant minimum
+    if (amount < 0.30) {
+      throw new BadRequestException('Le montant minimum est de 0.30 USD');
+    }
+
+    // 2. Convertir le montant en MANAS (1 MANAS = 0.01 USD)
+    const manasAmount = Math.floor(amount / 0.01);
+    
+    if (manasAmount < 30) {
+      throw new BadRequestException('Montant insuffisant pour acheter des MANAS');
+    }
+
+    // 3. Créer la transaction de paiement
+    const transactionId = `INK-MANAS-${Date.now()}-${Math.random().toString(36).slice(2, 7)}`;
+
+    const payment = await this.prisma.payment.create({
+      data: {
+        userId,
+        transactionId,
+        amount,
+        currency,
+        type: PaymentType.TIP,
+        status: PaymentStatus.PENDING,
+        metadata: {
+          type: 'MANAS_PURCHASE',
+          manasAmount,
+          rate: 0.01,
+        },
+      },
+    });
+
+    // 4. Ajouter directement les MANAS (pour les tests)
+    await this.prisma.user.update({
+      where: { id: userId },
+      data: { manas: { increment: manasAmount } },
+    });
+
+    // 5. Enregistrer la transaction MANAS
+    await this.prisma.manasTransaction.create({
+      data: {
+        userId,
+        amount: manasAmount,
+        type: 'BALANCE_DEPOSIT',
+        description: `Achat de ${manasAmount} MANAS (${amount} ${currency})`,
+        metadata: { paymentId: payment.id, transactionId },
+      },
+    });
+
+    // 6. Mettre à jour le statut du paiement
+    await this.prisma.payment.update({
+      where: { id: payment.id },
+      data: { status: PaymentStatus.SUCCESS, completedAt: new Date() },
+    });
+
+    return {
+      success: true,
+      manasAdded: manasAmount,
+      amount: amount,
+      currency: currency,
+      transactionId,
+      newBalance: (await this.prisma.user.findUnique({
+        where: { id: userId },
+        select: { manas: true },
+      }))?.manas || 0,
+    };
   }
 }
