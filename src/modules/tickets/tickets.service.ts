@@ -96,7 +96,6 @@ export class TicketsService {
       throw new NotFoundException('Chapitre non trouvé');
     }
 
-    // Vérifier si le chapitre est déjà débloqué
     const existingUse = await this.prisma.ticketUse.findUnique({
       where: {
         userId_chapterId: { userId, chapterId },
@@ -107,7 +106,6 @@ export class TicketsService {
       throw new BadRequestException('Chapitre déjà débloqué avec un ticket');
     }
 
-    // Vérifier le solde de tickets
     const ticket = await this.prisma.ticket.findUnique({
       where: { userId },
     });
@@ -116,7 +114,6 @@ export class TicketsService {
       throw new BadRequestException('Vous n\'avez pas assez de tickets');
     }
 
-    // Consommer 1 ticket
     const [updatedTicket, transaction, use] = await this.prisma.$transaction([
       this.prisma.ticket.update({
         where: { id: ticket.id },
@@ -156,47 +153,41 @@ export class TicketsService {
   }
 
   // ============================================
-  // TICKET QUOTIDIEN (LIMITÉ)
+  // ✅ RÉCOMPENSE QUOTIDIENNE (1 TICKET TOUS LES 2 JOURS)
   // ============================================
-  async claimDailyTicket(userId: string) {
-    const today = new Date();
-    today.setHours(0, 0, 0, 0);
+  async claimDailyReward(userId: string) {
+    const user = await this.prisma.user.findUnique({
+      where: { id: userId },
+      select: { username: true },
+    });
 
-    // Vérifier si déjà réclamé aujourd'hui
-    const existing = await this.prisma.ticketTransaction.findFirst({
+    if (!user) {
+      throw new NotFoundException('Utilisateur non trouvé');
+    }
+
+    // Vérifier si l'utilisateur a déjà réclamé dans les 48h
+    const twoDaysAgo = new Date();
+    twoDaysAgo.setHours(twoDaysAgo.getHours() - 48);
+
+    const existingClaim = await this.prisma.ticketTransaction.findFirst({
       where: {
         userId,
         type: TicketType.DAILY_REWARD,
-        createdAt: { gte: today },
+        createdAt: { gte: twoDaysAgo },
       },
     });
 
-    if (existing) {
-      throw new BadRequestException('Ticket quotidien déjà réclamé aujourd\'hui');
+    if (existingClaim) {
+      const timeLeft = 48 - Math.floor((Date.now() - existingClaim.createdAt.getTime()) / (1000 * 60 * 60));
+      throw new BadRequestException(`Ticket déjà réclamé. Prochain dans ${timeLeft}h`);
     }
 
-    // Vérifier la limite hebdomadaire (max 3 tickets par semaine)
-    const weekAgo = new Date();
-    weekAgo.setDate(weekAgo.getDate() - 7);
-
-    const weeklyCount = await this.prisma.ticketTransaction.count({
-      where: {
-        userId,
-        type: TicketType.DAILY_REWARD,
-        createdAt: { gte: weekAgo },
-      },
-    });
-
-    if (weeklyCount >= 3) {
-      throw new BadRequestException('Limite hebdomadaire de tickets atteinte (3/semaine)');
-    }
-
-    // Offrir 1 ticket
+    // Ajouter 1 ticket
     return this.addTickets(
       userId,
       1,
       TicketType.DAILY_REWARD,
-      'Ticket quotidien 🎟️',
+      'Ticket gratuit (récompense 48h)',
       { date: new Date().toISOString() },
     );
   }
@@ -205,7 +196,6 @@ export class TicketsService {
   // TICKET DE PARRAINAGE
   // ============================================
   async referralTicket(referrerId: string, newUserId: string) {
-    // Vérifier que le parrainé s'est bien inscrit
     const newUser = await this.prisma.user.findUnique({
       where: { id: newUserId },
       select: { createdAt: true },
@@ -215,13 +205,11 @@ export class TicketsService {
       throw new NotFoundException('Utilisateur non trouvé');
     }
 
-    // Vérifier que l'inscription date de moins de 24h
     const hoursSinceCreation = (Date.now() - newUser.createdAt.getTime()) / (1000 * 60 * 60);
     if (hoursSinceCreation > 24) {
       throw new BadRequestException('Le parrainage doit être effectué dans les 24h suivant l\'inscription');
     }
 
-    // Vérifier que le parrain n'a pas déjà été récompensé pour ce nouvel utilisateur
     const existing = await this.prisma.ticketTransaction.findFirst({
       where: {
         userId: referrerId,
@@ -234,12 +222,11 @@ export class TicketsService {
       throw new BadRequestException('Vous avez déjà été récompensé pour ce parrainage');
     }
 
-    // Offrir 1 ticket
     return this.addTickets(
       referrerId,
       1,
       TicketType.REFERRAL,
-      `Parrainage de ${newUserId} 🎟️`,
+      `Parrainage de ${newUserId}`,
       { newUserId },
     );
   }
@@ -256,13 +243,11 @@ export class TicketsService {
       throw new NotFoundException('Événement non trouvé ou inactif');
     }
 
-    // Vérifier que l'événement est en cours
     const now = new Date();
     if (now < event.startDate || now > event.endDate) {
       throw new BadRequestException('Cet événement n\'est pas en cours');
     }
 
-    // Vérifier que l'utilisateur n'a pas déjà participé
     const existing = await this.prisma.ticketParticipation.findUnique({
       where: {
         userId_eventId: { userId, eventId },
@@ -273,7 +258,6 @@ export class TicketsService {
       throw new BadRequestException('Vous avez déjà participé à cet événement');
     }
 
-    // Ajouter les tickets de l'événement
     const result = await this.addTickets(
       userId,
       event.tickets,
@@ -282,7 +266,6 @@ export class TicketsService {
       { eventId, eventName: event.name },
     );
 
-    // Enregistrer la participation
     await this.prisma.ticketParticipation.create({
       data: {
         userId,
@@ -321,5 +304,20 @@ export class TicketsService {
       limit,
       totalPages: Math.ceil(total / limit),
     };
+  }
+
+  // ============================================
+  // LISTE DES ÉVÉNEMENTS DISPONIBLES
+  // ============================================
+  async getActiveEvents() {
+    const now = new Date();
+    return this.prisma.ticketEvent.findMany({
+      where: {
+        isActive: true,
+        startDate: { lte: now },
+        endDate: { gte: now },
+      },
+      orderBy: { startDate: 'asc' },
+    });
   }
 }
