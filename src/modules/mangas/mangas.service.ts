@@ -199,6 +199,7 @@ export class MangasService {
       );
     }
 
+    // ✅ CORRECTION : suppression du champ metadata
     return this.prisma.manga.create({
       data: {
         title: dto.title,
@@ -208,14 +209,8 @@ export class MangasService {
         status: dto.status ? (dto.status as Status) : Status.ONGOING,
         genre: dto.genre || [],
         tags: dto.tags || [],
-        isPremium: isPremium && isPaidPosition, // Forcé à false si position paire
+        isPremium: isPremium && isPaidPosition,
         authorId: userId,
-        // ✅ AJOUTER LA POSITION POUR SUIVI
-        metadata: {
-          position,
-          isPaidPosition,
-          createdAt: new Date().toISOString(),
-        },
       },
       include: {
         author: { select: AUTHOR_SELECT },
