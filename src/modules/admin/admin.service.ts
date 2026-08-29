@@ -1,10 +1,11 @@
-import { Injectable, NotFoundException, ForbiddenException } from '@nestjs/common';
+import { Injectable, NotFoundException, ForbiddenException, BadRequestException } from '@nestjs/common';
 import { PrismaService } from '../../prisma/prisma.service';
 import { FollowService } from '../follow/follow.service';
 import { CertificationService } from '../certification/certification.service';
 import { CertifyUserDto } from './dto/certify-user.dto';
 import { ModerateContentDto, ModerationAction } from './dto/moderate-content.dto';
 import { UserFilterDto } from './dto/user-filter.dto';
+import { PremiumPlan } from '@prisma/client';
 
 @Injectable()
 export class AdminService {
@@ -145,6 +146,344 @@ export class AdminService {
   }
 
   // ============================================
+  // ✅ AJOUTER UN ABONNEMENT PREMIUM À UN UTILISATEUR (PAR ADMIN)
+  // ============================================
+  async grantPremiumSubscription(adminId: string, userId: string, plan: PremiumPlan = PremiumPlan.MONTHLY, durationMonths: number = 1) {
+    await this.checkAdmin(adminId);
+
+    const user = await this.prisma.user.findUnique({
+      where: { id: userId },
+    });
+
+    if (!user) {
+      throw new NotFoundException('Utilisateur non trouvé');
+    }
+
+    // Calculer la date d'expiration
+    const expiresAt = new Date();
+    expiresAt.setMonth(expiresAt.getMonth() + durationMonths);
+
+    // Si l'utilisateur a déjà un abonnement, prolonger
+    const currentExpires = user.premiumExpires || new Date();
+    const newExpires = currentExpires > new Date() 
+      ? new Date(currentExpires.getTime() + durationMonths * 30 * 24 * 60 * 60 * 1000)
+      : expiresAt;
+
+    const updatedUser = await this.prisma.user.update({
+      where: { id: userId },
+      data: {
+        premiumActive: true,
+        premiumExpires: newExpires,
+        premiumPlan: plan,
+      },
+    });
+
+    // Audit log
+    await this.prisma.auditLog.create({
+      data: {
+        userId: adminId,
+        action: 'PREMIUM_GRANTED',
+        targetId: userId,
+        targetType: 'User',
+        details: { 
+          plan, 
+          durationMonths, 
+          expiresAt: newExpires,
+        },
+      },
+    });
+
+    // Notification
+    await this.prisma.notification.create({
+      data: {
+        userId,
+        type: 'SYSTEM',
+        title: '👑 Abonnement Premium offert !',
+        body: `Vous avez reçu un abonnement Premium de ${durationMonths} mois de la part de l'équipe INKDROP.`,
+        metadata: { plan, durationMonths, expiresAt: newExpires },
+      },
+    });
+
+    return {
+      success: true,
+      message: `Abonnement Premium ${plan} de ${durationMonths} mois accordé à ${user.username}`,
+      user: updatedUser,
+    };
+  }
+
+  // ============================================
+  // ✅ PROMOUVOIR UN UTILISATEUR EN DESSINATEUR
+  // ============================================
+  async promoteToCreator(adminId: string, userId: string) {
+    await this.checkAdmin(adminId);
+
+    const user = await this.prisma.user.findUnique({
+      where: { id: userId },
+    });
+
+    if (!user) {
+      throw new NotFoundException('Utilisateur non trouvé');
+    }
+
+    if (user.role === 'CREATOR') {
+      throw new BadRequestException('Cet utilisateur est déjà un créateur');
+    }
+
+    if (user.role === 'ADMIN') {
+      throw new BadRequestException('Un administrateur ne peut pas être promu créateur');
+    }
+
+    const updatedUser = await this.prisma.user.update({
+      where: { id: userId },
+      data: { role: 'CREATOR' },
+    });
+
+    // Audit log
+    await this.prisma.auditLog.create({
+      data: {
+        userId: adminId,
+        action: 'USER_PROMOTED_TO_CREATOR',
+        targetId: userId,
+        targetType: 'User',
+        details: { previousRole: user.role },
+      },
+    });
+
+    // Notification
+    await this.prisma.notification.create({
+      data: {
+        userId,
+        type: 'SYSTEM',
+        title: '🎨 Vous êtes maintenant un créateur !',
+        body: 'Vous pouvez maintenant publier des mangas payants et gagner de l\'argent. Félicitations !',
+        metadata: { role: 'CREATOR' },
+      },
+    });
+
+    return {
+      success: true,
+      message: `L'utilisateur ${user.username} est maintenant un créateur`,
+      user: updatedUser,
+    };
+  }
+
+  // ============================================
+  // ✅ RÉVOQUER LE STATUT DE DESSINATEUR
+  // ============================================
+  async revokeCreatorStatus(adminId: string, userId: string, reason: string) {
+    await this.checkAdmin(adminId);
+
+    const user = await this.prisma.user.findUnique({
+      where: { id: userId },
+    });
+
+    if (!user) {
+      throw new NotFoundException('Utilisateur non trouvé');
+    }
+
+    if (user.role !== 'CREATOR') {
+      throw new BadRequestException('Cet utilisateur n\'est pas un créateur');
+    }
+
+    const updatedUser = await this.prisma.user.update({
+      where: { id: userId },
+      data: { role: 'READER' },
+    });
+
+    // Audit log
+    await this.prisma.auditLog.create({
+      data: {
+        userId: adminId,
+        action: 'CREATOR_STATUS_REVOKED',
+        targetId: userId,
+        targetType: 'User',
+        details: { reason },
+      },
+    });
+
+    // Notification
+    await this.prisma.notification.create({
+      data: {
+        userId,
+        type: 'SYSTEM',
+        title: '❌ Statut de créateur révoqué',
+        body: `Votre statut de créateur a été révoqué. Raison : ${reason}`,
+        metadata: { reason },
+      },
+    });
+
+    return {
+      success: true,
+      message: `Le statut de créateur de ${user.username} a été révoqué`,
+      user: updatedUser,
+    };
+  }
+
+  // ============================================
+  // ✅ LISTE DES DEMANDES DE DESSINATEUR
+  // ============================================
+  async getCreatorRequests(adminId: string, status?: string, page: number = 1, limit: number = 20) {
+    await this.checkAdmin(adminId);
+
+    const skip = (page - 1) * limit;
+    const where: any = {};
+    if (status) {
+      where.status = status;
+    }
+
+    const [requests, total] = await Promise.all([
+      this.prisma.creatorRequest.findMany({
+        where,
+        include: {
+          user: {
+            select: {
+              id: true,
+              username: true,
+              email: true,
+              avatarUrl: true,
+              createdAt: true,
+            },
+          },
+        },
+        orderBy: { createdAt: 'desc' },
+        skip,
+        take: limit,
+      }),
+      this.prisma.creatorRequest.count({ where }),
+    ]);
+
+    return {
+      data: requests,
+      meta: {
+        total,
+        page,
+        limit,
+        totalPages: Math.ceil(total / limit),
+      },
+    };
+  }
+
+  // ============================================
+  // ✅ APPOUVER UNE DEMANDE DE DESSINATEUR
+  // ============================================
+  async approveCreatorRequest(adminId: string, requestId: string, reviewNotes?: string) {
+    await this.checkAdmin(adminId);
+
+    const request = await this.prisma.creatorRequest.findUnique({
+      where: { id: requestId },
+      include: { user: true },
+    });
+
+    if (!request) {
+      throw new NotFoundException('Demande non trouvée');
+    }
+
+    if (request.status !== 'PENDING') {
+      throw new BadRequestException('Cette demande a déjà été traitée');
+    }
+
+    // 1. Mettre à jour la demande
+    await this.prisma.creatorRequest.update({
+      where: { id: requestId },
+      data: {
+        status: 'APPROVED',
+        reviewedBy: adminId,
+        reviewNotes: reviewNotes || null,
+      },
+    });
+
+    // 2. Promouvoir l'utilisateur
+    await this.prisma.user.update({
+      where: { id: request.userId },
+      data: { role: 'CREATOR' },
+    });
+
+    // 3. Audit log
+    await this.prisma.auditLog.create({
+      data: {
+        userId: adminId,
+        action: 'CREATOR_REQUEST_APPROVED',
+        targetId: requestId,
+        targetType: 'CreatorRequest',
+        details: { userId: request.userId, username: request.user.username },
+      },
+    });
+
+    // 4. Notification
+    await this.prisma.notification.create({
+      data: {
+        userId: request.userId,
+        type: 'SYSTEM',
+        title: '🎨 Félicitations !',
+        body: 'Votre demande de créateur a été approuvée. Vous pouvez maintenant publier des mangas payants et gagner de l\'argent !',
+        metadata: { role: 'CREATOR' },
+      },
+    });
+
+    return {
+      success: true,
+      message: `La demande de ${request.user.username} a été approuvée`,
+    };
+  }
+
+  // ============================================
+  // ✅ REFUSER UNE DEMANDE DE DESSINATEUR
+  // ============================================
+  async rejectCreatorRequest(adminId: string, requestId: string, reason: string) {
+    await this.checkAdmin(adminId);
+
+    const request = await this.prisma.creatorRequest.findUnique({
+      where: { id: requestId },
+      include: { user: true },
+    });
+
+    if (!request) {
+      throw new NotFoundException('Demande non trouvée');
+    }
+
+    if (request.status !== 'PENDING') {
+      throw new BadRequestException('Cette demande a déjà été traitée');
+    }
+
+    // 1. Mettre à jour la demande
+    await this.prisma.creatorRequest.update({
+      where: { id: requestId },
+      data: {
+        status: 'REJECTED',
+        reviewedBy: adminId,
+        reviewNotes: reason,
+      },
+    });
+
+    // 2. Audit log
+    await this.prisma.auditLog.create({
+      data: {
+        userId: adminId,
+        action: 'CREATOR_REQUEST_REJECTED',
+        targetId: requestId,
+        targetType: 'CreatorRequest',
+        details: { userId: request.userId, username: request.user.username, reason },
+      },
+    });
+
+    // 3. Notification
+    await this.prisma.notification.create({
+      data: {
+        userId: request.userId,
+        type: 'SYSTEM',
+        title: '❌ Demande de créateur refusée',
+        body: `Votre demande de créateur a été refusée. Raison : ${reason}`,
+        metadata: { reason },
+      },
+    });
+
+    return {
+      success: true,
+      message: `La demande de ${request.user.username} a été refusée`,
+    };
+  }
+
+  // ============================================
   // MODÉRATION DU CONTENU
   // ============================================
   async moderateContent(adminId: string, dto: ModerateContentDto) {
@@ -210,6 +549,7 @@ export class AdminService {
       totalComments,
       totalPayments,
       totalRevenue,
+      totalCreatorRequests,
     ] = await Promise.all([
       this.prisma.user.count(),
       this.prisma.manga.count(),
@@ -220,6 +560,7 @@ export class AdminService {
         where: { status: 'SUCCESS' },
         _sum: { amount: true },
       }),
+      this.prisma.creatorRequest.count({ where: { status: 'PENDING' } }),
     ]);
 
     return {
@@ -237,6 +578,9 @@ export class AdminService {
       payments: {
         total: totalPayments,
         revenue: totalRevenue._sum.amount || 0,
+      },
+      requests: {
+        pending: totalCreatorRequests,
       },
     };
   }
