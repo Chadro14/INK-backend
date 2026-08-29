@@ -3,6 +3,7 @@ import {
   NotFoundException,
   ForbiddenException,
   ConflictException,
+  BadRequestException,
 } from '@nestjs/common';
 import { PrismaService } from '../../prisma/prisma.service';
 import { StorageService } from '../../common/services/storage.service';
@@ -90,24 +91,112 @@ export class MangasService {
   }
 
   // ============================================
-  // 1. CRÉATION D'UN MANGA (CORRIGÉ)
+  // ✅ HELPER : VÉRIFIER LA POSITION DU MANGA (1 SUR 2)
+  // ============================================
+  private async getMangaPosition(userId: string, mangaId?: string): Promise<{ position: number; isPaidPosition: boolean }> {
+    // Récupérer tous les mangas du créateur (même ceux supprimés)
+    const mangas = await this.prisma.manga.findMany({
+      where: { authorId: userId },
+      orderBy: { createdAt: 'asc' },
+      select: { id: true, isPremium: true, createdAt: true },
+    });
+
+    // Si on vérifie un manga existant
+    if (mangaId) {
+      const index = mangas.findIndex(m => m.id === mangaId);
+      if (index !== -1) {
+        const position = index + 1;
+        return {
+          position,
+          isPaidPosition: position % 2 === 1, // Position impaire = peut être payant
+        };
+      }
+    }
+
+    // Si c'est un nouveau manga
+    const position = mangas.length + 1;
+    return {
+      position,
+      isPaidPosition: position % 2 === 1, // Position impaire = peut être payant
+    };
+  }
+
+  // ============================================
+  // ✅ HELPER : VÉRIFIER SI L'UTILISATEUR EST CRÉATEUR
+  // ============================================
+  private async isCreator(userId: string): Promise<boolean> {
+    const user = await this.prisma.user.findUnique({
+      where: { id: userId },
+      select: { role: true },
+    });
+    return user?.role === Role.CREATOR || user?.role === Role.ADMIN;
+  }
+
+  // ============================================
+  // ✅ HELPER : PEUT PUBLIER DES CHAPITRES PAYANTS ?
+  // ============================================
+  async canPublishPaidChapter(userId: string, mangaId: string): Promise<{ allowed: boolean; reason: string }> {
+    // 1. Vérifier que l'utilisateur est créateur
+    if (!(await this.isCreator(userId))) {
+      return { allowed: false, reason: 'Seuls les créateurs peuvent publier des chapitres payants' };
+    }
+
+    // 2. Vérifier le manga
+    const manga = await this.prisma.manga.findUnique({
+      where: { id: mangaId },
+      select: { authorId: true },
+    });
+
+    if (!manga) {
+      throw new NotFoundException('Manga non trouvé');
+    }
+
+    // 3. Vérifier la position du manga (1 sur 2)
+    const { position, isPaidPosition } = await this.getMangaPosition(userId, mangaId);
+
+    if (!isPaidPosition) {
+      return {
+        allowed: false,
+        reason: `Ce manga (position n°${position}) doit être obligatoirement gratuit. Les mangas en position paire sont gratuits.`,
+      };
+    }
+
+    return {
+      allowed: true,
+      reason: `Position n°${position} (impaire) - Vous pouvez rendre ce manga payant.`,
+    };
+  }
+
+  // ============================================
+  // 1. CRÉATION D'UN MANGA (AVEC VÉRIFICATION DE POSITION)
   // ============================================
   async create(userId: string, dto: any) {
     const slug = await this.generateUniqueSlug(dto.title);
 
-    // ✅ VÉRIFIER SI L'UTILISATEUR EST DÉJÀ CRÉATEUR
+    // Vérifier si l'utilisateur est déjà créateur
     const user = await this.prisma.user.findUnique({
       where: { id: userId },
       select: { role: true },
     });
 
-    // ✅ SI C'EST UN READER, LE PASSER EN CREATOR
+    // Si c'est un READER, le passer en CREATOR
     if (user?.role === 'READER') {
       await this.prisma.user.update({
         where: { id: userId },
         data: { role: 'CREATOR' },
       });
       console.log(`✅ Utilisateur ${userId} promu au rôle CREATOR`);
+    }
+
+    // ✅ VÉRIFIER LA POSITION DU MANGA (1 SUR 2)
+    const { position, isPaidPosition } = await this.getMangaPosition(userId);
+
+    // ✅ Si position paire → le manga doit être gratuit
+    const isPremium = dto.isPremium ?? false;
+    if (isPremium && !isPaidPosition) {
+      throw new BadRequestException(
+        `Ce manga (n°${position}) doit être gratuit car il est en position paire. Les mangas en position paire sont obligatoirement gratuits.`
+      );
     }
 
     return this.prisma.manga.create({
@@ -119,8 +208,14 @@ export class MangasService {
         status: dto.status ? (dto.status as Status) : Status.ONGOING,
         genre: dto.genre || [],
         tags: dto.tags || [],
-        isPremium: dto.isPremium ?? false,
+        isPremium: isPremium && isPaidPosition, // Forcé à false si position paire
         authorId: userId,
+        // ✅ AJOUTER LA POSITION POUR SUIVI
+        metadata: {
+          position,
+          isPaidPosition,
+          createdAt: new Date().toISOString(),
+        },
       },
       include: {
         author: { select: AUTHOR_SELECT },
@@ -355,11 +450,22 @@ export class MangasService {
   }
 
   // ============================================
-  // 5. MISE À JOUR DU MANGA
+  // 5. MISE À JOUR DU MANGA (AVEC VÉRIFICATION POSITION)
   // ============================================
   async update(id: string, userId: string, dto: any) {
     const manga = await this.findByIdOrSlug(id);
     await this.checkOwnershipOrAdmin(manga.authorId, userId);
+
+    // ✅ VÉRIFIER SI ON TENTE DE RENDRE PAYANT UN MANGA EN POSITION PAIRE
+    if (dto.isPremium !== undefined) {
+      const { position, isPaidPosition } = await this.getMangaPosition(userId, id);
+      
+      if (dto.isPremium && !isPaidPosition) {
+        throw new BadRequestException(
+          `Ce manga (position n°${position}) doit rester gratuit car il est en position paire.`
+        );
+      }
+    }
 
     const updateData: any = {};
     
@@ -376,7 +482,12 @@ export class MangasService {
     }
     if (dto.genre !== undefined) updateData.genre = dto.genre;
     if (dto.tags !== undefined) updateData.tags = dto.tags;
-    if (dto.isPremium !== undefined) updateData.isPremium = dto.isPremium;
+    
+    // ✅ isPremium ne peut être mis à true que si position impaire
+    if (dto.isPremium !== undefined) {
+      const { isPaidPosition } = await this.getMangaPosition(userId, id);
+      updateData.isPremium = dto.isPremium && isPaidPosition;
+    }
 
     return this.prisma.manga.update({
       where: { id: manga.id },
