@@ -1,7 +1,6 @@
 import { Injectable, NotFoundException, ForbiddenException, BadRequestException } from '@nestjs/common';
 import { PrismaService } from '../../prisma/prisma.service';
 import { FollowService } from '../follow/follow.service';
-import { CertificationService } from '../certification/certification.service';
 import { CertifyUserDto } from './dto/certify-user.dto';
 import { ModerateContentDto, ModerationAction } from './dto/moderate-content.dto';
 import { UserFilterDto } from './dto/user-filter.dto';
@@ -12,7 +11,7 @@ export class AdminService {
   constructor(
     private prisma: PrismaService,
     private followService: FollowService,
-    private certificationService: CertificationService,
+    // ✅ CertificationService supprimé - on utilise le Prisma directement
   ) {}
 
   // ============================================
@@ -110,12 +109,13 @@ export class AdminService {
       throw new NotFoundException('Utilisateur non trouvé');
     }
 
+    // ✅ Certification directe sans service externe
     const updatedUser = await this.prisma.user.update({
       where: { id: dto.userId },
       data: {
         isCertified: dto.certify,
         certifiedAt: dto.certify ? new Date() : null,
-        avatarColor: dto.badgeColor || user.avatarColor,
+        badgeColor: dto.badgeColor || user.badgeColor,
       },
     });
 
@@ -144,7 +144,7 @@ export class AdminService {
   }
 
   // ============================================
-  // ✅ AJOUTER UN ABONNEMENT PREMIUM À UN UTILISATEUR (PAR ADMIN)
+  // ✅ AJOUTER UN ABONNEMENT PREMIUM (PAR ADMIN)
   // ============================================
   async grantPremiumSubscription(adminId: string, userId: string, plan: PremiumPlan = PremiumPlan.MONTHLY, durationMonths: number = 1) {
     await this.checkAdmin(adminId);
