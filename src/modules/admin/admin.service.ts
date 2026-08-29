@@ -119,7 +119,6 @@ export class AdminService {
       },
     });
 
-    // Audit log
     await this.prisma.auditLog.create({
       data: {
         userId: adminId,
@@ -130,7 +129,6 @@ export class AdminService {
       },
     });
 
-    // Notification
     if (dto.certify) {
       await this.prisma.notification.create({
         data: {
@@ -159,11 +157,9 @@ export class AdminService {
       throw new NotFoundException('Utilisateur non trouvé');
     }
 
-    // Calculer la date d'expiration
     const expiresAt = new Date();
     expiresAt.setMonth(expiresAt.getMonth() + durationMonths);
 
-    // Si l'utilisateur a déjà un abonnement, prolonger
     const currentExpires = user.premiumExpires || new Date();
     const newExpires = currentExpires > new Date() 
       ? new Date(currentExpires.getTime() + durationMonths * 30 * 24 * 60 * 60 * 1000)
@@ -178,7 +174,6 @@ export class AdminService {
       },
     });
 
-    // Audit log
     await this.prisma.auditLog.create({
       data: {
         userId: adminId,
@@ -193,7 +188,6 @@ export class AdminService {
       },
     });
 
-    // Notification
     await this.prisma.notification.create({
       data: {
         userId,
@@ -238,7 +232,6 @@ export class AdminService {
       data: { role: 'CREATOR' },
     });
 
-    // Audit log
     await this.prisma.auditLog.create({
       data: {
         userId: adminId,
@@ -249,7 +242,6 @@ export class AdminService {
       },
     });
 
-    // Notification
     await this.prisma.notification.create({
       data: {
         userId,
@@ -290,7 +282,6 @@ export class AdminService {
       data: { role: 'READER' },
     });
 
-    // Audit log
     await this.prisma.auditLog.create({
       data: {
         userId: adminId,
@@ -301,7 +292,6 @@ export class AdminService {
       },
     });
 
-    // Notification
     await this.prisma.notification.create({
       data: {
         userId,
@@ -382,7 +372,6 @@ export class AdminService {
       throw new BadRequestException('Cette demande a déjà été traitée');
     }
 
-    // 1. Mettre à jour la demande
     await this.prisma.creatorRequest.update({
       where: { id: requestId },
       data: {
@@ -392,13 +381,11 @@ export class AdminService {
       },
     });
 
-    // 2. Promouvoir l'utilisateur
     await this.prisma.user.update({
       where: { id: request.userId },
       data: { role: 'CREATOR' },
     });
 
-    // 3. Audit log
     await this.prisma.auditLog.create({
       data: {
         userId: adminId,
@@ -409,7 +396,6 @@ export class AdminService {
       },
     });
 
-    // 4. Notification
     await this.prisma.notification.create({
       data: {
         userId: request.userId,
@@ -445,7 +431,6 @@ export class AdminService {
       throw new BadRequestException('Cette demande a déjà été traitée');
     }
 
-    // 1. Mettre à jour la demande
     await this.prisma.creatorRequest.update({
       where: { id: requestId },
       data: {
@@ -455,7 +440,6 @@ export class AdminService {
       },
     });
 
-    // 2. Audit log
     await this.prisma.auditLog.create({
       data: {
         userId: adminId,
@@ -466,7 +450,6 @@ export class AdminService {
       },
     });
 
-    // 3. Notification
     await this.prisma.notification.create({
       data: {
         userId: request.userId,
@@ -491,7 +474,6 @@ export class AdminService {
 
     const { targetId, action, reason } = dto;
 
-    // Déterminer le type de contenu
     const comment = await this.prisma.comment.findUnique({
       where: { id: targetId },
     });
@@ -505,7 +487,6 @@ export class AdminService {
         },
       });
     } else {
-      // Vérifier si c'est un manga
       const manga = await this.prisma.manga.findUnique({
         where: { id: targetId },
       });
@@ -522,7 +503,6 @@ export class AdminService {
       }
     }
 
-    // Audit log
     await this.prisma.auditLog.create({
       data: {
         userId: adminId,
