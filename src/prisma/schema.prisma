@@ -92,6 +92,9 @@ model User {
   ticketUses         TicketUse[]
   ticketParticipations TicketParticipation[]
 
+  // ✅ CREATOR REQUESTS
+  creatorRequests    CreatorRequest[]
+
   createdAt          DateTime  @default(now())
   updatedAt          DateTime  @updatedAt
 
@@ -820,4 +823,43 @@ enum TicketType {
   DAILY_REWARD // Récompense quotidienne
   GIFT         // Cadeau de la plateforme
   USED         // Utilisation d'un ticket
+}
+
+// ============================================
+// ✅ CREATOR REQUESTS (DEMANDES DE DESSINATEUR)
+// ============================================
+model CreatorRequest {
+  id           String   @id @default(uuid())
+  userId       String
+  user         User     @relation(fields: [userId], references: [id], onDelete: Cascade)
+
+  // Infos du dessinateur
+  portfolioUrl String?                        // Lien vers portfolio (Instagram, DeviantArt, etc.)
+  description  String?  @db.Text               // Description de son travail
+  examples     String[] @default([])           // URLs des exemples de dessins
+
+  // Preuves
+  proofImages  String[] @default([])           // Images de preuve
+  proofText    String?  @db.Text               // Explication supplémentaire
+
+  // Statut
+  status       RequestStatus @default(PENDING)
+  reviewedBy   String?                         // ID de l'admin qui a traité
+  reviewNotes  String?  @db.Text               // Notes de l'admin
+
+  createdAt    DateTime @default(now())
+  updatedAt    DateTime @updatedAt
+
+  @@index([userId])
+  @@index([status])
+  @@index([createdAt])
+}
+
+// ============================================
+// ENUM REQUEST STATUS
+// ============================================
+enum RequestStatus {
+  PENDING
+  APPROVED
+  REJECTED
 }
