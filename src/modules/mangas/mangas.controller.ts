@@ -36,7 +36,7 @@ export class MangasController {
   }
 
   // ============================================
-  // 2. LISTE DES MANGAS (PAGINÉE)
+  // 2. LISTE DES MANGAS (PAGINÉE) - AVEC FILTRE AUTHOR
   // ============================================
   @Get()
   async findAll(
@@ -45,8 +45,9 @@ export class MangasController {
     @Query('search') search?: string,
     @Query('genre') genre?: string,
     @Query('status') status?: string,
+    @Query('authorId') authorId?: string, // ✅ AJOUTÉ
   ) {
-    const filters = { search, genre, status };
+    const filters = { search, genre, status, authorId };
     const result = await this.mangasService.findAll(
       page ? parseInt(page) : 1,
       limit ? parseInt(limit) : 20,
@@ -99,7 +100,6 @@ export class MangasController {
 
   // ============================================
   // 7. INCRÉMENTER LES VUES D'UN MANGA
-  // ✅ NOUVELLE ROUTE
   // ============================================
   @Post(':id/view')
   async incrementView(@Param('id') id: string, @Req() req: any) {
