@@ -12,6 +12,7 @@ import {
   Patch,
 } from '@nestjs/common';
 import { MangasService } from './mangas.service';
+import { ViewsService } from '../views/views.service';
 import { JwtAuthGuard } from '../../common/guards/jwt-auth.guard';
 import { CreateMangaDto } from './dto/create-manga.dto';
 import { UpdateMangaDto } from './dto/update-manga.dto';
@@ -19,7 +20,10 @@ import { Status } from '@prisma/client';
 
 @Controller('mangas')
 export class MangasController {
-  constructor(private readonly mangasService: MangasService) {}
+  constructor(
+    private readonly mangasService: MangasService,
+    private readonly viewsService: ViewsService,
+  ) {}
 
   // ============================================
   // 1. CRÉER UN MANGA
@@ -94,13 +98,26 @@ export class MangasController {
   }
 
   // ============================================
-  // 7. INCRÉMENTER LES VUES
+  // 7. INCRÉMENTER LES VUES D'UN MANGA
+  // ✅ NOUVELLE ROUTE
   // ============================================
-  @Post(':identifier/view')
-  async incrementView(@Param('identifier') identifier: string, @Req() req: any) {
-    const userId = req.user?.id;
-    const result = await this.mangasService.incrementView(identifier, userId);
-    return { success: true, ...result };
+  @Post(':id/view')
+  async incrementView(@Param('id') id: string, @Req() req: any) {
+    const userId = req.user?.id || null;
+    const sessionId = req.headers['x-session-id'] || null;
+    const userAgent = req.headers['user-agent'] || null;
+    const ipAddress = req.ip || req.connection?.remoteAddress || null;
+
+    const result = await this.viewsService.increment({
+      userId,
+      mangaId: id,
+      chapterId: null,
+      sessionId,
+      userAgent,
+      ipAddress,
+    });
+
+    return { success: true, viewsCount: result.viewsCount };
   }
 
   // ============================================
@@ -175,7 +192,7 @@ export class MangasController {
   }
 
   // ============================================
-  // ✅ 13. RÉCUPÉRER LES MANGAS D'UN CRÉATEUR AVEC STATS
+  // 13. RÉCUPÉRER LES MANGAS D'UN CRÉATEUR AVEC STATS
   // ============================================
   @Get('creator/:userId')
   @UseGuards(JwtAuthGuard)
@@ -189,7 +206,7 @@ export class MangasController {
   }
 
   // ============================================
-  // ✅ 14. VÉRIFIER SI ON PEUT PUBLIER UN CHAPITRE PAYANT
+  // 14. VÉRIFIER SI ON PEUT PUBLIER UN CHAPITRE PAYANT
   // ============================================
   @Get(':identifier/can-publish-paid')
   @UseGuards(JwtAuthGuard)
@@ -206,7 +223,7 @@ export class MangasController {
   }
 
   // ============================================
-  // ✅ 15. RÉCUPÉRER LA POSITION D'UN MANGA
+  // 15. RÉCUPÉRER LA POSITION D'UN MANGA
   // ============================================
   @Get(':identifier/position')
   @UseGuards(JwtAuthGuard)
