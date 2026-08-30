@@ -9,29 +9,17 @@ import {
   Query,
   UseGuards,
   Req,
-  BadRequestException,
-  NotFoundException,
-  ForbiddenException,
+  Patch,
 } from '@nestjs/common';
 import { MangasService } from './mangas.service';
-import { ChaptersService } from './chapters.service';
 import { JwtAuthGuard } from '../../common/guards/jwt-auth.guard';
 import { CreateMangaDto } from './dto/create-manga.dto';
 import { UpdateMangaDto } from './dto/update-manga.dto';
-import {
-  CreateChapterDto,
-  ChapterUploadUrlsDto,
-  FinalizeChapterDto,
-} from './dto/create-chapter.dto';
-import { PrismaService } from '../../prisma/prisma.service';
+import { Status } from '@prisma/client';
 
 @Controller('mangas')
 export class MangasController {
-  constructor(
-    private readonly mangasService: MangasService,
-    private readonly chaptersService: ChaptersService,
-    private readonly prisma: PrismaService,
-  ) {}
+  constructor(private readonly mangasService: MangasService) {}
 
   // ============================================
   // 1. CRÉER UN MANGA
@@ -39,11 +27,12 @@ export class MangasController {
   @Post()
   @UseGuards(JwtAuthGuard)
   async create(@Req() req: any, @Body() dto: CreateMangaDto) {
-    return this.mangasService.create(req.user.id, dto);
+    const manga = await this.mangasService.create(req.user.id, dto);
+    return { success: true, data: manga };
   }
 
   // ============================================
-  // 2. LISTE DES MANGAS (avec filtres)
+  // 2. LISTE DES MANGAS (PAGINÉE)
   // ============================================
   @Get()
   async findAll(
@@ -53,22 +42,22 @@ export class MangasController {
     @Query('genre') genre?: string,
     @Query('status') status?: string,
   ) {
-    const pageNumber = page ? parseInt(page, 10) : 1;
-    const limitNumber = limit ? parseInt(limit, 10) : 20;
-    return this.mangasService.findAll(
-      Number.isNaN(pageNumber) ? 1 : pageNumber,
-      Number.isNaN(limitNumber) ? 20 : limitNumber,
-      { search, genre, status },
+    const filters = { search, genre, status };
+    const result = await this.mangasService.findAll(
+      page ? parseInt(page) : 1,
+      limit ? parseInt(limit) : 20,
+      filters,
     );
+    return { success: true, ...result };
   }
 
   // ============================================
-  // 3. TOP MANGAS (par popularité)
+  // 3. TOP MANGAS
   // ============================================
   @Get('top')
-  async getTop(@Query('limit') limit?: string) {
-    const limitNumber = limit ? parseInt(limit, 10) : 10;
-    return this.mangasService.getTopMangas(Number.isNaN(limitNumber) ? 10 : limitNumber);
+  async getTopMangas(@Query('limit') limit?: string) {
+    const mangas = await this.mangasService.getTopMangas(limit ? parseInt(limit) : 10);
+    return { success: true, data: mangas };
   }
 
   // ============================================
@@ -76,135 +65,143 @@ export class MangasController {
   // ============================================
   @Get(':identifier')
   async findOne(@Param('identifier') identifier: string) {
-    if (!identifier || identifier === 'undefined' || identifier === 'null') {
-      throw new BadRequestException(`L'identifiant du manga est invalide: "${identifier}"`);
-    }
-    return this.mangasService.findByIdOrSlug(identifier);
+    const manga = await this.mangasService.findByIdOrSlug(identifier);
+    return { success: true, data: manga };
   }
 
   // ============================================
   // 5. METTRE À JOUR UN MANGA
   // ============================================
-  @Put(':identifier')
+  @Put(':id')
   @UseGuards(JwtAuthGuard)
   async update(
-    @Param('identifier') identifier: string,
+    @Param('id') id: string,
     @Req() req: any,
     @Body() dto: UpdateMangaDto,
   ) {
-    if (!identifier || identifier === 'undefined' || identifier === 'null') {
-      throw new BadRequestException(`L'identifiant du manga est invalide: "${identifier}"`);
-    }
-    return this.mangasService.update(identifier, req.user.id, dto);
+    const manga = await this.mangasService.update(id, req.user.id, dto);
+    return { success: true, data: manga };
   }
 
   // ============================================
   // 6. SUPPRIMER UN MANGA
   // ============================================
-  @Delete(':identifier')
+  @Delete(':id')
   @UseGuards(JwtAuthGuard)
-  async delete(@Param('identifier') identifier: string, @Req() req: any) {
-    if (!identifier || identifier === 'undefined' || identifier === 'null') {
-      throw new BadRequestException(`L'identifiant du manga est invalide: "${identifier}"`);
-    }
-    return this.mangasService.delete(identifier, req.user.id);
+  async delete(@Param('id') id: string, @Req() req: any) {
+    const result = await this.mangasService.delete(id, req.user.id);
+    return { success: true, ...result };
   }
 
   // ============================================
-  // 7. COUVERTURES - URL D'UPLOAD
+  // 7. INCRÉMENTER LES VUES
   // ============================================
-  @Post(':identifier/cover/upload-url')
-  @UseGuards(JwtAuthGuard)
-  async getCoverUploadUrl(
-    @Param('identifier') identifier: string,
-    @Req() req: any,
-  ) {
-    if (!identifier || identifier === 'undefined' || identifier === 'null') {
-      throw new BadRequestException(`L'identifiant du manga est invalide: "${identifier}"`);
-    }
-    return this.mangasService.getCoverUploadUrl(identifier, req.user.id);
+  @Post(':identifier/view')
+  async incrementView(@Param('identifier') identifier: string, @Req() req: any) {
+    const userId = req.user?.id;
+    const result = await this.mangasService.incrementView(identifier, userId);
+    return { success: true, ...result };
   }
 
   // ============================================
-  // 8. COUVERTURES - FINALISATION
+  // 8. URLS D'UPLOAD POUR LA COUVERTURE
   // ============================================
-  @Post(':identifier/cover/finalize')
+  @Post(':id/cover/upload-url')
+  @UseGuards(JwtAuthGuard)
+  async getCoverUploadUrl(@Param('id') id: string, @Req() req: any) {
+    const result = await this.mangasService.getCoverUploadUrl(id, req.user.id);
+    return { success: true, data: result };
+  }
+
+  // ============================================
+  // 9. FINALISER LA COUVERTURE
+  // ============================================
+  @Post(':id/cover/finalize')
   @UseGuards(JwtAuthGuard)
   async finalizeCover(
-    @Param('identifier') identifier: string,
+    @Param('id') id: string,
     @Req() req: any,
-    @Body() body: { key: string },
+    @Body('key') key: string,
   ) {
-    if (!identifier || identifier === 'undefined' || identifier === 'null') {
-      throw new BadRequestException(`L'identifiant du manga est invalide: "${identifier}"`);
-    }
-    if (!body.key) {
-      throw new BadRequestException('La clé du fichier (key) est requise');
-    }
-    return this.mangasService.finalizeCover(identifier, req.user.id, body.key);
+    const manga = await this.mangasService.finalizeCover(id, req.user.id, key);
+    return { success: true, data: manga };
   }
 
   // ============================================
-  // 9. CHAPITRES - URLS D'UPLOAD
+  // 10. URLS D'UPLOAD POUR LES CHAPITRES
   // ============================================
-  @Post(':identifier/chapters/upload-urls')
+  @Post(':id/upload-urls')
   @UseGuards(JwtAuthGuard)
-  async getChapterUploadUrls(
-    @Param('identifier') identifier: string,
+  async getUploadUrls(
+    @Param('id') id: string,
     @Req() req: any,
-    @Body() dto: ChapterUploadUrlsDto,
+    @Body('filenames') filenames: string[],
   ) {
-    if (!identifier || identifier === 'undefined' || identifier === 'null') {
-      throw new BadRequestException(`L'identifiant du manga est invalide: "${identifier}"`);
-    }
-    return this.chaptersService.getChapterUploadUrls(identifier, dto);
+    const result = await this.mangasService.getUploadUrls(id, filenames);
+    return { success: true, data: result };
   }
 
   // ============================================
-  // 10. CHAPITRES - FINALISATION
+  // 11. METTRE À JOUR LE SLUG
   // ============================================
-  @Post(':identifier/chapters/finalize')
+  @Patch(':id/slug')
   @UseGuards(JwtAuthGuard)
-  async finalizeChapter(
-    @Param('identifier') identifier: string,
+  async updateSlug(
+    @Param('id') id: string,
     @Req() req: any,
-    @Body() dto: FinalizeChapterDto,
+    @Body('slug') slug: string,
   ) {
-    if (!identifier || identifier === 'undefined' || identifier === 'null') {
-      throw new BadRequestException(`L'identifiant du manga est invalide: "${identifier}"`);
-    }
-    return this.chaptersService.finalizeChapter(identifier, req.user.id, dto);
+    const manga = await this.mangasService.updateSlug(id, slug, req.user.id);
+    return { success: true, data: manga };
   }
 
   // ============================================
-  // 11. MIGRER LES SLUGS (ENDPOINT TEMPORAIRE)
+  // 12. MIGRER LES SLUGS (ADMIN)
   // ============================================
   @Post('migrate-slugs')
   @UseGuards(JwtAuthGuard)
   async migrateSlugs(@Req() req: any) {
-    const user = await this.prisma.user.findUnique({
+    // Vérifier que l'utilisateur est admin
+    const user = await this.mangasService['prisma'].user.findUnique({
       where: { id: req.user.id },
       select: { role: true },
     });
 
     if (user?.role !== 'ADMIN') {
-      throw new ForbiddenException('Seul un administrateur peut exécuter cette action.');
+      return { success: false, message: 'Accès réservé aux administrateurs' };
     }
 
-    return this.mangasService.migrateSlugs();
+    const result = await this.mangasService.migrateSlugs();
+    return { success: true, ...result };
   }
 
   // ============================================
-  // ✅ 12. INCRÉMENTER LES VUES (AJOUTÉ)
+  // ✅ 13. RÉCUPÉRER LES MANGAS D'UN CRÉATEUR AVEC STATS
   // ============================================
-  @Post(':identifier/view')
-  async incrementView(
-    @Param('identifier') identifier: string,
+  @Get('creator/:userId')
+  @UseGuards(JwtAuthGuard)
+  async getCreatorMangas(@Param('userId') userId: string) {
+    const result = await this.mangasService.getCreatorMangasWithStats(userId);
+    return { 
+      success: true, 
+      data: result.mangas, 
+      totals: result.totals 
+    };
+  }
+
+  // ============================================
+  // 14. VÉRIFIER SI ON PEUT PUBLIER UN CHAPITRE PAYANT
+  // ============================================
+  @Get(':mangaId/can-publish-paid')
+  @UseGuards(JwtAuthGuard)
+  async canPublishPaidChapter(
+    @Param('mangaId') mangaId: string,
     @Req() req: any,
   ) {
-    if (!identifier || identifier === 'undefined' || identifier === 'null') {
-      throw new BadRequestException(`L'identifiant du manga est invalide: "${identifier}"`);
-    }
-    return this.mangasService.incrementView(identifier, req.user?.id);
+    const result = await this.mangasService.canPublishPaidChapter(
+      req.user.id,
+      mangaId,
+    );
+    return { success: true, ...result };
   }
 }
