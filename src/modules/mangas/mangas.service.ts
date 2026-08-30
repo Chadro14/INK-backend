@@ -94,30 +94,27 @@ export class MangasService {
   // ✅ HELPER : VÉRIFIER LA POSITION DU MANGA (1 SUR 2)
   // ============================================
   private async getMangaPosition(userId: string, mangaId?: string): Promise<{ position: number; isPaidPosition: boolean }> {
-    // Récupérer tous les mangas du créateur (même ceux supprimés)
     const mangas = await this.prisma.manga.findMany({
       where: { authorId: userId },
       orderBy: { createdAt: 'asc' },
       select: { id: true, isPremium: true, createdAt: true },
     });
 
-    // Si on vérifie un manga existant
     if (mangaId) {
       const index = mangas.findIndex(m => m.id === mangaId);
       if (index !== -1) {
         const position = index + 1;
         return {
           position,
-          isPaidPosition: position % 2 === 1, // Position impaire = peut être payant
+          isPaidPosition: position % 2 === 1,
         };
       }
     }
 
-    // Si c'est un nouveau manga
     const position = mangas.length + 1;
     return {
       position,
-      isPaidPosition: position % 2 === 1, // Position impaire = peut être payant
+      isPaidPosition: position % 2 === 1,
     };
   }
 
@@ -136,12 +133,10 @@ export class MangasService {
   // ✅ HELPER : PEUT PUBLIER DES CHAPITRES PAYANTS ?
   // ============================================
   async canPublishPaidChapter(userId: string, mangaId: string): Promise<{ allowed: boolean; reason: string }> {
-    // 1. Vérifier que l'utilisateur est créateur
     if (!(await this.isCreator(userId))) {
       return { allowed: false, reason: 'Seuls les créateurs peuvent publier des chapitres payants' };
     }
 
-    // 2. Vérifier le manga
     const manga = await this.prisma.manga.findUnique({
       where: { id: mangaId },
       select: { authorId: true },
@@ -151,7 +146,6 @@ export class MangasService {
       throw new NotFoundException('Manga non trouvé');
     }
 
-    // 3. Vérifier la position du manga (1 sur 2)
     const { position, isPaidPosition } = await this.getMangaPosition(userId, mangaId);
 
     if (!isPaidPosition) {
@@ -168,18 +162,16 @@ export class MangasService {
   }
 
   // ============================================
-  // 1. CRÉATION D'UN MANGA (AVEC VÉRIFICATION DE POSITION)
+  // 1. CRÉATION D'UN MANGA
   // ============================================
   async create(userId: string, dto: any) {
     const slug = await this.generateUniqueSlug(dto.title);
 
-    // Vérifier si l'utilisateur est déjà créateur
     const user = await this.prisma.user.findUnique({
       where: { id: userId },
       select: { role: true },
     });
 
-    // Si c'est un READER, le passer en CREATOR
     if (user?.role === 'READER') {
       await this.prisma.user.update({
         where: { id: userId },
@@ -188,18 +180,15 @@ export class MangasService {
       console.log(`✅ Utilisateur ${userId} promu au rôle CREATOR`);
     }
 
-    // ✅ VÉRIFIER LA POSITION DU MANGA (1 SUR 2)
     const { position, isPaidPosition } = await this.getMangaPosition(userId);
 
-    // ✅ Si position paire → le manga doit être gratuit
     const isPremium = dto.isPremium ?? false;
     if (isPremium && !isPaidPosition) {
       throw new BadRequestException(
-        `Ce manga (n°${position}) doit être gratuit car il est en position paire. Les mangas en position paire sont obligatoirement gratuits.`
+        `Ce manga (n°${position}) doit être gratuit car il est en position paire.`
       );
     }
 
-    // ✅ CORRECTION : suppression du champ metadata
     return this.prisma.manga.create({
       data: {
         title: dto.title,
@@ -272,7 +261,7 @@ export class MangasService {
   }
 
   // ============================================
-  // 3. TOP MANGAS (PAR POPULARITÉ)
+  // 3. TOP MANGAS
   // ============================================
   async getTopMangas(limit = 10) {
     const limitNum = Math.max(1, Number(limit) || 10);
@@ -290,7 +279,7 @@ export class MangasService {
   }
 
   // ============================================
-  // 4. RECHERCHE PAR ID (UNIQUEMENT UUID)
+  // 4. RECHERCHE PAR ID
   // ============================================
   async findById(id: string) {
     const manga = await this.prisma.manga.findUnique({
@@ -372,7 +361,7 @@ export class MangasService {
   }
 
   // ============================================
-  // 4.c RECHERCHE PAR ID OU SLUG (UNIFIÉ)
+  // 4.c RECHERCHE PAR ID OU SLUG
   // ============================================
   async findByIdOrSlug(identifier: string) {
     let manga = await this.prisma.manga.findUnique({
@@ -445,13 +434,12 @@ export class MangasService {
   }
 
   // ============================================
-  // 5. MISE À JOUR DU MANGA (AVEC VÉRIFICATION POSITION)
+  // 5. MISE À JOUR DU MANGA
   // ============================================
   async update(id: string, userId: string, dto: any) {
     const manga = await this.findByIdOrSlug(id);
     await this.checkOwnershipOrAdmin(manga.authorId, userId);
 
-    // ✅ VÉRIFIER SI ON TENTE DE RENDRE PAYANT UN MANGA EN POSITION PAIRE
     if (dto.isPremium !== undefined) {
       const { position, isPaidPosition } = await this.getMangaPosition(userId, id);
       
@@ -478,7 +466,6 @@ export class MangasService {
     if (dto.genre !== undefined) updateData.genre = dto.genre;
     if (dto.tags !== undefined) updateData.tags = dto.tags;
     
-    // ✅ isPremium ne peut être mis à true que si position impaire
     if (dto.isPremium !== undefined) {
       const { isPaidPosition } = await this.getMangaPosition(userId, id);
       updateData.isPremium = dto.isPremium && isPaidPosition;
@@ -629,7 +616,7 @@ export class MangasService {
   }
 
   // ============================================
-  // ✅ 11. INCRÉMENTER LES VUES
+  // 11. INCRÉMENTER LES VUES
   // ============================================
   async incrementView(identifier: string, userId?: string) {
     const manga = await this.findByIdOrSlug(identifier);
@@ -645,5 +632,69 @@ export class MangasService {
     });
 
     return { viewsCount: updated.viewsCount };
+  }
+
+  // ============================================
+  // ✅ 12. RÉCUPÉRER LES MANGAS D'UN CRÉATEUR AVEC STATS
+  // ============================================
+  async getCreatorMangasWithStats(userId: string) {
+    // Vérifier si l'utilisateur existe
+    const user = await this.prisma.user.findUnique({
+      where: { id: userId },
+      select: { id: true },
+    });
+
+    if (!user) {
+      throw new NotFoundException('Utilisateur non trouvé');
+    }
+
+    const mangas = await this.prisma.manga.findMany({
+      where: {
+        authorId: userId,
+      },
+      select: {
+        id: true,
+        title: true,
+        slug: true,
+        coverUrl: true,
+        description: true,
+        status: true,
+        viewsCount: true,
+        likesCount: true,
+        subscribersCount: true,
+        commentsCount: true,
+        isPremium: true,
+        createdAt: true,
+        updatedAt: true,
+        _count: {
+          select: {
+            chapters: true,
+            comments: true,
+            likes: true,
+            subscriptions: true,
+            views: true,
+          },
+        },
+      },
+      orderBy: { createdAt: 'desc' },
+    });
+
+    // Calcul des totaux
+    const totalViews = mangas.reduce((acc, m) => acc + m.viewsCount, 0);
+    const totalLikes = mangas.reduce((acc, m) => acc + m.likesCount, 0);
+    const totalChapters = mangas.reduce((acc, m) => acc + m._count.chapters, 0);
+    const totalComments = mangas.reduce((acc, m) => acc + m._count.comments, 0);
+    const totalSubscribers = mangas.reduce((acc, m) => acc + m.subscribersCount, 0);
+
+    return {
+      mangas,
+      totals: {
+        views: totalViews,
+        likes: totalLikes,
+        chapters: totalChapters,
+        comments: totalComments,
+        subscribers: totalSubscribers,
+      },
+    };
   }
 }
