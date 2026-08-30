@@ -91,7 +91,7 @@ export class MangasService {
   }
 
   // ============================================
-  // ✅ HELPER : VÉRIFIER LA POSITION DU MANGA (1 SUR 2) - PUBLIC
+  // HELPER : VÉRIFIER LA POSITION DU MANGA (1 SUR 2) - PUBLIC
   // ============================================
   async getMangaPosition(userId: string, mangaId?: string): Promise<{ position: number; isPaidPosition: boolean }> {
     const mangas = await this.prisma.manga.findMany({
@@ -119,7 +119,7 @@ export class MangasService {
   }
 
   // ============================================
-  // ✅ HELPER : VÉRIFIER SI L'UTILISATEUR EST CRÉATEUR
+  // HELPER : VÉRIFIER SI L'UTILISATEUR EST CRÉATEUR
   // ============================================
   private async isCreator(userId: string): Promise<boolean> {
     const user = await this.prisma.user.findUnique({
@@ -130,15 +130,13 @@ export class MangasService {
   }
 
   // ============================================
-  // ✅ HELPER : PEUT PUBLIER DES CHAPITRES PAYANTS ?
+  // HELPER : PEUT PUBLIER DES CHAPITRES PAYANTS ?
   // ============================================
   async canPublishPaidChapter(userId: string, mangaId: string): Promise<{ allowed: boolean; reason: string; position?: number }> {
-    // 1. Vérifier que l'utilisateur est créateur
     if (!(await this.isCreator(userId))) {
       return { allowed: false, reason: 'Seuls les créateurs peuvent publier des chapitres payants' };
     }
 
-    // 2. Vérifier le manga
     const manga = await this.prisma.manga.findUnique({
       where: { id: mangaId },
       select: { authorId: true },
@@ -148,7 +146,6 @@ export class MangasService {
       throw new NotFoundException('Manga non trouvé');
     }
 
-    // 3. Vérifier la position du manga (1 sur 2)
     const { position, isPaidPosition } = await this.getMangaPosition(userId, mangaId);
 
     if (!isPaidPosition) {
@@ -213,18 +210,23 @@ export class MangasService {
   }
 
   // ============================================
-  // 2. LISTE AVEC FILTRES ET PAGINATION
+  // 2. LISTE AVEC FILTRES ET PAGINATION - AJOUT DU FILTRE AUTHORID
   // ============================================
   async findAll(
     page = 1,
     limit = 20,
-    filters?: { search?: string; genre?: string; status?: string },
+    filters?: { search?: string; genre?: string; status?: string; authorId?: string },
   ) {
     const pageNum = Math.max(1, Number(page) || 1);
     const limitNum = Math.max(1, Number(limit) || 20);
     const skip = (pageNum - 1) * limitNum;
 
     const where: any = {};
+
+    // ✅ AJOUT : Filtrer par auteur
+    if (filters?.authorId) {
+      where.authorId = filters.authorId;
+    }
 
     if (filters?.search?.trim()) {
       where.OR = [
