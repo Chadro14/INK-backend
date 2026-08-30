@@ -169,4 +169,14 @@ export class ChaptersController {
   async delete(@Param('chapterId') chapterId: string) {
     return this.chaptersService.delete(chapterId);
   }
+
+  // ============================================
+  // ✅ 11. RÉCUPÉRER LES STATISTIQUES DES CHAPITRES D'UN CRÉATEUR
+  // ============================================
+  @Get('creator/:userId/stats')
+  @UseGuards(JwtAuthGuard)
+  async getCreatorChaptersStats(@Param('userId') userId: string) {
+    const stats = await this.chaptersService.getCreatorChaptersStats(userId);
+    return { success: true, data: stats };
+  }
 }
