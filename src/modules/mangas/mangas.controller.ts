@@ -161,7 +161,6 @@ export class MangasController {
   @Post('migrate-slugs')
   @UseGuards(JwtAuthGuard)
   async migrateSlugs(@Req() req: any) {
-    // Vérifier que l'utilisateur est admin
     const user = await this.mangasService['prisma'].user.findUnique({
       where: { id: req.user.id },
       select: { role: true },
@@ -190,18 +189,55 @@ export class MangasController {
   }
 
   // ============================================
-  // 14. VÉRIFIER SI ON PEUT PUBLIER UN CHAPITRE PAYANT
+  // ✅ 14. VÉRIFIER SI ON PEUT PUBLIER UN CHAPITRE PAYANT
   // ============================================
-  @Get(':mangaId/can-publish-paid')
+  @Get(':identifier/can-publish-paid')
   @UseGuards(JwtAuthGuard)
   async canPublishPaidChapter(
-    @Param('mangaId') mangaId: string,
+    @Param('identifier') identifier: string,
     @Req() req: any,
   ) {
+    const manga = await this.mangasService.findByIdOrSlug(identifier);
     const result = await this.mangasService.canPublishPaidChapter(
       req.user.id,
-      mangaId,
+      manga.id,
     );
     return { success: true, ...result };
+  }
+
+  // ============================================
+  // ✅ 15. RÉCUPÉRER LA POSITION D'UN MANGA
+  // ============================================
+  @Get(':identifier/position')
+  @UseGuards(JwtAuthGuard)
+  async getMangaPosition(
+    @Param('identifier') identifier: string,
+    @Req() req: any,
+  ) {
+    const manga = await this.mangasService.findByIdOrSlug(identifier);
+    
+    if (manga.authorId !== req.user.id) {
+      return { 
+        success: false, 
+        message: "Vous n'êtes pas l'auteur de ce manga." 
+      };
+    }
+    
+    const { position, isPaidPosition } = await this.mangasService.getMangaPosition(
+      req.user.id,
+      manga.id,
+    );
+    
+    return {
+      success: true,
+      data: {
+        position,
+        isPaidPosition,
+        canHavePaidChapters: isPaidPosition,
+        message: isPaidPosition 
+          ? `Position ${position} (impaire) - Vous pouvez publier des chapitres payants.`
+          : `Position ${position} (paire) - Ce manga doit être gratuit.`,
+      },
+    };
   }
 }
