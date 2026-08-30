@@ -74,7 +74,7 @@ export class CreatorsService {
   }
 
   // ============================================
-  // ✅ RÉCUPÉRER LES MANGAS D'UN CRÉATEUR
+  // RÉCUPÉRER LES MANGAS D'UN CRÉATEUR
   // ============================================
   async getCreatorMangas(username: string) {
     const creator = await this.prisma.user.findUnique({
@@ -113,7 +113,7 @@ export class CreatorsService {
   }
 
   // ============================================
-  // ✅ RÉCUPÉRER LES STATISTIQUES D'UN CRÉATEUR
+  // RÉCUPÉRER LES STATISTIQUES D'UN CRÉATEUR
   // ============================================
   async getCreatorStats(username: string) {
     const creator = await this.prisma.user.findUnique({
@@ -155,5 +155,21 @@ export class CreatorsService {
       likes: totalLikes,
       chapters: totalChapters,
     };
+  }
+
+  // ============================================
+  // VÉRIFIER SI UN UTILISATEUR SUIT UN CRÉATEUR
+  // ============================================
+  async checkFollowStatus(followerId: string, creatorId: string) {
+    const follow = await this.prisma.userFollow.findUnique({
+      where: {
+        followerId_followingId: {
+          followerId,
+          followingId: creatorId,
+        },
+      },
+    });
+
+    return !!follow;
   }
 }
