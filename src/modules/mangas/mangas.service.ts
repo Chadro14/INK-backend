@@ -91,9 +91,9 @@ export class MangasService {
   }
 
   // ============================================
-  // ✅ HELPER : VÉRIFIER LA POSITION DU MANGA (1 SUR 2)
+  // ✅ HELPER : VÉRIFIER LA POSITION DU MANGA (1 SUR 2) - PUBLIC
   // ============================================
-  private async getMangaPosition(userId: string, mangaId?: string): Promise<{ position: number; isPaidPosition: boolean }> {
+  async getMangaPosition(userId: string, mangaId?: string): Promise<{ position: number; isPaidPosition: boolean }> {
     const mangas = await this.prisma.manga.findMany({
       where: { authorId: userId },
       orderBy: { createdAt: 'asc' },
@@ -132,11 +132,13 @@ export class MangasService {
   // ============================================
   // ✅ HELPER : PEUT PUBLIER DES CHAPITRES PAYANTS ?
   // ============================================
-  async canPublishPaidChapter(userId: string, mangaId: string): Promise<{ allowed: boolean; reason: string }> {
+  async canPublishPaidChapter(userId: string, mangaId: string): Promise<{ allowed: boolean; reason: string; position?: number }> {
+    // 1. Vérifier que l'utilisateur est créateur
     if (!(await this.isCreator(userId))) {
       return { allowed: false, reason: 'Seuls les créateurs peuvent publier des chapitres payants' };
     }
 
+    // 2. Vérifier le manga
     const manga = await this.prisma.manga.findUnique({
       where: { id: mangaId },
       select: { authorId: true },
@@ -146,17 +148,20 @@ export class MangasService {
       throw new NotFoundException('Manga non trouvé');
     }
 
+    // 3. Vérifier la position du manga (1 sur 2)
     const { position, isPaidPosition } = await this.getMangaPosition(userId, mangaId);
 
     if (!isPaidPosition) {
       return {
         allowed: false,
+        position,
         reason: `Ce manga (position n°${position}) doit être obligatoirement gratuit. Les mangas en position paire sont gratuits.`,
       };
     }
 
     return {
       allowed: true,
+      position,
       reason: `Position n°${position} (impaire) - Vous pouvez rendre ce manga payant.`,
     };
   }
@@ -635,10 +640,9 @@ export class MangasService {
   }
 
   // ============================================
-  // ✅ 12. RÉCUPÉRER LES MANGAS D'UN CRÉATEUR AVEC STATS
+  // 12. RÉCUPÉRER LES MANGAS D'UN CRÉATEUR AVEC STATS
   // ============================================
   async getCreatorMangasWithStats(userId: string) {
-    // Vérifier si l'utilisateur existe
     const user = await this.prisma.user.findUnique({
       where: { id: userId },
       select: { id: true },
@@ -679,7 +683,6 @@ export class MangasService {
       orderBy: { createdAt: 'desc' },
     });
 
-    // Calcul des totaux
     const totalViews = mangas.reduce((acc, m) => acc + m.viewsCount, 0);
     const totalLikes = mangas.reduce((acc, m) => acc + m.likesCount, 0);
     const totalChapters = mangas.reduce((acc, m) => acc + m._count.chapters, 0);
