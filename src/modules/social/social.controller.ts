@@ -39,6 +39,26 @@ export class SocialController {
     return this.likesService.like(req.user.id, mangaId);
   }
 
+  // ✅ ROUTE POUR LIKER UN MANGA (comme le frontend l'appelle)
+  @Post('like-manga/:mangaId')
+  @UseGuards(JwtAuthGuard)
+  async likeMangaDirect(@Req() req, @Param('mangaId') mangaId: string) {
+    return this.likesService.like(req.user.id, mangaId);
+  }
+
+  @Get('has-liked/:mangaId')
+  @UseGuards(JwtAuthGuard)
+  async hasLiked(@Req() req, @Param('mangaId') mangaId: string) {
+    return this.likesService.hasLiked(req.user.id, mangaId);
+  }
+
+  // ✅ ROUTE POUR VÉRIFIER SI UN MANGA EST LIKÉ (comme le frontend l'appelle)
+  @Get('has-liked-manga/:mangaId')
+  @UseGuards(JwtAuthGuard)
+  async hasLikedManga(@Req() req, @Param('mangaId') mangaId: string) {
+    return this.likesService.hasLiked(req.user.id, mangaId);
+  }
+
   // ✅ ROUTE POUR LIKER UN CHAPITRE (avec slash)
   @Post('like/chapter/:chapterId')
   @UseGuards(JwtAuthGuard)
@@ -67,12 +87,6 @@ export class SocialController {
     return this.likesService.like(req.user.id, chapter.mangaId, chapterId);
   }
 
-  @Get('has-liked/:mangaId')
-  @UseGuards(JwtAuthGuard)
-  async hasLiked(@Req() req, @Param('mangaId') mangaId: string) {
-    return this.likesService.hasLiked(req.user.id, mangaId);
-  }
-
   // ✅ ROUTE POUR VÉRIFIER SI UN CHAPITRE EST LIKÉ
   @Get('has-liked-chapter/:chapterId')
   @UseGuards(JwtAuthGuard)
@@ -85,6 +99,37 @@ export class SocialController {
       throw new NotFoundException('Chapitre non trouvé');
     }
     return this.likesService.hasLiked(req.user.id, chapter.mangaId, chapterId);
+  }
+
+  // ============================================
+  // ABONNEMENTS
+  // ============================================
+
+  @Post('subscribe/:mangaId')
+  @UseGuards(JwtAuthGuard)
+  async subscribe(@Req() req, @Param('mangaId') mangaId: string) {
+    return this.subscriptionsService.subscribe(req.user.id, mangaId);
+  }
+
+  @Get('is-subscribed/:mangaId')
+  @UseGuards(JwtAuthGuard)
+  async isSubscribed(@Req() req, @Param('mangaId') mangaId: string) {
+    return this.subscriptionsService.isSubscribed(req.user.id, mangaId);
+  }
+
+  @Get('subscriptions')
+  @UseGuards(JwtAuthGuard)
+  async getUserSubscriptions(@Req() req) {
+    return this.subscriptionsService.getUserSubscriptions(req.user.id);
+  }
+
+  @Get('subscribers/:mangaId')
+  async getMangaSubscribers(
+    @Param('mangaId') mangaId: string,
+    @Query('page') page: number = 1,
+    @Query('limit') limit: number = 20,
+  ) {
+    return this.subscriptionsService.getMangaSubscribers(mangaId, page, limit);
   }
 
   // ============================================
@@ -139,7 +184,6 @@ export class SocialController {
     return this.commentsService.likeComment(req.user.id, commentId);
   }
 
-  // ✅ ROUTE POUR RÉCUPÉRER LES LIKES DE L'UTILISATEUR (AJOUTÉE)
   @Get('comment-likes')
   @UseGuards(JwtAuthGuard)
   async getUserCommentLikes(@Req() req) {
@@ -148,36 +192,5 @@ export class SocialController {
       select: { commentId: true },
     });
     return likes.map((like) => like.commentId);
-  }
-
-  // ============================================
-  // ABONNEMENTS
-  // ============================================
-
-  @Post('subscribe/:mangaId')
-  @UseGuards(JwtAuthGuard)
-  async subscribe(@Req() req, @Param('mangaId') mangaId: string) {
-    return this.subscriptionsService.subscribe(req.user.id, mangaId);
-  }
-
-  @Get('is-subscribed/:mangaId')
-  @UseGuards(JwtAuthGuard)
-  async isSubscribed(@Req() req, @Param('mangaId') mangaId: string) {
-    return this.subscriptionsService.isSubscribed(req.user.id, mangaId);
-  }
-
-  @Get('subscriptions')
-  @UseGuards(JwtAuthGuard)
-  async getUserSubscriptions(@Req() req) {
-    return this.subscriptionsService.getUserSubscriptions(req.user.id);
-  }
-
-  @Get('subscribers/:mangaId')
-  async getMangaSubscribers(
-    @Param('mangaId') mangaId: string,
-    @Query('page') page: number = 1,
-    @Query('limit') limit: number = 20,
-  ) {
-    return this.subscriptionsService.getMangaSubscribers(mangaId, page, limit);
   }
 }
