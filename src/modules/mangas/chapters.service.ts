@@ -676,4 +676,79 @@ export class ChaptersService {
       },
     };
   }
+
+  // ============================================
+  // ✅ 11. RÉCUPÉRER LES STATISTIQUES DES CHAPITRES D'UN CRÉATEUR
+  // ============================================
+  async getCreatorChaptersStats(userId: string) {
+    // Vérifier si l'utilisateur existe
+    const user = await this.prisma.user.findUnique({
+      where: { id: userId },
+      select: { id: true },
+    });
+
+    if (!user) {
+      throw new NotFoundException('Utilisateur non trouvé');
+    }
+
+    // Récupérer tous les mangas du créateur
+    const mangas = await this.prisma.manga.findMany({
+      where: { authorId: userId },
+      select: { id: true },
+    });
+
+    const mangaIds = mangas.map(m => m.id);
+
+    if (mangaIds.length === 0) {
+      return {
+        totalChapters: 0,
+        totalViews: 0,
+        totalLikes: 0,
+        chapters: [],
+      };
+    }
+
+    // Récupérer tous les chapitres des mangas du créateur
+    const chapters = await this.prisma.chapter.findMany({
+      where: {
+        mangaId: { in: mangaIds },
+        isDraft: false,
+      },
+      select: {
+        id: true,
+        number: true,
+        title: true,
+        viewsCount: true,
+        isFree: true,
+        price: true,
+        publishedAt: true,
+        manga: {
+          select: {
+            id: true,
+            title: true,
+          },
+        },
+        _count: {
+          select: {
+            comments: true,
+          },
+        },
+      },
+      orderBy: { publishedAt: 'desc' },
+    });
+
+    // Calcul des totaux
+    const totalChapters = chapters.length;
+    const totalViews = chapters.reduce((acc, c) => acc + c.viewsCount, 0);
+    const totalLikes = 0; // Les likes sont au niveau du manga
+    const totalComments = chapters.reduce((acc, c) => acc + c._count.comments, 0);
+
+    return {
+      totalChapters,
+      totalViews,
+      totalLikes,
+      totalComments,
+      chapters,
+    };
+  }
 }
