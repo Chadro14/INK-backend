@@ -8,28 +8,26 @@ export class NotificationsService {
   constructor(private prisma: PrismaService) {}
 
   // ============================================
-  // CRÉER UNE NOTIFICATION
+  // CRÉER UNE NOTIFICATION - SIGNATURE CORRIGÉE
   // ============================================
-  async create(
-    userId: string,
-    data: {
-      type: NotificationType;
-      title: string;
-      body: string;
-      link?: string;
-      metadata?: any;
-    },
-  ) {
+  async create(data: {
+    userId: string;
+    type: NotificationType;
+    title: string;
+    body?: string;
+    link?: string;
+    metadata?: any;
+  }) {
     // NETTOYAGE DES EMOJIS SANS SUPPRIMER LES ACCENTS
     const cleanTitle = data.title.replace(/[\u{1F300}-\u{1FAFF}\u{2600}-\u{27BF}]/gu, '').trim();
-    const cleanBody = data.body.replace(/[\u{1F300}-\u{1FAFF}\u{2600}-\u{27BF}]/gu, '').trim();
+    const cleanBody = data.body ? data.body.replace(/[\u{1F300}-\u{1FAFF}\u{2600}-\u{27BF}]/gu, '').trim() : null;
 
     return this.prisma.notification.create({
       data: {
-        userId,
+        userId: data.userId,
         type: data.type,
         title: cleanTitle || data.title,
-        body: cleanBody || data.body,
+        body: cleanBody || data.body || null,
         link: data.link || null,
         metadata: data.metadata || null,
       },
@@ -150,7 +148,8 @@ export class NotificationsService {
   // TEST - ENVOYER UNE NOTIFICATION DE TEST
   // ============================================
   async sendTestNotification(userId: string) {
-    return this.create(userId, {
+    return this.create({
+      userId,
       type: NotificationType.SYSTEM,
       title: '🔔 Notification de test',
       body: 'Ceci est une notification de test pour vérifier que tout fonctionne correctement.',
