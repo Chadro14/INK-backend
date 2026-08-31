@@ -41,13 +41,13 @@ export class TicketsService {
   }
 
   // ============================================
-  // AJOUTER DES TICKETS
+  // AJOUTER DES TICKETS - SIGNATURE CORRIGÉE
   // ============================================
   async addTickets(
     userId: string,
     amount: number,
-    type: TicketType,
     description: string,
+    type: TicketType,
     metadata?: any,
   ) {
     if (amount <= 0) {
@@ -112,7 +112,7 @@ export class TicketsService {
       throw new BadRequestException('Chapitre déjà débloqué avec un ticket');
     }
 
-    // ✅ VÉRIFIER SI L'UTILISATEUR EST PREMIUM (TICKETS ILLIMITÉS)
+    // VÉRIFIER SI L'UTILISATEUR EST PREMIUM (TICKETS ILLIMITÉS)
     const user = await this.prisma.user.findUnique({
       where: { id: userId },
       select: { premiumActive: true, premiumExpires: true },
@@ -122,7 +122,7 @@ export class TicketsService {
       throw new NotFoundException('Utilisateur non trouvé');
     }
 
-    // ✅ SI PREMIUM ACTIF → TICKETS ILLIMITÉS
+    // SI PREMIUM ACTIF → TICKETS ILLIMITÉS
     const isPremiumActive = user.premiumActive && user.premiumExpires && user.premiumExpires > new Date();
 
     if (isPremiumActive) {
@@ -162,7 +162,7 @@ export class TicketsService {
       };
     }
 
-    // ✅ SI PAS PREMIUM → VÉRIFIER LE SOLDE DE TICKETS
+    // SI PAS PREMIUM → VÉRIFIER LE SOLDE DE TICKETS
     const ticket = await this.prisma.ticket.findUnique({
       where: { userId },
     });
@@ -212,7 +212,7 @@ export class TicketsService {
   }
 
   // ============================================
-  // ✅ RÉCOMPENSE QUOTIDIENNE (1 TICKET TOUS LES 2 JOURS)
+  // RÉCOMPENSE QUOTIDIENNE (1 TICKET TOUS LES 2 JOURS)
   // ============================================
   async claimDailyReward(userId: string) {
     const user = await this.prisma.user.findUnique({
@@ -245,8 +245,8 @@ export class TicketsService {
     return this.addTickets(
       userId,
       1,
-      TicketType.DAILY_REWARD,
       'Ticket gratuit (récompense 48h)',
+      TicketType.DAILY_REWARD,
       { date: new Date().toISOString() },
     );
   }
@@ -284,8 +284,8 @@ export class TicketsService {
     return this.addTickets(
       referrerId,
       1,
-      TicketType.REFERRAL,
       `Parrainage de ${newUserId}`,
+      TicketType.REFERRAL,
       { newUserId },
     );
   }
@@ -320,8 +320,8 @@ export class TicketsService {
     const result = await this.addTickets(
       userId,
       event.tickets,
-      TicketType.EVENT,
       `Ticket événement : ${event.name}`,
+      TicketType.EVENT,
       { eventId, eventName: event.name },
     );
 
