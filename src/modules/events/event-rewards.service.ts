@@ -36,6 +36,8 @@ export class EventRewardsService {
             userId,
             reward.value,
             `Récompense événement : ${event.title}`,
+            'EVENT_REWARD',
+            { eventId },
           );
           break;
 
@@ -44,6 +46,8 @@ export class EventRewardsService {
             userId,
             reward.value,
             `Ticket gagné via l'événement : ${event.title}`,
+            'EVENT_REWARD',
+            { eventId },
           );
           break;
 
