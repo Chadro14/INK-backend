@@ -865,6 +865,7 @@ model EventParticipation {
 
   votesReceived EventVote[]
   submissions   EventSubmission[]
+  rankings      EventRanking[]  // ✅ AJOUTÉ
 
   @@unique([userId, eventId])
   @@index([eventId, score])
