@@ -14,122 +14,99 @@ export class EventSchedulerService {
     private notificationsService: NotificationsService,
   ) {}
 
-  // ============================================
-  // VÉRIFIER LES ÉVÉNEMENTS TOUTES LES HEURES
-  // ============================================
   @Cron(CronExpression.EVERY_HOUR)
   async checkEvents() {
     this.logger.log('🔄 Vérification des événements...');
 
     const now = new Date();
 
-    // 1. Démarrer les événements qui commencent
     const startingEvents = await this.prisma.event.findMany({
       where: {
         isActive: true,
         startDate: { lte: now },
         endDate: { gte: now },
-        config: { path: ['started'], equals: false },
       },
     });
 
     for (const event of startingEvents) {
-      await this.startEvent(event.id);
+      const config = (event.config as any) || {};
+      if (!config.started) {
+        await this.startEvent(event);
+      }
     }
 
-    // 2. Terminer les événements qui finissent
     const endingEvents = await this.prisma.event.findMany({
       where: {
         isActive: true,
         endDate: { lte: now },
-        config: { path: ['ended'], equals: false },
       },
     });
 
     for (const event of endingEvents) {
-      await this.endEvent(event.id);
+      const config = (event.config as any) || {};
+      if (!config.ended) {
+        await this.endEvent(event);
+      }
     }
   }
 
-  // ============================================
-  // DÉMARRER UN ÉVÉNEMENT
-  // ============================================
-  private async startEvent(eventId: string) {
-    this.logger.log(`🚀 Démarrage de l'événement ${eventId}`);
+  private async startEvent(event: any) {
+    this.logger.log(`🚀 Démarrage de l'événement ${event.id}`);
 
-    // Mettre à jour le statut
     await this.prisma.event.update({
-      where: { id: eventId },
+      where: { id: event.id },
       data: {
         config: { started: true },
       },
     });
 
-    // Notifier les utilisateurs
     const users = await this.prisma.user.findMany({
       select: { id: true },
     });
 
     for (const user of users) {
-      await this.notificationsService.createNotification({
+      await this.notificationsService.create({
         userId: user.id,
         type: 'EVENT_STARTED',
         title: '🚀 Un nouvel événement commence !',
         body: `L'événement "${event.title}" vient de commencer. Participe maintenant !`,
-        metadata: { eventId },
+        metadata: { eventId: event.id },
       });
     }
 
-    this.logger.log(`✅ Événement ${eventId} démarré`);
+    this.logger.log(`✅ Événement ${event.id} démarré`);
   }
 
-  // ============================================
-  // TERMINER UN ÉVÉNEMENT
-  // ============================================
-  private async endEvent(eventId: string) {
-    this.logger.log(`🏁 Fin de l'événement ${eventId}`);
+  private async endEvent(event: any) {
+    this.logger.log(`🏁 Fin de l'événement ${event.id}`);
 
-    // Récupérer l'événement
-    const event = await this.prisma.event.findUnique({
-      where: { id: eventId },
-    });
+    await this.rewardsService.distributeEventEndRewards(event.id);
 
-    if (!event) return;
-
-    // Distribuer les récompenses aux gagnants
-    await this.rewardsService.distributeEventEndRewards(eventId);
-
-    // Mettre à jour le statut
     await this.prisma.event.update({
-      where: { id: eventId },
+      where: { id: event.id },
       data: {
         isActive: false,
         config: { ended: true },
       },
     });
 
-    // Notifier les participants
     const participants = await this.prisma.eventParticipation.findMany({
-      where: { eventId },
-      include: { user: true },
+      where: { eventId: event.id },
     });
 
     for (const participant of participants) {
-      await this.notificationsService.createNotification({
+      await this.notificationsService.create({
         userId: participant.userId,
         type: 'EVENT_ENDED',
         title: '🏁 L\'événement est terminé !',
         body: `L'événement "${event.title}" est terminé. Vérifie tes récompenses !`,
-        metadata: { eventId },
+        metadata: { eventId: event.id },
       });
     }
 
-    this.logger.log(`✅ Événement ${eventId} terminé`);
+    this.logger.log(`✅ Événement ${event.id} terminé`);
   }
 
-  // ============================================
-  // RAPPEL 24H AVANT LA FIN
-  // ============================================
   @Cron(CronExpression.EVERY_DAY_AT_NOON)
   async sendReminders() {
     const now = new Date();
@@ -146,11 +123,10 @@ export class EventSchedulerService {
     for (const event of endingEvents) {
       const participants = await this.prisma.eventParticipation.findMany({
         where: { eventId: event.id },
-        include: { user: true },
       });
 
       for (const participant of participants) {
-        await this.notificationsService.createNotification({
+        await this.notificationsService.create({
           userId: participant.userId,
           type: 'EVENT_REMINDER',
           title: '⏰ L\'événement se termine demain !',
