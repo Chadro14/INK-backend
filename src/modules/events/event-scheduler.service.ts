@@ -70,6 +70,7 @@ export class EventSchedulerService {
         type: 'EVENT_STARTED',
         title: '🚀 Un nouvel événement commence !',
         body: `L'événement "${event.title}" vient de commencer. Participe maintenant !`,
+        link: `/events/${event.id}`,
         metadata: { eventId: event.id },
       });
     }
@@ -100,6 +101,7 @@ export class EventSchedulerService {
         type: 'EVENT_ENDED',
         title: '🏁 L\'événement est terminé !',
         body: `L'événement "${event.title}" est terminé. Vérifie tes récompenses !`,
+        link: `/events/${event.id}`,
         metadata: { eventId: event.id },
       });
     }
@@ -131,6 +133,7 @@ export class EventSchedulerService {
           type: 'EVENT_REMINDER',
           title: '⏰ L\'événement se termine demain !',
           body: `L'événement "${event.title}" se termine demain. N'oublie pas de finaliser ta participation !`,
+          link: `/events/${event.id}`,
           metadata: { eventId: event.id },
         });
       }
