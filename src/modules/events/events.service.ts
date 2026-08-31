@@ -8,14 +8,25 @@ import { PrismaService } from '../../prisma/prisma.service';
 import { CreateEventDto } from './dto/create-event.dto';
 import { UpdateEventDto } from './dto/update-event.dto';
 import { EventRankingService } from './event-ranking.service';
+import { EventRewardsService } from './event-rewards.service';
+import { NotificationsService } from '../notifications/notifications.service';
+import { ManasService } from '../manas/manas.service';
+import { TicketsService } from '../tickets/tickets.service';
 
 @Injectable()
 export class EventsService {
   constructor(
     private prisma: PrismaService,
     private rankingService: EventRankingService,
+    private rewardsService: EventRewardsService,
+    private notificationsService: NotificationsService,
+    private manasService: ManasService,
+    private ticketsService: TicketsService,
   ) {}
 
+  // ============================================
+  // CRÉER UN ÉVÉNEMENT (ADMIN)
+  // ============================================
   async createEvent(adminId: string, dto: CreateEventDto) {
     const admin = await this.prisma.user.findUnique({
       where: { id: adminId },
@@ -24,6 +35,23 @@ export class EventsService {
 
     if (!admin || admin.role !== 'ADMIN') {
       throw new ForbiddenException('Accès réservé aux administrateurs');
+    }
+
+    // Vérifier qu'il n'y a pas de conflit de dates
+    const overlapping = await this.prisma.event.findFirst({
+      where: {
+        isActive: true,
+        OR: [
+          { startDate: { lte: dto.endDate, gte: dto.startDate } },
+          { endDate: { lte: dto.endDate, gte: dto.startDate } },
+        ],
+      },
+    });
+
+    if (overlapping) {
+      throw new BadRequestException(
+        'Un événement est déjà actif pendant cette période',
+      );
     }
 
     return this.prisma.event.create({
@@ -37,11 +65,16 @@ export class EventsService {
         startDate: new Date(dto.startDate),
         endDate: new Date(dto.endDate),
         config: dto.config || {},
+        rewards: dto.rewards || [],
+        objectives: dto.objectives || [],
         isActive: true,
       },
     });
   }
 
+  // ============================================
+  // LISTE DES ÉVÉNEMENTS
+  // ============================================
   async getEvents(userId?: string, filter?: 'all' | 'active' | 'upcoming' | 'past') {
     const now = new Date();
     let where: any = {};
@@ -63,7 +96,7 @@ export class EventsService {
       };
     }
 
-    return this.prisma.event.findMany({
+    const events = await this.prisma.event.findMany({
       where,
       include: {
         _count: {
@@ -74,8 +107,30 @@ export class EventsService {
       },
       orderBy: { startDate: 'asc' },
     });
+
+    // Ajouter la participation de l'utilisateur
+    if (userId) {
+      const participations = await this.prisma.eventParticipation.findMany({
+        where: {
+          userId,
+          eventId: { in: events.map((e) => e.id) },
+        },
+      });
+
+      return events.map((event) => ({
+        ...event,
+        userParticipation: participations.find(
+          (p) => p.eventId === event.id,
+        ),
+      }));
+    }
+
+    return events;
   }
 
+  // ============================================
+  // RÉCUPÉRER UN ÉVÉNEMENT PAR ID
+  // ============================================
   async getEventById(eventId: string, userId?: string) {
     const event = await this.prisma.event.findUnique({
       where: { id: eventId },
@@ -86,6 +141,25 @@ export class EventsService {
             submissions: true,
           },
         },
+        submissions: {
+          include: {
+            user: {
+              select: {
+                id: true,
+                username: true,
+                avatarUrl: true,
+              },
+            },
+            manga: {
+              select: {
+                id: true,
+                title: true,
+                coverUrl: true,
+              },
+            },
+          },
+          orderBy: { score: 'desc' },
+        },
       },
     });
 
@@ -93,6 +167,7 @@ export class EventsService {
       throw new NotFoundException('Événement non trouvé');
     }
 
+    // Récupérer la participation de l'utilisateur
     let userParticipation = null;
     if (userId) {
       userParticipation = await this.prisma.eventParticipation.findUnique({
@@ -105,9 +180,15 @@ export class EventsService {
       });
     }
 
-    return { ...event, userParticipation };
+    return {
+      ...event,
+      userParticipation,
+    };
   }
 
+  // ============================================
+  // PARTICIPER À UN ÉVÉNEMENT
+  // ============================================
   async joinEvent(userId: string, eventId: string) {
     const event = await this.prisma.event.findUnique({
       where: { id: eventId },
@@ -125,6 +206,7 @@ export class EventsService {
       throw new BadRequestException('Cet événement est terminé');
     }
 
+    // Vérifier si déjà inscrit
     const existing = await this.prisma.eventParticipation.findUnique({
       where: {
         userId_eventId: {
@@ -138,6 +220,7 @@ export class EventsService {
       throw new BadRequestException('Vous participez déjà à cet événement');
     }
 
+    // Vérifier le nombre de participants
     const config = event.config as any || {};
     const maxParticipants = config.maxParticipants || 999999;
     const currentParticipants = await this.prisma.eventParticipation.count({
@@ -148,15 +231,138 @@ export class EventsService {
       throw new BadRequestException('Cet événement est complet');
     }
 
-    return this.prisma.eventParticipation.create({
+    const participation = await this.prisma.eventParticipation.create({
       data: {
         userId,
         eventId,
         progress: {},
       },
     });
+
+    // Envoyer une notification
+    await this.notificationsService.create({
+      userId,
+      type: 'SYSTEM',
+      title: '🎉 Participation confirmée !',
+      body: `Vous participez maintenant à l'événement "${event.title}"`,
+      link: `/events/${eventId}`,
+      metadata: { eventId },
+    });
+
+    return participation;
   }
 
+  // ============================================
+  // SOUMETTRE UNE ŒUVRE À UN ÉVÉNEMENT
+  // ============================================
+  async submitToEvent(
+    userId: string,
+    eventId: string,
+    data: {
+      title: string;
+      description?: string;
+      mangaId?: string;
+      chapterId?: string;
+      imageUrl?: string;
+    },
+  ) {
+    const event = await this.prisma.event.findUnique({
+      where: { id: eventId },
+    });
+
+    if (!event) {
+      throw new NotFoundException('Événement non trouvé');
+    }
+
+    // Vérifier que l'utilisateur participe
+    const participation = await this.prisma.eventParticipation.findUnique({
+      where: {
+        userId_eventId: {
+          userId,
+          eventId,
+        },
+      },
+    });
+
+    if (!participation) {
+      throw new BadRequestException(
+        'Vous devez participer à l\'événement pour soumettre une œuvre',
+      );
+    }
+
+    // Vérifier que l'événement accepte les soumissions
+    if (event.type === 'TICKETS' || event.type === 'AWARDS') {
+      throw new BadRequestException(
+        'Cet événement n\'accepte pas de soumissions',
+      );
+    }
+
+    // Vérifier qu'il n'y a pas déjà une soumission
+    const existing = await this.prisma.eventSubmission.findFirst({
+      where: {
+        eventId,
+        userId,
+      },
+    });
+
+    if (existing) {
+      throw new BadRequestException(
+        'Vous avez déjà soumis une œuvre à cet événement',
+      );
+    }
+
+    return this.prisma.eventSubmission.create({
+      data: {
+        userId,
+        eventId,
+        participationId: participation.id,
+        mangaId: data.mangaId,
+        chapterId: data.chapterId,
+        title: data.title,
+        description: data.description,
+        imageUrl: data.imageUrl,
+        status: 'PENDING',
+      },
+    });
+  }
+
+  // ============================================
+  // RÉCLAMER LES RÉCOMPENSES
+  // ============================================
+  async claimRewards(userId: string, eventId: string) {
+    const participation = await this.prisma.eventParticipation.findUnique({
+      where: {
+        userId_eventId: {
+          userId,
+          eventId,
+        },
+      },
+      include: {
+        event: true,
+      },
+    });
+
+    if (!participation) {
+      throw new BadRequestException('Vous ne participez pas à cet événement');
+    }
+
+    if (!participation.isCompleted) {
+      throw new BadRequestException(
+        'Vous n\'avez pas encore terminé les objectifs de cet événement',
+      );
+    }
+
+    if (participation.rewardClaimed) {
+      throw new BadRequestException('Vous avez déjà réclamé vos récompenses');
+    }
+
+    // Distribuer les récompenses
+    return this.rewardsService.distributeRewards(participation);
+  }
+
+  // ============================================
+  // RÉCUPÉRER LE CLASSEMENT
+  // ============================================
   async getRanking(eventId: string, limit: number = 20) {
     const event = await this.prisma.event.findUnique({
       where: { id: eventId },
@@ -166,6 +372,7 @@ export class EventsService {
       throw new NotFoundException('Événement non trouvé');
     }
 
+    // Vérifier si le classement est en cache
     let rankings = await this.prisma.eventRanking.findMany({
       where: { eventId },
       include: {
@@ -183,8 +390,8 @@ export class EventsService {
       take: limit,
     });
 
+    // Si le classement est vide, le générer
     if (rankings.length === 0) {
-      // Générer et récupérer les classements
       const generated = await this.rankingService.generateRanking(eventId);
       return generated.map((item) => ({
         ...item,
@@ -195,6 +402,9 @@ export class EventsService {
     return rankings;
   }
 
+  // ============================================
+  // METTRE À JOUR UN ÉVÉNEMENT (ADMIN)
+  // ============================================
   async updateEvent(adminId: string, eventId: string, dto: UpdateEventDto) {
     const admin = await this.prisma.user.findUnique({
       where: { id: adminId },
@@ -224,11 +434,16 @@ export class EventsService {
         startDate: dto.startDate ? new Date(dto.startDate) : undefined,
         endDate: dto.endDate ? new Date(dto.endDate) : undefined,
         config: dto.config || undefined,
+        rewards: dto.rewards || undefined,
+        objectives: dto.objectives || undefined,
         isActive: dto.isActive !== undefined ? dto.isActive : undefined,
       },
     });
   }
 
+  // ============================================
+  // SUPPRIMER UN ÉVÉNEMENT (ADMIN)
+  // ============================================
   async deleteEvent(adminId: string, eventId: string) {
     const admin = await this.prisma.user.findUnique({
       where: { id: adminId },
@@ -247,6 +462,7 @@ export class EventsService {
       throw new NotFoundException('Événement non trouvé');
     }
 
+    // Supprimer toutes les données liées
     await this.prisma.$transaction([
       this.prisma.eventVote.deleteMany({ where: { eventId } }),
       this.prisma.eventSubmission.deleteMany({ where: { eventId } }),
@@ -256,5 +472,72 @@ export class EventsService {
     ]);
 
     return { success: true, message: 'Événement supprimé avec succès' };
+  }
+
+  // ============================================
+  // RÉCUPÉRER LES PARTICIPANTS D'UN ÉVÉNEMENT
+  // ============================================
+  async getParticipants(eventId: string, page: number = 1, limit: number = 20) {
+    const skip = (page - 1) * limit;
+
+    const [participants, total] = await Promise.all([
+      this.prisma.eventParticipation.findMany({
+        where: { eventId },
+        include: {
+          user: {
+            select: {
+              id: true,
+              username: true,
+              avatarUrl: true,
+              isCertified: true,
+              badgeColor: true,
+            },
+          },
+        },
+        skip,
+        take: limit,
+        orderBy: { joinedAt: 'desc' },
+      }),
+      this.prisma.eventParticipation.count({ where: { eventId } }),
+    ]);
+
+    return {
+      data: participants,
+      meta: {
+        total,
+        page,
+        limit,
+        totalPages: Math.ceil(total / limit),
+      },
+    };
+  }
+
+  // ============================================
+  // METTRE À JOUR LA PROGRESSION D'UN PARTICIPANT
+  // ============================================
+  async updateProgress(userId: string, eventId: string, progress: any) {
+    const participation = await this.prisma.eventParticipation.findUnique({
+      where: {
+        userId_eventId: {
+          userId,
+          eventId,
+        },
+      },
+    });
+
+    if (!participation) {
+      throw new NotFoundException('Participation non trouvée');
+    }
+
+    const updated = await this.prisma.eventParticipation.update({
+      where: { id: participation.id },
+      data: {
+        progress,
+        isCompleted: true,
+        completedAt: new Date(),
+      },
+    });
+
+    return updated;
   }
 }
