@@ -5,9 +5,6 @@ import { PrismaService } from '../../prisma/prisma.service';
 export class EventRankingService {
   constructor(private prisma: PrismaService) {}
 
-  // ============================================
-  // GÉNÉRER LE CLASSEMENT
-  // ============================================
   async generateRanking(eventId: string) {
     const event = await this.prisma.event.findUnique({
       where: { id: eventId },
@@ -33,12 +30,10 @@ export class EventRankingService {
       throw new Error('Événement non trouvé');
     }
 
-    // Supprimer les anciens classements
     await this.prisma.eventRanking.deleteMany({
       where: { eventId },
     });
 
-    // Calculer les scores et créer les classements
     const rankings = event.participations.map((participation) => {
       const voteScore = participation.votesReceived.reduce(
         (sum, vote) => sum + (vote.weight || 1),
@@ -50,25 +45,34 @@ export class EventRankingService {
         userId: participation.userId,
         participationId: participation.id,
         score: voteScore * 10,
+        rank: 0, // Sera mis à jour après le tri
         metrics: {
           votes: voteScore,
         },
+        user: participation.user,
       };
     });
 
-    // Trier par score décroissant
     rankings.sort((a, b) => b.score - a.score);
 
-    // Attribuer les rangs
     const ranked = rankings.map((item, index) => ({
       ...item,
       rank: index + 1,
     }));
 
     // Sauvegarder les classements
-    await this.prisma.eventRanking.createMany({
-      data: ranked,
-    });
+    for (const item of ranked) {
+      await this.prisma.eventRanking.create({
+        data: {
+          eventId: item.eventId,
+          userId: item.userId,
+          participationId: item.participationId,
+          score: item.score,
+          rank: item.rank,
+          metrics: item.metrics,
+        },
+      });
+    }
 
     return ranked;
   }
