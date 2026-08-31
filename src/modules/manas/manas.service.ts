@@ -29,7 +29,7 @@ export class ManasService {
   }
 
   // ============================================
-  // ✅ CONSOMMER 1 MANA POUR REGARDER UN ANIME
+  // CONSOMMER 1 MANA POUR REGARDER UN ANIME
   // ============================================
   async consumeMana(userId: string, animeId: string, episodeNumber: number) {
     const user = await this.prisma.user.findUnique({
@@ -41,7 +41,6 @@ export class ManasService {
       throw new NotFoundException('Utilisateur non trouvé');
     }
 
-    // ✅ Les utilisateurs Premium ne paient pas en MANAS
     if (user.premiumActive) {
       return {
         success: true,
@@ -54,13 +53,11 @@ export class ManasService {
       throw new BadRequestException('MANAS insuffisants pour regarder cet épisode (1 MANAS requis)');
     }
 
-    // Consommer 1 MANAS
     const updatedUser = await this.prisma.user.update({
       where: { id: userId },
       data: { manas: { decrement: 1 } },
     });
 
-    // Enregistrer la transaction
     await this.prisma.manasTransaction.create({
       data: {
         userId,
@@ -79,13 +76,13 @@ export class ManasService {
   }
 
   // ============================================
-  // AJOUTER DES MANAS
+  // AJOUTER DES MANAS - SIGNATURE CORRIGÉE
   // ============================================
   async addManas(
     userId: string,
     amount: number,
-    type: ManasTransactionType,
     description: string,
+    type: ManasTransactionType,
     metadata?: any,
   ) {
     if (amount <= 0) {
@@ -115,13 +112,13 @@ export class ManasService {
   }
 
   // ============================================
-  // DÉPENSER DES MANAS
+  // DÉPENSER DES MANAS - SIGNATURE CORRIGÉE
   // ============================================
   async spendManas(
     userId: string,
     amount: number,
-    type: ManasTransactionType,
     description: string,
+    type: ManasTransactionType,
     metadata?: any,
   ) {
     if (amount <= 0) {
@@ -137,7 +134,6 @@ export class ManasService {
       throw new NotFoundException('Utilisateur non trouvé');
     }
 
-    // ✅ LES PREMIUM N'ONT PAS BESOIN DE MANAS POUR LIRE
     if (user.premiumActive && type === ManasTransactionType.CHAPTER_PURCHASE) {
       return {
         success: true,
@@ -200,16 +196,16 @@ export class ManasService {
     await this.spendManas(
       senderId,
       amount,
-      ManasTransactionType.GIFT_SENT,
       `Envoi de ${amount} MANAS à ${receiver.username}`,
+      ManasTransactionType.GIFT_SENT,
       { receiverId, receiverUsername: receiver.username },
     );
 
     const result = await this.addManas(
       receiverId,
       amount,
-      ManasTransactionType.GIFT_RECEIVED,
       `Reçu ${amount} MANAS de ${senderId}`,
+      ManasTransactionType.GIFT_RECEIVED,
       { senderId },
     );
 
@@ -221,7 +217,7 @@ export class ManasService {
   }
 
   // ============================================
-  // ✅ VÉRIFIER SI L'UTILISATEUR EST CRÉATEUR
+  // VÉRIFIER SI L'UTILISATEUR EST CRÉATEUR
   // ============================================
   private async isCreator(userId: string): Promise<boolean> {
     const user = await this.prisma.user.findUnique({
@@ -257,8 +253,8 @@ export class ManasService {
     const result = await this.spendManas(
       userId,
       priceInManas,
-      ManasTransactionType.CHAPTER_PURCHASE,
       `Achat du chapitre ${chapterNumber}`,
+      ManasTransactionType.CHAPTER_PURCHASE,
       { mangaId, chapterNumber, chapterId: chapter.id },
     );
 
@@ -297,16 +293,16 @@ export class ManasService {
     const result = await this.spendManas(
       userId,
       amountInManas,
-      ManasTransactionType.COLLABORATION,
       `Collaboration avec ${creator.username}`,
+      ManasTransactionType.COLLABORATION,
       { creatorId, creatorUsername: creator.username },
     );
 
     await this.addManas(
       creatorId,
       amountInManas * 0.7,
-      ManasTransactionType.COLLABORATION,
       `Collaboration de ${userId}`,
+      ManasTransactionType.COLLABORATION,
       { userId },
     );
 
@@ -349,6 +345,97 @@ export class ManasService {
       page,
       limit,
       totalPages: Math.ceil(total / limit),
+    };
+  }
+
+  // ============================================
+  // RÉCUPÉRER LES STATISTIQUES MANAS D'UN UTILISATEUR
+  // ============================================
+  async getManasStats(userId: string) {
+    const [totalEarned, totalSpent] = await Promise.all([
+      this.prisma.manasTransaction.aggregate({
+        where: { userId, amount: { gt: 0 } },
+        _sum: { amount: true },
+      }),
+      this.prisma.manasTransaction.aggregate({
+        where: { userId, amount: { lt: 0 } },
+        _sum: { amount: true },
+      }),
+    ]);
+
+    return {
+      totalEarned: totalEarned._sum.amount || 0,
+      totalSpent: Math.abs(totalSpent._sum.amount || 0),
+    };
+  }
+
+  // ============================================
+  // GAGNER DES MANAS POUR UNE ACTION QUOTIDIENNE
+  // ============================================
+  async earnDailyManas(
+    userId: string,
+    actionType: string,
+    amount: number = 1,
+  ) {
+    // Vérifier la limite quotidienne
+    const today = new Date();
+    today.setHours(0, 0, 0, 0);
+
+    const todayActions = await this.prisma.dailyManasAction.findUnique({
+      where: {
+        userId_actionType_date: {
+          userId,
+          actionType: actionType as any,
+          date: today,
+        },
+      },
+    });
+
+    const maxDaily = 10; // Max 10 actions par jour par type
+
+    if (todayActions && todayActions.count >= maxDaily) {
+      return {
+        success: false,
+        message: `Limite quotidienne atteinte pour ${actionType} (${maxDaily}/jour)`,
+        earned: 0,
+        total: todayActions.count,
+      };
+    }
+
+    // Ajouter les MANAS
+    await this.addManas(
+      userId,
+      amount,
+      `Gain MANAS pour ${actionType}`,
+      ManasTransactionType.DAILY_BONUS,
+      { actionType },
+    );
+
+    // Mettre à jour le compteur quotidien
+    const updated = await this.prisma.dailyManasAction.upsert({
+      where: {
+        userId_actionType_date: {
+          userId,
+          actionType: actionType as any,
+          date: today,
+        },
+      },
+      update: {
+        count: { increment: 1 },
+      },
+      create: {
+        userId,
+        actionType: actionType as any,
+        date: today,
+        count: 1,
+      },
+    });
+
+    return {
+      success: true,
+      message: `+${amount} MANAS pour ${actionType}`,
+      earned: amount,
+      total: updated.count,
     };
   }
 }
