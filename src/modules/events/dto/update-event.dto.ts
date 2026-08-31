@@ -4,6 +4,7 @@ import {
   IsDateString,
   IsBoolean,
   IsObject,
+  IsArray,
 } from 'class-validator';
 
 export class UpdateEventDto {
@@ -38,6 +39,14 @@ export class UpdateEventDto {
   @IsOptional()
   @IsObject()
   config?: any;
+
+  @IsOptional()
+  @IsArray()
+  rewards?: any[];
+
+  @IsOptional()
+  @IsArray()
+  objectives?: any[];
 
   @IsOptional()
   @IsBoolean()
