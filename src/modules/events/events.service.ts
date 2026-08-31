@@ -5,27 +5,18 @@ import {
   ForbiddenException,
 } from '@nestjs/common';
 import { PrismaService } from '../../prisma/prisma.service';
-import { EventType, VoteType, SubmissionStatus } from '@prisma/client';
 import { CreateEventDto } from './dto/create-event.dto';
 import { UpdateEventDto } from './dto/update-event.dto';
-import { EventVotingService } from './event-voting.service';
-import { EventRewardsService } from './event-rewards.service';
 import { EventRankingService } from './event-ranking.service';
 
 @Injectable()
 export class EventsService {
   constructor(
     private prisma: PrismaService,
-    private votingService: EventVotingService,
-    private rewardsService: EventRewardsService,
     private rankingService: EventRankingService,
   ) {}
 
-  // ============================================
-  // CRÉER UN ÉVÉNEMENT
-  // ============================================
   async createEvent(adminId: string, dto: CreateEventDto) {
-    // Vérifier que l'admin existe
     const admin = await this.prisma.user.findUnique({
       where: { id: adminId },
       select: { role: true },
@@ -35,31 +26,14 @@ export class EventsService {
       throw new ForbiddenException('Accès réservé aux administrateurs');
     }
 
-    // Vérifier qu'il n'y a pas de conflit de dates
-    const overlapping = await this.prisma.event.findFirst({
-      where: {
-        isActive: true,
-        OR: [
-          { startDate: { lte: dto.endDate, gte: dto.startDate } },
-          { endDate: { lte: dto.endDate, gte: dto.startDate } },
-        ],
-      },
-    });
-
-    if (overlapping) {
-      throw new BadRequestException(
-        'Un événement est déjà actif pendant cette période'
-      );
-    }
-
     return this.prisma.event.create({
       data: {
         type: dto.type,
         title: dto.title,
-        description: dto.description,
-        theme: dto.theme,
-        icon: dto.icon,
-        coverUrl: dto.coverUrl,
+        description: dto.description || null,
+        theme: dto.theme || null,
+        icon: dto.icon || null,
+        coverUrl: dto.coverUrl || null,
         startDate: new Date(dto.startDate),
         endDate: new Date(dto.endDate),
         config: dto.config || {},
@@ -68,13 +42,7 @@ export class EventsService {
     });
   }
 
-  // ============================================
-  // LISTE DES ÉVÉNEMENTS
-  // ============================================
-  async getEvents(
-    userId?: string,
-    filter?: 'all' | 'active' | 'upcoming' | 'past',
-  ) {
+  async getEvents(userId?: string, filter?: 'all' | 'active' | 'upcoming' | 'past') {
     const now = new Date();
     let where: any = {};
 
@@ -95,7 +63,7 @@ export class EventsService {
       };
     }
 
-    const events = await this.prisma.event.findMany({
+    return this.prisma.event.findMany({
       where,
       include: {
         _count: {
@@ -106,30 +74,8 @@ export class EventsService {
       },
       orderBy: { startDate: 'asc' },
     });
-
-    // Ajouter la participation de l'utilisateur
-    if (userId) {
-      const participations = await this.prisma.eventParticipation.findMany({
-        where: {
-          userId,
-          eventId: { in: events.map((e) => e.id) },
-        },
-      });
-
-      return events.map((event) => ({
-        ...event,
-        userParticipation: participations.find(
-          (p) => p.eventId === event.id
-        ),
-      }));
-    }
-
-    return events;
   }
 
-  // ============================================
-  // RÉCUPÉRER UN ÉVÉNÉMENT PAR ID
-  // ============================================
   async getEventById(eventId: string, userId?: string) {
     const event = await this.prisma.event.findUnique({
       where: { id: eventId },
@@ -140,25 +86,6 @@ export class EventsService {
             submissions: true,
           },
         },
-        submissions: {
-          include: {
-            user: {
-              select: {
-                id: true,
-                username: true,
-                avatarUrl: true,
-              },
-            },
-            manga: {
-              select: {
-                id: true,
-                title: true,
-                coverUrl: true,
-              },
-            },
-          },
-          orderBy: { score: 'desc' },
-        },
       },
     });
 
@@ -166,7 +93,6 @@ export class EventsService {
       throw new NotFoundException('Événement non trouvé');
     }
 
-    // Récupérer la participation de l'utilisateur
     let userParticipation = null;
     if (userId) {
       userParticipation = await this.prisma.eventParticipation.findUnique({
@@ -179,15 +105,9 @@ export class EventsService {
       });
     }
 
-    return {
-      ...event,
-      userParticipation,
-    };
+    return { ...event, userParticipation };
   }
 
-  // ============================================
-  // PARTICIPER À UN ÉVÉNEMENT
-  // ============================================
   async joinEvent(userId: string, eventId: string) {
     const event = await this.prisma.event.findUnique({
       where: { id: eventId },
@@ -205,7 +125,6 @@ export class EventsService {
       throw new BadRequestException('Cet événement est terminé');
     }
 
-    // Vérifier si déjà inscrit
     const existing = await this.prisma.eventParticipation.findUnique({
       where: {
         userId_eventId: {
@@ -219,8 +138,8 @@ export class EventsService {
       throw new BadRequestException('Vous participez déjà à cet événement');
     }
 
-    // Vérifier le nombre de participants (si configuré)
-    const maxParticipants = event.config?.maxParticipants || 999999;
+    const config = event.config as any || {};
+    const maxParticipants = config.maxParticipants || 999999;
     const currentParticipants = await this.prisma.eventParticipation.count({
       where: { eventId },
     });
@@ -238,20 +157,7 @@ export class EventsService {
     });
   }
 
-  // ============================================
-  // SOUMETTRE UNE ŒUVRE À UN ÉVÉNEMENT
-  // ============================================
-  async submitToEvent(
-    userId: string,
-    eventId: string,
-    data: {
-      title: string;
-      description?: string;
-      mangaId?: string;
-      chapterId?: string;
-      imageUrl?: string;
-    },
-  ) {
+  async getRanking(eventId: string, limit: number = 20) {
     const event = await this.prisma.event.findUnique({
       where: { id: eventId },
     });
@@ -260,60 +166,30 @@ export class EventsService {
       throw new NotFoundException('Événement non trouvé');
     }
 
-    // Vérifier que l'utilisateur participe
-    const participation = await this.prisma.eventParticipation.findUnique({
-      where: {
-        userId_eventId: {
-          userId,
-          eventId,
+    let rankings = await this.prisma.eventRanking.findMany({
+      where: { eventId },
+      include: {
+        user: {
+          select: {
+            id: true,
+            username: true,
+            avatarUrl: true,
+            isCertified: true,
+            badgeColor: true,
+          },
         },
       },
+      orderBy: { rank: 'asc' },
+      take: limit,
     });
 
-    if (!participation) {
-      throw new BadRequestException(
-        'Vous devez participer à l\'événement pour soumettre une œuvre'
-      );
+    if (rankings.length === 0) {
+      rankings = await this.rankingService.generateRanking(eventId);
     }
 
-    // Vérifier que l'événement accepte les soumissions
-    if (event.type === 'TICKETS' || event.type === 'AWARDS') {
-      throw new BadRequestException(
-        'Cet événement n\'accepte pas de soumissions'
-      );
-    }
-
-    // Vérifier qu'il n'y a pas déjà une soumission
-    const existing = await this.prisma.eventSubmission.findFirst({
-      where: {
-        eventId,
-        userId,
-      },
-    });
-
-    if (existing) {
-      throw new BadRequestException(
-        'Vous avez déjà soumis une œuvre à cet événement'
-      );
-    }
-
-    return this.prisma.eventSubmission.create({
-      data: {
-        userId,
-        eventId,
-        mangaId: data.mangaId,
-        chapterId: data.chapterId,
-        title: data.title,
-        description: data.description,
-        imageUrl: data.imageUrl,
-        status: 'PENDING',
-      },
-    });
+    return rankings;
   }
 
-  // ============================================
-  // METTRE À JOUR UN ÉVÉNEMENT (ADMIN)
-  // ============================================
   async updateEvent(adminId: string, eventId: string, dto: UpdateEventDto) {
     const admin = await this.prisma.user.findUnique({
       where: { id: adminId },
@@ -348,9 +224,6 @@ export class EventsService {
     });
   }
 
-  // ============================================
-  // SUPPRIMER UN ÉVÉNEMENT (ADMIN)
-  // ============================================
   async deleteEvent(adminId: string, eventId: string) {
     const admin = await this.prisma.user.findUnique({
       where: { id: adminId },
@@ -369,7 +242,6 @@ export class EventsService {
       throw new NotFoundException('Événement non trouvé');
     }
 
-    // Supprimer toutes les données liées
     await this.prisma.$transaction([
       this.prisma.eventVote.deleteMany({ where: { eventId } }),
       this.prisma.eventSubmission.deleteMany({ where: { eventId } }),
@@ -379,76 +251,5 @@ export class EventsService {
     ]);
 
     return { success: true, message: 'Événement supprimé avec succès' };
-  }
-
-  // ============================================
-  // RÉCUPÉRER LE CLASSEMENT
-  // ============================================
-  async getRanking(eventId: string, limit: number = 20) {
-    const event = await this.prisma.event.findUnique({
-      where: { id: eventId },
-    });
-
-    if (!event) {
-      throw new NotFoundException('Événement non trouvé');
-    }
-
-    // Vérifier si le classement est en cache
-    let rankings = await this.prisma.eventRanking.findMany({
-      where: { eventId },
-      include: {
-        user: {
-          select: {
-            id: true,
-            username: true,
-            avatarUrl: true,
-            isCertified: true,
-            badgeColor: true,
-          },
-        },
-      },
-      orderBy: { rank: 'asc' },
-      take: limit,
-    });
-
-    // Si le classement est vide, le générer
-    if (rankings.length === 0) {
-      rankings = await this.rankingService.generateRanking(eventId);
-    }
-
-    return rankings;
-  }
-
-  // ============================================
-  // RÉCLAMER LES RÉCOMPENSES
-  // ============================================
-  async claimRewards(userId: string, eventId: string) {
-    const participation = await this.prisma.eventParticipation.findUnique({
-      where: {
-        userId_eventId: {
-          userId,
-          eventId,
-        },
-      },
-      include: {
-        event: true,
-      },
-    });
-
-    if (!participation) {
-      throw new BadRequestException('Vous ne participez pas à cet événement');
-    }
-
-    if (!participation.isCompleted) {
-      throw new BadRequestException(
-        'Vous n\'avez pas encore terminé les objectifs de cet événement'
-      );
-    }
-
-    if (participation.rewardClaimed) {
-      throw new BadRequestException('Vous avez déjà réclamé vos récompenses');
-    }
-
-    return this.rewardsService.distributeRewards(participation);
   }
 }
