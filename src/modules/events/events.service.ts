@@ -10,8 +10,6 @@ import { UpdateEventDto } from './dto/update-event.dto';
 import { EventRankingService } from './event-ranking.service';
 import { EventRewardsService } from './event-rewards.service';
 import { NotificationsService } from '../notifications/notifications.service';
-import { ManasService } from '../manas/manas.service';
-import { TicketsService } from '../tickets/tickets.service';
 
 @Injectable()
 export class EventsService {
@@ -20,8 +18,6 @@ export class EventsService {
     private rankingService: EventRankingService,
     private rewardsService: EventRewardsService,
     private notificationsService: NotificationsService,
-    private manasService: ManasService,
-    private ticketsService: TicketsService,
   ) {}
 
   // ============================================
