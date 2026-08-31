@@ -4,6 +4,7 @@ import {
   IsDateString,
   IsEnum,
   IsObject,
+  IsArray,
 } from 'class-validator';
 import { EventType } from '@prisma/client';
 
@@ -39,4 +40,12 @@ export class CreateEventDto {
   @IsOptional()
   @IsObject()
   config?: any;
+
+  @IsOptional()
+  @IsArray()
+  rewards?: any[];
+
+  @IsOptional()
+  @IsArray()
+  objectives?: any[];
 }
