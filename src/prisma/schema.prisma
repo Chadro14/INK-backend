@@ -87,16 +87,14 @@ model User {
   passwordResets     PasswordReset[]
   emailChangeRequests EmailChangeRequest[]
 
-  qrScans            QrScan[] // Relation inverse
+  qrScans            QrScan[]
   qrScansMade        QrScan[] @relation("QRScans")
 
-  // TICKETS
   tickets            Ticket[]
   ticketTransactions TicketTransaction[]
   ticketUses         TicketUse[]
   ticketParticipations TicketParticipation[]
 
-  // CREATOR REQUESTS
   creatorRequests    CreatorRequest[]
 
   createdAt          DateTime  @default(now())
@@ -237,13 +235,12 @@ enum ManasTransactionType {
   GIFT_RECEIVED
   COLLABORATION
   VIEWS_EARNED
-  // ✅ AJOUTÉS POUR LES ÉVÉNEMENTS
   EVENT_REWARD
   EVENT_BONUS
 }
 
 // ============================================
-// DAILY MANAS ACTIONS (LIMITE QUOTIDIENNE)
+// DAILY MANAS ACTIONS
 // ============================================
 model DailyManasAction {
   id          String   @id @default(uuid())
@@ -339,6 +336,9 @@ model Chapter {
   views       View[]
   ticketUses  TicketUse[]
 
+  // ✅ ÉVÉNEMENTS
+  eventSubmissions EventSubmission[]
+
   @@unique([mangaId, number])
   @@index([mangaId, publishedAt])
   @@index([isFree, publishedAt])
@@ -417,7 +417,7 @@ model Like {
 }
 
 // ============================================
-// ABONNEMENTS (SUIVI DE MANGAS)
+// ABONNEMENTS
 // ============================================
 model Subscription {
   id         String   @id @default(uuid())
@@ -532,7 +532,7 @@ enum PayoutStatus {
 }
 
 // ============================================
-// INKSTREAM — ANIMES
+// INKSTREAM
 // ============================================
 model InkStreamAnime {
   id            String   @id @default(uuid())
@@ -616,7 +616,6 @@ enum NotificationType {
   CERTIFICATION
   PREMIUM_EXPIRY
   SYSTEM
-  // ✅ AJOUTÉS POUR LES ÉVÉNEMENTS
   EVENT_STARTED
   EVENT_ENDED
   EVENT_REWARD
@@ -642,7 +641,7 @@ model AuditLog {
 }
 
 // ============================================
-// FOLLOW (Abonnements entre utilisateurs)
+// FOLLOW
 // ============================================
 model UserFollow {
   id          String   @id @default(uuid())
@@ -658,7 +657,7 @@ model UserFollow {
 }
 
 // ============================================
-// MESSAGERIE (Chat / Inbox)
+// MESSAGERIE
 // ============================================
 model Message {
   id         String   @id @default(uuid())
@@ -694,7 +693,7 @@ model QrScan {
 }
 
 // ============================================
-// TICKETS 🎟️
+// TICKETS
 // ============================================
 model Ticket {
   id          String   @id @default(uuid())
@@ -712,16 +711,13 @@ model Ticket {
   @@index([userId])
 }
 
-// ============================================
-// TRANSACTIONS DE TICKETS
-// ============================================
 model TicketTransaction {
   id          String   @id @default(uuid())
   userId      String
   user        User     @relation(fields: [userId], references: [id], onDelete: Cascade)
   ticketId    String
   ticket      Ticket   @relation(fields: [ticketId], references: [id], onDelete: Cascade)
-  amount      Int      // positif = gagné, négatif = utilisé
+  amount      Int
   type        TicketType
   description String
   metadata    Json?
@@ -732,9 +728,6 @@ model TicketTransaction {
   @@index([createdAt])
 }
 
-// ============================================
-// UTILISATION DES TICKETS
-// ============================================
 model TicketUse {
   id          String   @id @default(uuid())
   userId      String
@@ -753,9 +746,6 @@ model TicketUse {
   @@index([mangaId])
 }
 
-// ============================================
-// ÉVÉNEMENTS TICKETS
-// ============================================
 model TicketEvent {
   id          String   @id @default(uuid())
   name        String
@@ -772,9 +762,6 @@ model TicketEvent {
   @@index([isActive, startDate, endDate])
 }
 
-// ============================================
-// PARTICIPATION AUX ÉVÉNEMENTS TICKETS
-// ============================================
 model TicketParticipation {
   id          String   @id @default(uuid())
   userId      String
@@ -790,21 +777,17 @@ model TicketParticipation {
   @@index([eventId])
 }
 
-// ============================================
-// ENUM TICKET TYPE
-// ============================================
 enum TicketType {
   EVENT
   REFERRAL
   DAILY_REWARD
   GIFT
   USED
-  // ✅ AJOUTÉ
   EVENT_REWARD
 }
 
 // ============================================
-// CREATOR REQUESTS (DEMANDES DE DESSINATEUR)
+// CREATOR REQUESTS
 // ============================================
 model CreatorRequest {
   id           String   @id @default(uuid())
@@ -839,7 +822,6 @@ enum RequestStatus {
 // ✅ SYSTÈME D'ÉVÉNEMENTS COMPLET
 // ============================================
 
-// ÉVÉNEMENT PRINCIPAL
 model Event {
   id          String     @id @default(uuid())
   type        EventType
@@ -851,7 +833,9 @@ model Event {
   startDate   DateTime
   endDate     DateTime
   isActive    Boolean    @default(true)
-  config      Json       @default("{}") // Paramètres spécifiques (maxParticipants, etc.)
+  config      Json       @default("{}")
+  rewards     Json       @default("[]")
+  objectives  Json       @default("[]")
   createdAt   DateTime   @default(now())
   updatedAt   DateTime   @updatedAt
 
@@ -864,14 +848,13 @@ model Event {
   @@index([isActive, startDate, endDate])
 }
 
-// PARTICIPATION À UN ÉVÉNEMENT
 model EventParticipation {
   id           String   @id @default(uuid())
   userId       String
   user         User     @relation(fields: [userId], references: [id], onDelete: Cascade)
   eventId      String
   event        Event    @relation(fields: [eventId], references: [id], onDelete: Cascade)
-  submissionId String?  // Lien vers la soumission (manga, dessin, etc.)
+  submissionId String?
   progress     Json     @default("{}")
   score        Int      @default(0)
   rank         Int?
@@ -880,24 +863,24 @@ model EventParticipation {
   joinedAt     DateTime @default(now())
   completedAt  DateTime?
 
-  votesReceived EventVote[] // Votes reçus par cette participation
+  votesReceived EventVote[]
+  submissions   EventSubmission[]
 
   @@unique([userId, eventId])
   @@index([eventId, score])
   @@index([userId])
 }
 
-// VOTE POUR UN ÉVÉNEMENT
 model EventVote {
   id          String   @id @default(uuid())
   userId      String
   user        User     @relation(fields: [userId], references: [id], onDelete: Cascade)
   eventId     String
   event       Event    @relation(fields: [eventId], references: [id], onDelete: Cascade)
-  participationId String // La participation qui reçoit le vote
+  participationId String
   participation EventParticipation @relation(fields: [participationId], references: [id], onDelete: Cascade)
   voteType    VoteType @default(UP)
-  weight      Int      @default(1) // Poids du vote (anti-fraude)
+  weight      Int      @default(1)
   createdAt   DateTime @default(now())
 
   @@unique([userId, eventId, participationId])
@@ -906,16 +889,17 @@ model EventVote {
   @@index([createdAt])
 }
 
-// SOUMISSION À UN ÉVÉNEMENT (manga, dessin, etc.)
 model EventSubmission {
   id          String   @id @default(uuid())
   userId      String
   user        User     @relation(fields: [userId], references: [id], onDelete: Cascade)
   eventId     String
   event       Event    @relation(fields: [eventId], references: [id], onDelete: Cascade)
-  mangaId     String?  // Pour les BATTLE DE MANGAS
+  participationId String?
+  participation EventParticipation? @relation(fields: [participationId], references: [id], onDelete: Cascade)
+  mangaId     String?
   manga       Manga?   @relation(fields: [mangaId], references: [id], onDelete: Cascade)
-  chapterId   String?  // Pour les DÉFIS DESSIN
+  chapterId   String?
   chapter     Chapter? @relation(fields: [chapterId], references: [id], onDelete: Cascade)
   title       String
   description String?  @db.Text
@@ -932,16 +916,17 @@ model EventSubmission {
   @@index([userId])
 }
 
-// CLASSEMENT DES ÉVÉNEMENTS (cache)
 model EventRanking {
   id          String   @id @default(uuid())
   eventId     String
   event       Event    @relation(fields: [eventId], references: [id], onDelete: Cascade)
   userId      String
   user        User     @relation(fields: [userId], references: [id], onDelete: Cascade)
+  participationId String?
+  participation EventParticipation? @relation(fields: [participationId], references: [id], onDelete: Cascade)
   score       Int      @default(0)
   rank        Int
-  metrics     Json     @default("{}") // Détail des métriques (votes, vues, etc.)
+  metrics     Json     @default("{}")
   updatedAt   DateTime @updatedAt
 
   @@unique([eventId, userId])
@@ -949,14 +934,13 @@ model EventRanking {
   @@index([eventId, score])
 }
 
-// ENUMS DES ÉVÉNEMENTS
 enum EventType {
-  BATTLE           // ⚔️ Battle de mangas - Hebdomadaire
-  DESSIN           // 🎨 Défi Dessin - Bi-hebdomadaire
-  TICKETS          // 🎟️ Semaine des Tickets - Mensuel
-  RISING_CREATOR   // 🚀 Rising Creator - Mensuel
-  AWARDS           // 👑 INKDROP Awards - Trimestriel
-  TOURNAMENT       // 💥 INKDROP Tournament - Semestriel
+  BATTLE
+  DESSIN
+  TICKETS
+  RISING_CREATOR
+  AWARDS
+  TOURNAMENT
 }
 
 enum VoteType {
