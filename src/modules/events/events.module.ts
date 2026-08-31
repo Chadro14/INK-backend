@@ -9,7 +9,6 @@ import { PrismaModule } from '../../prisma/prisma.module';
 import { ManasModule } from '../manas/manas.module';
 import { TicketsModule } from '../tickets/tickets.module';
 import { NotificationsModule } from '../notifications/notifications.module';
-import { AuditModule } from '../audit/audit.module';
 
 @Module({
   imports: [
@@ -17,7 +16,6 @@ import { AuditModule } from '../audit/audit.module';
     ManasModule,
     TicketsModule,
     NotificationsModule,
-    AuditModule,
   ],
   controllers: [EventsController],
   providers: [
