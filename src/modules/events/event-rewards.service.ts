@@ -3,7 +3,6 @@ import { PrismaService } from '../../prisma/prisma.service';
 import { ManasService } from '../manas/manas.service';
 import { TicketsService } from '../tickets/tickets.service';
 import { NotificationsService } from '../notifications/notifications.service';
-import { ManasTransactionType, TicketType } from '@prisma/client';
 
 @Injectable()
 export class EventRewardsService {
@@ -37,8 +36,6 @@ export class EventRewardsService {
             userId,
             reward.value,
             `Récompense événement : ${event.title}`,
-            ManasTransactionType.EVENT_REWARD,
-            { eventId },
           );
           break;
 
@@ -47,8 +44,6 @@ export class EventRewardsService {
             userId,
             reward.value,
             `Ticket gagné via l'événement : ${event.title}`,
-            TicketType.EVENT_REWARD,
-            { eventId },
           );
           break;
 
