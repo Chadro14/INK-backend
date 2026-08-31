@@ -45,7 +45,7 @@ export class EventRankingService {
         userId: participation.userId,
         participationId: participation.id,
         score: voteScore * 10,
-        rank: 0, // Sera mis à jour après le tri
+        rank: 0,
         metrics: {
           votes: voteScore,
         },
@@ -61,8 +61,9 @@ export class EventRankingService {
     }));
 
     // Sauvegarder les classements
+    const savedRankings = [];
     for (const item of ranked) {
-      await this.prisma.eventRanking.create({
+      const saved = await this.prisma.eventRanking.create({
         data: {
           eventId: item.eventId,
           userId: item.userId,
@@ -72,8 +73,12 @@ export class EventRankingService {
           metrics: item.metrics,
         },
       });
+      savedRankings.push({
+        ...saved,
+        user: item.user,
+      });
     }
 
-    return ranked;
+    return savedRankings;
   }
 }
