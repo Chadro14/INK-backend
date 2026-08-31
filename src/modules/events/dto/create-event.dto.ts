@@ -1,6 +1,16 @@
-import { IsString, IsOptional, IsDateString, IsArray, IsNumber, IsBoolean } from 'class-validator';
+import {
+  IsString,
+  IsOptional,
+  IsDateString,
+  IsEnum,
+  IsObject,
+} from 'class-validator';
+import { EventType } from '@prisma/client';
 
 export class CreateEventDto {
+  @IsEnum(EventType)
+  type: EventType;
+
   @IsString()
   title: string;
 
@@ -8,12 +18,17 @@ export class CreateEventDto {
   @IsString()
   description?: string;
 
+  @IsOptional()
   @IsString()
-  theme: string; // 'naruto', 'blue-lock', 'demon-slayer', etc.
+  theme?: string;
 
   @IsOptional()
   @IsString()
-  icon?: string; // '🥷', '⚽', '🗡️', etc.
+  icon?: string;
+
+  @IsOptional()
+  @IsString()
+  coverUrl?: string;
 
   @IsDateString()
   startDate: string;
@@ -22,14 +37,6 @@ export class CreateEventDto {
   endDate: string;
 
   @IsOptional()
-  @IsArray()
-  objectives?: Array<{ type: string; target: number; reward: string }>;
-
-  @IsOptional()
-  @IsArray()
-  rewards?: Array<{ type: string; name: string; icon: string }>;
-
-  @IsOptional()
-  @IsBoolean()
-  isActive?: boolean;
+  @IsObject()
+  config?: any;
 }
