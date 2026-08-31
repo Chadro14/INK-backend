@@ -184,7 +184,12 @@ export class EventsService {
     });
 
     if (rankings.length === 0) {
-      rankings = await this.rankingService.generateRanking(eventId);
+      // Générer et récupérer les classements
+      const generated = await this.rankingService.generateRanking(eventId);
+      return generated.map((item) => ({
+        ...item,
+        user: item.user || null,
+      }));
     }
 
     return rankings;
