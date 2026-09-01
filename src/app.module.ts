@@ -27,7 +27,8 @@ import { FavoritesModule } from './modules/favorites/favorites.module';
 import { ViewsModule } from './modules/views/views.module';
 import { ManasModule } from './modules/manas/manas.module';
 import { QrModule } from './modules/qr/qr.module';
-import { TicketsModule } from './modules/tickets/tickets.module'; // ✅ AJOUTÉ
+import { TicketsModule } from './modules/tickets/tickets.module';
+import { BadgesModule } from './modules/badges/badges.module'; // ✅ AJOUTÉ
 
 @Module({
   imports: [
@@ -61,7 +62,8 @@ import { TicketsModule } from './modules/tickets/tickets.module'; // ✅ AJOUTÉ
     ViewsModule,
     ManasModule,
     QrModule,
-    TicketsModule, // ✅ AJOUTÉ
+    TicketsModule,
+    BadgesModule, // ✅ AJOUTÉ
   ],
 })
 export class AppModule {}
