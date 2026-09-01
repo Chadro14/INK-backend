@@ -1,7 +1,7 @@
 import { Injectable } from '@nestjs/common';
 import { PrismaService } from '../../prisma/prisma.service';
 import { NotificationsService } from '../notifications/notifications.service';
-import { BadgeRarity, BadgeCategory } from '@prisma/client';
+import { BadgeRarity, BadgeCategory, EventType } from '@prisma/client';
 
 @Injectable()
 export class BadgeAwardService {
@@ -169,9 +169,9 @@ export class BadgeAwardService {
         color: '#FBBF24',
         gradient: 'from-amber-400 to-amber-600',
         glowColor: '#FBBF24',
-        rarity: 'ULTIMATE',
-        category: 'COMPETITION',
-        eventType: 'AWARDS',
+        rarity: BadgeRarity.ULTIMATE,
+        category: BadgeCategory.COMPETITION,
+        eventType: EventType.AWARDS,
       },
       {
         name: 'Champion INKDROP',
@@ -181,9 +181,9 @@ export class BadgeAwardService {
         color: '#FBBF24',
         gradient: 'from-amber-400 to-amber-600',
         glowColor: '#FBBF24',
-        rarity: 'ULTIMATE',
-        category: 'COMPETITION',
-        eventType: 'TOURNAMENT',
+        rarity: BadgeRarity.ULTIMATE,
+        category: BadgeCategory.COMPETITION,
+        eventType: EventType.TOURNAMENT,
       },
       {
         name: 'Légende INKDROP',
@@ -193,9 +193,9 @@ export class BadgeAwardService {
         color: '#EF4444',
         gradient: 'from-red-400 to-amber-500',
         glowColor: '#EF4444',
-        rarity: 'ULTIMATE',
-        category: 'COMPETITION',
-        eventType: 'AWARDS',
+        rarity: BadgeRarity.ULTIMATE,
+        category: BadgeCategory.COMPETITION,
+        eventType: EventType.AWARDS,
       },
 
       // === BADGES LÉGENDAIRES ===
@@ -207,9 +207,9 @@ export class BadgeAwardService {
         color: '#FBBF24',
         gradient: 'from-amber-400 to-amber-600',
         glowColor: '#FBBF24',
-        rarity: 'LEGENDARY',
-        category: 'EVENT',
-        eventType: 'BATTLE',
+        rarity: BadgeRarity.LEGENDARY,
+        category: BadgeCategory.EVENT,
+        eventType: EventType.BATTLE,
       },
       {
         name: 'Maître du Trait',
@@ -219,9 +219,9 @@ export class BadgeAwardService {
         color: '#A78BFA',
         gradient: 'from-purple-400 to-violet-500',
         glowColor: '#A78BFA',
-        rarity: 'LEGENDARY',
-        category: 'EVENT',
-        eventType: 'DESSIN',
+        rarity: BadgeRarity.LEGENDARY,
+        category: BadgeCategory.EVENT,
+        eventType: EventType.DESSIN,
       },
       {
         name: 'Chasseur de Tickets',
@@ -231,9 +231,9 @@ export class BadgeAwardService {
         color: '#60A5FA',
         gradient: 'from-blue-400 to-blue-500',
         glowColor: '#60A5FA',
-        rarity: 'LEGENDARY',
-        category: 'EVENT',
-        eventType: 'TICKETS',
+        rarity: BadgeRarity.LEGENDARY,
+        category: BadgeCategory.EVENT,
+        eventType: EventType.TICKETS,
       },
       {
         name: 'Rising Star',
@@ -243,9 +243,9 @@ export class BadgeAwardService {
         color: '#34D399',
         gradient: 'from-emerald-400 to-emerald-500',
         glowColor: '#34D399',
-        rarity: 'LEGENDARY',
-        category: 'EVENT',
-        eventType: 'RISING_CREATOR',
+        rarity: BadgeRarity.LEGENDARY,
+        category: BadgeCategory.EVENT,
+        eventType: EventType.RISING_CREATOR,
       },
 
       // === BADGES ÉPIQUES ===
@@ -257,9 +257,9 @@ export class BadgeAwardService {
         color: '#94A3B8',
         gradient: 'from-gray-300 to-gray-400',
         glowColor: '#94A3B8',
-        rarity: 'EPIC',
-        category: 'EVENT',
-        eventType: 'BATTLE',
+        rarity: BadgeRarity.EPIC,
+        category: BadgeCategory.EVENT,
+        eventType: EventType.BATTLE,
       },
       {
         name: 'Plume d\'Or',
@@ -269,9 +269,9 @@ export class BadgeAwardService {
         color: '#FCD34D',
         gradient: 'from-amber-300 to-amber-400',
         glowColor: '#FCD34D',
-        rarity: 'EPIC',
-        category: 'EVENT',
-        eventType: 'DESSIN',
+        rarity: BadgeRarity.EPIC,
+        category: BadgeCategory.EVENT,
+        eventType: EventType.DESSIN,
       },
       {
         name: 'Platine',
@@ -281,9 +281,9 @@ export class BadgeAwardService {
         color: '#94A3B8',
         gradient: 'from-gray-300 to-gray-400',
         glowColor: '#94A3B8',
-        rarity: 'EPIC',
-        category: 'COMPETITION',
-        eventType: 'AWARDS',
+        rarity: BadgeRarity.EPIC,
+        category: BadgeCategory.COMPETITION,
+        eventType: EventType.AWARDS,
       },
       {
         name: 'Guerrier Légendaire',
@@ -293,9 +293,9 @@ export class BadgeAwardService {
         color: '#FBBF24',
         gradient: 'from-amber-400 to-amber-500',
         glowColor: '#FBBF24',
-        rarity: 'EPIC',
-        category: 'COMPETITION',
-        eventType: 'TOURNAMENT',
+        rarity: BadgeRarity.EPIC,
+        category: BadgeCategory.COMPETITION,
+        eventType: EventType.TOURNAMENT,
       },
 
       // === BADGES RARES ===
@@ -307,9 +307,9 @@ export class BadgeAwardService {
         color: '#F59E0B',
         gradient: 'from-amber-500 to-amber-600',
         glowColor: '#F59E0B',
-        rarity: 'RARE',
-        category: 'EVENT',
-        eventType: 'BATTLE',
+        rarity: BadgeRarity.RARE,
+        category: BadgeCategory.EVENT,
+        eventType: EventType.BATTLE,
       },
       {
         name: 'Pinceau d\'Argent',
@@ -319,9 +319,9 @@ export class BadgeAwardService {
         color: '#94A3B8',
         gradient: 'from-gray-300 to-gray-400',
         glowColor: '#94A3B8',
-        rarity: 'RARE',
-        category: 'EVENT',
-        eventType: 'DESSIN',
+        rarity: BadgeRarity.RARE,
+        category: BadgeCategory.EVENT,
+        eventType: EventType.DESSIN,
       },
       {
         name: 'Or',
@@ -331,12 +331,12 @@ export class BadgeAwardService {
         color: '#FBBF24',
         gradient: 'from-amber-400 to-amber-500',
         glowColor: '#FBBF24',
-        rarity: 'RARE',
-        category: 'COMPETITION',
-        eventType: 'AWARDS',
+        rarity: BadgeRarity.RARE,
+        category: BadgeCategory.COMPETITION,
+        eventType: EventType.AWARDS,
       },
 
-      // === BADGES COMMUNS ===
+      // === BADGES UNCOMMON ===
       {
         name: 'Esprit Combattant',
         slug: 'esprit-combattant',
@@ -345,9 +345,9 @@ export class BadgeAwardService {
         color: '#F97316',
         gradient: 'from-orange-400 to-orange-500',
         glowColor: '#F97316',
-        rarity: 'UNCOMMON',
-        category: 'EVENT',
-        eventType: 'BATTLE',
+        rarity: BadgeRarity.UNCOMMON,
+        category: BadgeCategory.EVENT,
+        eventType: EventType.BATTLE,
       },
       {
         name: 'Artiste Émergent',
@@ -357,9 +357,9 @@ export class BadgeAwardService {
         color: '#A78BFA',
         gradient: 'from-purple-400 to-purple-500',
         glowColor: '#A78BFA',
-        rarity: 'UNCOMMON',
-        category: 'EVENT',
-        eventType: 'DESSIN',
+        rarity: BadgeRarity.UNCOMMON,
+        category: BadgeCategory.EVENT,
+        eventType: EventType.DESSIN,
       },
       {
         name: 'Joueur Fidèle',
@@ -369,10 +369,12 @@ export class BadgeAwardService {
         color: '#60A5FA',
         gradient: 'from-blue-400 to-blue-500',
         glowColor: '#60A5FA',
-        rarity: 'UNCOMMON',
-        category: 'EVENT',
-        eventType: 'TICKETS',
+        rarity: BadgeRarity.UNCOMMON,
+        category: BadgeCategory.EVENT,
+        eventType: EventType.TICKETS,
       },
+
+      // === BADGES COMMUNS ===
       {
         name: 'Participant',
         slug: 'participant',
@@ -381,11 +383,14 @@ export class BadgeAwardService {
         color: '#6B7280',
         gradient: 'from-gray-400 to-gray-500',
         glowColor: '#6B7280',
-        rarity: 'COMMON',
-        category: 'EVENT',
+        rarity: BadgeRarity.COMMON,
+        category: BadgeCategory.EVENT,
         eventType: null,
       },
     ];
+
+    let created = 0;
+    let skipped = 0;
 
     for (const badge of badges) {
       try {
@@ -393,11 +398,22 @@ export class BadgeAwardService {
           data: badge,
         });
         console.log(`✅ Badge "${badge.name}" créé`);
-      } catch (error) {
-        console.log(`⚠️ Badge "${badge.name}" existe déjà`);
+        created++;
+      } catch (error: any) {
+        if (error.code === 'P2002') {
+          console.log(`⚠️ Badge "${badge.name}" existe déjà`);
+          skipped++;
+        } else {
+          console.error(`❌ Erreur création badge "${badge.name}":`, error.message);
+        }
       }
     }
 
-    return { success: true, message: 'Badges seedés avec succès' };
+    return {
+      success: true,
+      message: `${created} badges créés, ${skipped} déjà existants`,
+      created,
+      skipped,
+    };
   }
 }
