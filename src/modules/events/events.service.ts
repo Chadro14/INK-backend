@@ -33,13 +33,26 @@ export class EventsService {
       throw new ForbiddenException('Accès réservé aux administrateurs');
     }
 
-    // Vérifier qu'il n'y a pas de conflit de dates
+    // ✅ Convertir les dates en objets Date AVANT la vérification
+    const startDate = new Date(dto.startDate);
+    const endDate = new Date(dto.endDate);
+
+    // ✅ Vérifier que les dates sont valides
+    if (isNaN(startDate.getTime()) || isNaN(endDate.getTime())) {
+      throw new BadRequestException('Format de date invalide. Utilisez ISO-8601.');
+    }
+
+    if (startDate >= endDate) {
+      throw new BadRequestException('La date de début doit être avant la date de fin');
+    }
+
+    // ✅ Vérifier qu'il n'y a pas de conflit de dates
     const overlapping = await this.prisma.event.findFirst({
       where: {
         isActive: true,
         OR: [
-          { startDate: { lte: dto.endDate, gte: dto.startDate } },
-          { endDate: { lte: dto.endDate, gte: dto.startDate } },
+          { startDate: { lte: endDate, gte: startDate } }, // ✅ Utiliser les Date objects
+          { endDate: { lte: endDate, gte: startDate } },   // ✅ Utiliser les Date objects
         ],
       },
     });
@@ -58,8 +71,8 @@ export class EventsService {
         theme: dto.theme || null,
         icon: dto.icon || null,
         coverUrl: dto.coverUrl || null,
-        startDate: new Date(dto.startDate),
-        endDate: new Date(dto.endDate),
+        startDate: startDate, // ✅ Utiliser l'objet Date
+        endDate: endDate,     // ✅ Utiliser l'objet Date
         config: dto.config || {},
         rewards: dto.rewards || [],
         objectives: dto.objectives || [],
@@ -419,21 +432,38 @@ export class EventsService {
       throw new NotFoundException('Événement non trouvé');
     }
 
+    // ✅ Convertir les dates si elles sont fournies
+    const data: any = {
+      title: dto.title,
+      description: dto.description,
+      theme: dto.theme,
+      icon: dto.icon,
+      coverUrl: dto.coverUrl,
+      config: dto.config || undefined,
+      rewards: dto.rewards || undefined,
+      objectives: dto.objectives || undefined,
+      isActive: dto.isActive !== undefined ? dto.isActive : undefined,
+    };
+
+    if (dto.startDate) {
+      const startDate = new Date(dto.startDate);
+      if (isNaN(startDate.getTime())) {
+        throw new BadRequestException('Format de date de début invalide');
+      }
+      data.startDate = startDate;
+    }
+
+    if (dto.endDate) {
+      const endDate = new Date(dto.endDate);
+      if (isNaN(endDate.getTime())) {
+        throw new BadRequestException('Format de date de fin invalide');
+      }
+      data.endDate = endDate;
+    }
+
     return this.prisma.event.update({
       where: { id: eventId },
-      data: {
-        title: dto.title,
-        description: dto.description,
-        theme: dto.theme,
-        icon: dto.icon,
-        coverUrl: dto.coverUrl,
-        startDate: dto.startDate ? new Date(dto.startDate) : undefined,
-        endDate: dto.endDate ? new Date(dto.endDate) : undefined,
-        config: dto.config || undefined,
-        rewards: dto.rewards || undefined,
-        objectives: dto.objectives || undefined,
-        isActive: dto.isActive !== undefined ? dto.isActive : undefined,
-      },
+      data,
     });
   }
 
