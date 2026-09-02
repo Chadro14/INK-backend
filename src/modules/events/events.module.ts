@@ -5,6 +5,7 @@ import { EventSchedulerService } from './event-scheduler.service';
 import { EventVotingService } from './event-voting.service';
 import { EventRewardsService } from './event-rewards.service';
 import { EventRankingService } from './event-ranking.service';
+import { EventProgressService } from './event-progress.service';
 import { PrismaModule } from '../../prisma/prisma.module';
 import { ManasModule } from '../manas/manas.module';
 import { TicketsModule } from '../tickets/tickets.module';
@@ -24,6 +25,7 @@ import { NotificationsModule } from '../notifications/notifications.module';
     EventVotingService,
     EventRewardsService,
     EventRankingService,
+    EventProgressService, // ✅ AJOUTÉ
   ],
   exports: [
     EventsService,
@@ -31,6 +33,7 @@ import { NotificationsModule } from '../notifications/notifications.module';
     EventVotingService,
     EventRewardsService,
     EventRankingService,
+    EventProgressService, // ✅ AJOUTÉ
   ],
 })
 export class EventsModule {}
