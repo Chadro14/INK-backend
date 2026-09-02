@@ -13,7 +13,7 @@ export class EventVotingService {
     userId: string,
     eventId: string,
     participationId: string,
-    voteType: VoteType = 'UP',
+    voteType: VoteType = VoteType.UP,
   ) {
     // Vérifier que l'événement existe
     const event = await this.prisma.event.findUnique({
@@ -170,9 +170,10 @@ export class EventVotingService {
 
     let score = 0;
     for (const vote of votes) {
-      if (vote.voteType === 'UP' || vote.voteType === 'STAR') {
+      // ✅ CORRECTION : Vérifier correctement les types de vote
+      if (this.isPositiveVote(vote.voteType)) {
         score += vote.weight;
-      } else if (vote.voteType === 'DOWN') {
+      } else if (vote.voteType === VoteType.DOWN) {
         score -= vote.weight;
       }
     }
@@ -182,6 +183,18 @@ export class EventVotingService {
       where: { id: participationId },
       data: { score },
     });
+  }
+
+  // ============================================
+  // VÉRIFIER SI UN VOTE EST POSITIF
+  // ============================================
+  private isPositiveVote(voteType: VoteType): boolean {
+    return voteType === VoteType.UP || 
+           voteType === VoteType.STAR_1 ||
+           voteType === VoteType.STAR_2 ||
+           voteType === VoteType.STAR_3 ||
+           voteType === VoteType.STAR_4 ||
+           voteType === VoteType.STAR_5;
   }
 
   // ============================================
@@ -211,5 +224,29 @@ export class EventVotingService {
         },
       },
     });
+  }
+
+  // ============================================
+  // OBTENIR LE POIDS D'UN VOTE
+  // ============================================
+  getVoteWeight(voteType: VoteType): number {
+    switch (voteType) {
+      case VoteType.UP:
+        return 1;
+      case VoteType.DOWN:
+        return -1;
+      case VoteType.STAR_1:
+        return 1;
+      case VoteType.STAR_2:
+        return 2;
+      case VoteType.STAR_3:
+        return 3;
+      case VoteType.STAR_4:
+        return 4;
+      case VoteType.STAR_5:
+        return 5;
+      default:
+        return 0;
+    }
   }
 }
