@@ -13,6 +13,7 @@ import { NotificationsService } from '../notifications/notifications.service';
 import { EventProgressService } from './event-progress.service';
 import { SubmitEventDto } from './dto/submit-event.dto';
 import { VoteEventDto } from './dto/vote-event.dto';
+import { VoteType } from '@prisma/client'; // ✅ AJOUTER CET IMPORT
 
 @Injectable()
 export class EventsService {
@@ -21,7 +22,7 @@ export class EventsService {
     private rankingService: EventRankingService,
     private rewardsService: EventRewardsService,
     private notificationsService: NotificationsService,
-    private progressService: EventProgressService, // ✅ AJOUTÉ
+    private progressService: EventProgressService,
   ) {}
 
   // ============================================
@@ -37,11 +38,9 @@ export class EventsService {
       throw new ForbiddenException('Accès réservé aux administrateurs');
     }
 
-    // ✅ Convertir les dates en objets Date AVANT la vérification
     const startDate = new Date(dto.startDate);
     const endDate = new Date(dto.endDate);
 
-    // ✅ Vérifier que les dates sont valides
     if (isNaN(startDate.getTime()) || isNaN(endDate.getTime())) {
       throw new BadRequestException('Format de date invalide. Utilisez ISO-8601.');
     }
@@ -50,7 +49,6 @@ export class EventsService {
       throw new BadRequestException('La date de début doit être avant la date de fin');
     }
 
-    // ✅ Vérifier qu'il n'y a pas de conflit de dates
     const overlapping = await this.prisma.event.findFirst({
       where: {
         isActive: true,
@@ -121,7 +119,6 @@ export class EventsService {
       orderBy: { startDate: 'asc' },
     });
 
-    // Ajouter la participation de l'utilisateur
     if (userId) {
       const participations = await this.prisma.eventParticipation.findMany({
         where: {
@@ -180,7 +177,6 @@ export class EventsService {
       throw new NotFoundException('Événement non trouvé');
     }
 
-    // Récupérer la participation de l'utilisateur
     let userParticipation = null;
     if (userId) {
       userParticipation = await this.prisma.eventParticipation.findUnique({
@@ -193,7 +189,6 @@ export class EventsService {
       });
     }
 
-    // Récupérer la progression de l'utilisateur
     let userProgress = null;
     if (userId && userParticipation) {
       userProgress = await this.progressService.getUserProgress(userId, eventId);
@@ -226,7 +221,6 @@ export class EventsService {
       throw new BadRequestException('Cet événement est terminé');
     }
 
-    // Vérifier si déjà inscrit
     const existing = await this.prisma.eventParticipation.findUnique({
       where: {
         userId_eventId: {
@@ -240,7 +234,6 @@ export class EventsService {
       throw new BadRequestException('Vous participez déjà à cet événement');
     }
 
-    // Vérifier le nombre de participants
     const config = event.config as any || {};
     const maxParticipants = config.maxParticipants || 999999;
     const currentParticipants = await this.prisma.eventParticipation.count({
@@ -259,7 +252,6 @@ export class EventsService {
       },
     });
 
-    // Envoyer une notification
     await this.notificationsService.create({
       userId,
       type: 'SYSTEM',
@@ -273,7 +265,7 @@ export class EventsService {
   }
 
   // ============================================
-  // SOUMETTRE UNE ŒUVRE À UN ÉVÉNEMENT (VERSION AMÉLIORÉE)
+  // SOUMETTRE UNE ŒUVRE À UN ÉVÉNEMENT
   // ============================================
   async submitToEvent(
     userId: string,
@@ -288,7 +280,6 @@ export class EventsService {
       throw new NotFoundException('Événement non trouvé');
     }
 
-    // Vérifier que l'événement accepte les soumissions
     const allowedTypes = ['BATTLE', 'DESSIN', 'TOURNAMENT'];
     if (!allowedTypes.includes(event.type)) {
       throw new BadRequestException(
@@ -296,7 +287,6 @@ export class EventsService {
       );
     }
 
-    // Vérifier que l'utilisateur participe
     const participation = await this.prisma.eventParticipation.findUnique({
       where: {
         userId_eventId: {
@@ -312,7 +302,6 @@ export class EventsService {
       );
     }
 
-    // Vérifier qu'il n'y a pas déjà une soumission
     const existing = await this.prisma.eventSubmission.findFirst({
       where: {
         eventId,
@@ -326,7 +315,6 @@ export class EventsService {
       );
     }
 
-    // Créer la soumission
     const submission = await this.prisma.eventSubmission.create({
       data: {
         userId,
@@ -341,7 +329,6 @@ export class EventsService {
       },
     });
 
-    // Mettre à jour la progression
     await this.progressService.updateProgress(userId, eventId, 'SUBMIT', 1);
 
     return submission;
@@ -355,7 +342,6 @@ export class EventsService {
     eventId: string,
     dto: VoteEventDto,
   ) {
-    // Vérifier que l'événement existe
     const event = await this.prisma.event.findUnique({
       where: { id: eventId },
     });
@@ -364,7 +350,6 @@ export class EventsService {
       throw new NotFoundException('Événement non trouvé');
     }
 
-    // Vérifier que l'événement accepte les votes
     const allowedTypes = ['BATTLE', 'DESSIN', 'AWARDS'];
     if (!allowedTypes.includes(event.type)) {
       throw new BadRequestException(
@@ -372,7 +357,6 @@ export class EventsService {
       );
     }
 
-    // Vérifier que la soumission existe
     const submission = await this.prisma.eventSubmission.findUnique({
       where: { id: dto.submissionId },
     });
@@ -385,7 +369,6 @@ export class EventsService {
       throw new BadRequestException('Cette soumission ne fait pas partie de cet événement');
     }
 
-    // Vérifier que l'utilisateur participe
     const participation = await this.prisma.eventParticipation.findUnique({
       where: {
         userId_eventId: {
@@ -401,12 +384,10 @@ export class EventsService {
       );
     }
 
-    // Vérifier que l'utilisateur ne vote pas pour sa propre soumission
     if (submission.userId === userId) {
       throw new BadRequestException('Vous ne pouvez pas voter pour votre propre soumission');
     }
 
-    // Vérifier si l'utilisateur a déjà voté
     const existingVote = await this.prisma.eventVote.findFirst({
       where: {
         userId,
@@ -419,32 +400,34 @@ export class EventsService {
       throw new BadRequestException('Vous avez déjà voté pour cette soumission');
     }
 
-    // Ajouter le vote
+    // ✅ CORRECTION : Utiliser l'enum VoteType de Prisma
     const vote = await this.prisma.eventVote.create({
       data: {
         userId,
         eventId,
         participationId: submission.participationId,
-        voteType: dto.voteType,
+        voteType: dto.voteType, // ✅ Maintenant compatible
       },
     });
 
     // Mettre à jour le score de la soumission
     let scoreIncrement = 0;
     switch (dto.voteType) {
-      case 'UP':
+      case VoteType.UP:
         scoreIncrement = 1;
         break;
-      case 'DOWN':
+      case VoteType.DOWN:
         scoreIncrement = -1;
         break;
-      case 'STAR_1':
-      case 'STAR_2':
-      case 'STAR_3':
-      case 'STAR_4':
-      case 'STAR_5':
+      case VoteType.STAR_1:
+      case VoteType.STAR_2:
+      case VoteType.STAR_3:
+      case VoteType.STAR_4:
+      case VoteType.STAR_5:
         scoreIncrement = parseInt(dto.voteType.split('_')[1]);
         break;
+      default:
+        scoreIncrement = 0;
     }
 
     await this.prisma.eventSubmission.update({
@@ -454,7 +437,6 @@ export class EventsService {
       },
     });
 
-    // Mettre à jour la progression du participant qui a reçu le vote
     if (scoreIncrement > 0) {
       await this.progressService.updateProgress(
         submission.userId,
@@ -464,7 +446,6 @@ export class EventsService {
       );
     }
 
-    // Mettre à jour la progression du votant
     await this.progressService.updateProgress(userId, eventId, 'VOTE_GIVEN', 1);
 
     return vote;
@@ -500,7 +481,6 @@ export class EventsService {
       throw new BadRequestException('Vous avez déjà réclamé vos récompenses');
     }
 
-    // Distribuer les récompenses
     return this.rewardsService.distributeRewards(participation);
   }
 
@@ -516,7 +496,6 @@ export class EventsService {
       throw new NotFoundException('Événement non trouvé');
     }
 
-    // Vérifier si le classement est en cache
     let rankings = await this.prisma.eventRanking.findMany({
       where: { eventId },
       include: {
@@ -534,7 +513,6 @@ export class EventsService {
       take: limit,
     });
 
-    // Si le classement est vide, le générer
     if (rankings.length === 0) {
       const generated = await this.rankingService.generateRanking(eventId);
       return generated.map((item) => ({
@@ -574,7 +552,6 @@ export class EventsService {
       throw new NotFoundException('Événement non trouvé');
     }
 
-    // ✅ Convertir les dates si elles sont fournies
     const data: any = {
       title: dto.title,
       description: dto.description,
@@ -630,7 +607,6 @@ export class EventsService {
       throw new NotFoundException('Événement non trouvé');
     }
 
-    // Supprimer toutes les données liées
     await this.prisma.$transaction([
       this.prisma.eventVote.deleteMany({ where: { eventId } }),
       this.prisma.eventSubmission.deleteMany({ where: { eventId } }),
