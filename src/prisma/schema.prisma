@@ -868,7 +868,7 @@ model EventParticipation {
 
   votesReceived EventVote[]
   submissions   EventSubmission[]
-  rankings      EventRanking[]  // ✅ AJOUTÉ
+  rankings      EventRanking[]
 
   @@unique([userId, eventId])
   @@index([eventId, score])
@@ -947,10 +947,15 @@ enum EventType {
   TOURNAMENT
 }
 
+// ✅ CORRECTION : VoteType avec 5 étoiles
 enum VoteType {
   UP
   DOWN
-  STAR
+  STAR_1
+  STAR_2
+  STAR_3
+  STAR_4
+  STAR_5
 }
 
 enum SubmissionStatus {
