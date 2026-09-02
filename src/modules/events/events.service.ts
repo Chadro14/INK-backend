@@ -10,6 +10,9 @@ import { UpdateEventDto } from './dto/update-event.dto';
 import { EventRankingService } from './event-ranking.service';
 import { EventRewardsService } from './event-rewards.service';
 import { NotificationsService } from '../notifications/notifications.service';
+import { EventProgressService } from './event-progress.service';
+import { SubmitEventDto } from './dto/submit-event.dto';
+import { VoteEventDto } from './dto/vote-event.dto';
 
 @Injectable()
 export class EventsService {
@@ -18,6 +21,7 @@ export class EventsService {
     private rankingService: EventRankingService,
     private rewardsService: EventRewardsService,
     private notificationsService: NotificationsService,
+    private progressService: EventProgressService, // ✅ AJOUTÉ
   ) {}
 
   // ============================================
@@ -51,8 +55,8 @@ export class EventsService {
       where: {
         isActive: true,
         OR: [
-          { startDate: { lte: endDate, gte: startDate } }, // ✅ Utiliser les Date objects
-          { endDate: { lte: endDate, gte: startDate } },   // ✅ Utiliser les Date objects
+          { startDate: { lte: endDate, gte: startDate } },
+          { endDate: { lte: endDate, gte: startDate } },
         ],
       },
     });
@@ -71,8 +75,8 @@ export class EventsService {
         theme: dto.theme || null,
         icon: dto.icon || null,
         coverUrl: dto.coverUrl || null,
-        startDate: startDate, // ✅ Utiliser l'objet Date
-        endDate: endDate,     // ✅ Utiliser l'objet Date
+        startDate: startDate,
+        endDate: endDate,
         config: dto.config || {},
         rewards: dto.rewards || [],
         objectives: dto.objectives || [],
@@ -189,9 +193,16 @@ export class EventsService {
       });
     }
 
+    // Récupérer la progression de l'utilisateur
+    let userProgress = null;
+    if (userId && userParticipation) {
+      userProgress = await this.progressService.getUserProgress(userId, eventId);
+    }
+
     return {
       ...event,
       userParticipation,
+      userProgress,
     };
   }
 
@@ -262,18 +273,12 @@ export class EventsService {
   }
 
   // ============================================
-  // SOUMETTRE UNE ŒUVRE À UN ÉVÉNEMENT
+  // SOUMETTRE UNE ŒUVRE À UN ÉVÉNEMENT (VERSION AMÉLIORÉE)
   // ============================================
   async submitToEvent(
     userId: string,
     eventId: string,
-    data: {
-      title: string;
-      description?: string;
-      mangaId?: string;
-      chapterId?: string;
-      imageUrl?: string;
-    },
+    dto: SubmitEventDto,
   ) {
     const event = await this.prisma.event.findUnique({
       where: { id: eventId },
@@ -281,6 +286,14 @@ export class EventsService {
 
     if (!event) {
       throw new NotFoundException('Événement non trouvé');
+    }
+
+    // Vérifier que l'événement accepte les soumissions
+    const allowedTypes = ['BATTLE', 'DESSIN', 'TOURNAMENT'];
+    if (!allowedTypes.includes(event.type)) {
+      throw new BadRequestException(
+        `Cet événement (${event.type}) n'accepte pas de soumissions`,
+      );
     }
 
     // Vérifier que l'utilisateur participe
@@ -299,13 +312,6 @@ export class EventsService {
       );
     }
 
-    // Vérifier que l'événement accepte les soumissions
-    if (event.type === 'TICKETS' || event.type === 'AWARDS') {
-      throw new BadRequestException(
-        'Cet événement n\'accepte pas de soumissions',
-      );
-    }
-
     // Vérifier qu'il n'y a pas déjà une soumission
     const existing = await this.prisma.eventSubmission.findFirst({
       where: {
@@ -320,19 +326,148 @@ export class EventsService {
       );
     }
 
-    return this.prisma.eventSubmission.create({
+    // Créer la soumission
+    const submission = await this.prisma.eventSubmission.create({
       data: {
         userId,
         eventId,
         participationId: participation.id,
-        mangaId: data.mangaId,
-        chapterId: data.chapterId,
-        title: data.title,
-        description: data.description,
-        imageUrl: data.imageUrl,
+        mangaId: dto.mangaId,
+        chapterId: dto.chapterId,
+        title: dto.title,
+        description: dto.description,
+        imageUrl: dto.imageUrl,
         status: 'PENDING',
       },
     });
+
+    // Mettre à jour la progression
+    await this.progressService.updateProgress(userId, eventId, 'SUBMIT', 1);
+
+    return submission;
+  }
+
+  // ============================================
+  // VOTER POUR UNE SOUMISSION
+  // ============================================
+  async voteForSubmission(
+    userId: string,
+    eventId: string,
+    dto: VoteEventDto,
+  ) {
+    // Vérifier que l'événement existe
+    const event = await this.prisma.event.findUnique({
+      where: { id: eventId },
+    });
+
+    if (!event) {
+      throw new NotFoundException('Événement non trouvé');
+    }
+
+    // Vérifier que l'événement accepte les votes
+    const allowedTypes = ['BATTLE', 'DESSIN', 'AWARDS'];
+    if (!allowedTypes.includes(event.type)) {
+      throw new BadRequestException(
+        `Cet événement (${event.type}) n'accepte pas de votes`,
+      );
+    }
+
+    // Vérifier que la soumission existe
+    const submission = await this.prisma.eventSubmission.findUnique({
+      where: { id: dto.submissionId },
+    });
+
+    if (!submission) {
+      throw new NotFoundException('Soumission non trouvée');
+    }
+
+    if (submission.eventId !== eventId) {
+      throw new BadRequestException('Cette soumission ne fait pas partie de cet événement');
+    }
+
+    // Vérifier que l'utilisateur participe
+    const participation = await this.prisma.eventParticipation.findUnique({
+      where: {
+        userId_eventId: {
+          userId,
+          eventId,
+        },
+      },
+    });
+
+    if (!participation) {
+      throw new BadRequestException(
+        'Vous devez participer à l\'événement pour voter',
+      );
+    }
+
+    // Vérifier que l'utilisateur ne vote pas pour sa propre soumission
+    if (submission.userId === userId) {
+      throw new BadRequestException('Vous ne pouvez pas voter pour votre propre soumission');
+    }
+
+    // Vérifier si l'utilisateur a déjà voté
+    const existingVote = await this.prisma.eventVote.findFirst({
+      where: {
+        userId,
+        eventId,
+        participationId: submission.participationId,
+      },
+    });
+
+    if (existingVote) {
+      throw new BadRequestException('Vous avez déjà voté pour cette soumission');
+    }
+
+    // Ajouter le vote
+    const vote = await this.prisma.eventVote.create({
+      data: {
+        userId,
+        eventId,
+        participationId: submission.participationId,
+        voteType: dto.voteType,
+      },
+    });
+
+    // Mettre à jour le score de la soumission
+    let scoreIncrement = 0;
+    switch (dto.voteType) {
+      case 'UP':
+        scoreIncrement = 1;
+        break;
+      case 'DOWN':
+        scoreIncrement = -1;
+        break;
+      case 'STAR_1':
+      case 'STAR_2':
+      case 'STAR_3':
+      case 'STAR_4':
+      case 'STAR_5':
+        scoreIncrement = parseInt(dto.voteType.split('_')[1]);
+        break;
+    }
+
+    await this.prisma.eventSubmission.update({
+      where: { id: submission.id },
+      data: {
+        score: submission.score + scoreIncrement,
+      },
+    });
+
+    // Mettre à jour la progression du participant qui a reçu le vote
+    if (scoreIncrement > 0) {
+      await this.progressService.updateProgress(
+        submission.userId,
+        eventId,
+        'VOTE_RECEIVED',
+        1,
+      );
+    }
+
+    // Mettre à jour la progression du votant
+    await this.progressService.updateProgress(userId, eventId, 'VOTE_GIVEN', 1);
+
+    return vote;
   }
 
   // ============================================
@@ -409,6 +544,13 @@ export class EventsService {
     }
 
     return rankings;
+  }
+
+  // ============================================
+  // RÉCUPÉRER LA PROGRESSION DE L'UTILISATEUR
+  // ============================================
+  async getUserEventProgress(userId: string, eventId: string) {
+    return this.progressService.getUserProgress(userId, eventId);
   }
 
   // ============================================
