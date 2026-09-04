@@ -23,7 +23,7 @@ export class EventsController {
   constructor(private eventsService: EventsService) {}
 
   // ============================================
-  // LISTE DES ÉVÉNEMENTS
+  // LISTE DES ÉVÉNEMENTS AVEC FILTRE
   // ============================================
   @Get()
   async getEvents(
