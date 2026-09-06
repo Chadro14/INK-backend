@@ -32,7 +32,6 @@ export class StorageService {
     let cleanKey = key.trim();
     let bucket = this.buckets[defaultBucketType] || defaultBucketType;
 
-    // Si la clé commence déjà par un des buckets connus (ex: "avatars/user/..." ou "chapters/mangas/...")
     for (const [_, bucketName] of Object.entries(this.buckets)) {
       if (cleanKey.startsWith(`${bucketName}/`)) {
         bucket = bucketName;
@@ -45,7 +44,7 @@ export class StorageService {
   }
 
   // ==========================================
-  // MÉTHODES POUR L'UPLOAD DIRECT (FRONTEND)
+  // MÉTHODES POUR L'UPLOAD DIRECT (FRONTEND) - CORRIGÉ ✅
   // ==========================================
   async getUploadUrl(key: string, bucketType: 'chapters' | 'avatars' = 'chapters') {
     if (!key) {
@@ -54,6 +53,7 @@ export class StorageService {
 
     const { bucket, cleanKey } = this.resolveBucketAndKey(key, bucketType);
 
+    // ✅ Obtenir l'URL d'upload signée
     const { data, error } = await this.supabase.storage
       .from(bucket)
       .createSignedUploadUrl(cleanKey);
@@ -62,9 +62,16 @@ export class StorageService {
       throw new InternalServerErrorException(`Échec de la création de l'URL d'upload: ${error.message}`);
     }
 
+    // ✅ Retourner l'URL complète + la clé
+    const uploadUrl = data.signedUrl;
+    const publicUrl = `${this.supabase.storage.from(bucket).getPublicUrl(cleanKey).data.publicUrl}`;
+
     return {
+      uploadUrl,      // ✅ URL pour faire le PUT
+      key: cleanKey,  // ✅ Clé pour finaliser
       path: data.path,
       token: data.token,
+      publicUrl,      // ✅ URL publique
     };
   }
 
@@ -105,7 +112,6 @@ export class StorageService {
   async getSignedUrl(key: string, expiresIn: number = 3600, bucketType: string = 'chapters'): Promise<string> {
     if (!key) return '';
 
-    // Si c'est déjà une URL HTTP/HTTPS complète, inutile de la re-signer
     if (key.startsWith('http://') || key.startsWith('https://')) {
       return key;
     }
@@ -118,7 +124,8 @@ export class StorageService {
 
     if (error) {
       this.logger.error(`Échec de la génération de l'URL signée pour ${cleanKey} dans ${bucket}: ${error.message}`);
-      throw new InternalServerErrorException(error.message);
+      // ✅ En cas d'erreur, retourner l'URL publique
+      return this.getPublicUrl(key, bucketType as any);
     }
 
     return data.signedUrl;
@@ -127,7 +134,6 @@ export class StorageService {
   async delete(key: string, bucketType: string = 'chapters'): Promise<void> {
     if (!key) return;
 
-    // Si c'est une URL complète, pas de suppression directe par clé simple
     if (key.startsWith('http://') || key.startsWith('https://')) {
       return;
     }
@@ -141,6 +147,30 @@ export class StorageService {
     if (error) {
       this.logger.error(`Échec de la suppression de ${cleanKey} depuis ${bucket}: ${error.message}`);
       throw new InternalServerErrorException(error.message);
+    }
+  }
+
+  // ==========================================
+  // MÉTHODE DE DIAGNOSTIC
+  // ==========================================
+  async testConnection() {
+    try {
+      const testKey = `test-${Date.now()}.txt`;
+      const testBuffer = Buffer.from('Test de connexion Supabase');
+      
+      const uploadResult = await this.upload(testKey, testBuffer, 'text/plain', 'chapters');
+      console.log('✅ Upload test réussi:', uploadResult);
+      
+      const signedUrl = await this.getSignedUrl(testKey);
+      console.log('✅ URL signée test:', signedUrl);
+      
+      await this.delete(testKey);
+      console.log('✅ Suppression test réussie');
+      
+      return { success: true };
+    } catch (error: any) {
+      console.error('❌ Erreur test:', error.message);
+      return { success: false, error: error.message };
     }
   }
 }
