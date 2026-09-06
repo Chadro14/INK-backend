@@ -223,7 +223,6 @@ export class MangasService {
 
     const where: any = {};
 
-    // ✅ AJOUT : Filtrer par auteur
     if (filters?.authorId) {
       where.authorId = filters.authorId;
     }
@@ -642,7 +641,7 @@ export class MangasService {
   }
 
   // ============================================
-  // 12. RÉCUPÉRER LES MANGAS D'UN CRÉATEUR AVEC STATS
+  // 12. RÉCUPÉRER LES MANGAS D'UN CRÉATEUR AVEC STATS - CORRIGÉ ✅
   // ============================================
   async getCreatorMangasWithStats(userId: string) {
     const user = await this.prisma.user.findUnique({
@@ -685,14 +684,39 @@ export class MangasService {
       orderBy: { createdAt: 'desc' },
     });
 
-    const totalViews = mangas.reduce((acc, m) => acc + m.viewsCount, 0);
-    const totalLikes = mangas.reduce((acc, m) => acc + m.likesCount, 0);
-    const totalChapters = mangas.reduce((acc, m) => acc + m._count.chapters, 0);
-    const totalComments = mangas.reduce((acc, m) => acc + m._count.comments, 0);
-    const totalSubscribers = mangas.reduce((acc, m) => acc + m.subscribersCount, 0);
+    // ✅ SIGNER LES URLS DES COUVERTURES
+    const signedMangas = await Promise.all(
+      mangas.map(async (manga) => {
+        let signedCoverUrl = null;
+        if (manga.coverUrl) {
+          try {
+            // Si c'est déjà une URL complète, la garder
+            if (manga.coverUrl.startsWith('http://') || manga.coverUrl.startsWith('https://')) {
+              signedCoverUrl = manga.coverUrl;
+            } else {
+              // Sinon, signer l'URL
+              signedCoverUrl = await this.storage.getSignedUrl(manga.coverUrl);
+            }
+          } catch (error) {
+            console.error(`❌ Erreur signature URL pour ${manga.title}:`, error.message);
+            signedCoverUrl = null;
+          }
+        }
+        return {
+          ...manga,
+          coverUrl: signedCoverUrl,
+        };
+      })
+    );
+
+    const totalViews = signedMangas.reduce((acc, m) => acc + m.viewsCount, 0);
+    const totalLikes = signedMangas.reduce((acc, m) => acc + m.likesCount, 0);
+    const totalChapters = signedMangas.reduce((acc, m) => acc + m._count.chapters, 0);
+    const totalComments = signedMangas.reduce((acc, m) => acc + m._count.comments, 0);
+    const totalSubscribers = signedMangas.reduce((acc, m) => acc + m.subscribersCount, 0);
 
     return {
-      mangas,
+      mangas: signedMangas,
       totals: {
         views: totalViews,
         likes: totalLikes,
