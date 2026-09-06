@@ -726,4 +726,28 @@ export class MangasService {
       },
     };
   }
+
+  // ============================================
+  // 13. DIAGNOSTIC : VÉRIFIER L'UPLOAD
+  // ============================================
+  async testUpload(userId: string) {
+    try {
+      // Vérifier que le storage fonctionne
+      const testKey = `test-${Date.now()}.txt`;
+      const testBuffer = Buffer.from('Test upload');
+      
+      // Tester l'upload
+      await this.storage.upload(testKey, testBuffer, 'text/plain', 'chapters');
+      console.log('✅ Upload test réussi');
+      
+      // Tester la récupération de l'URL
+      const url = await this.storage.getSignedUrl(testKey);
+      console.log('✅ URL test générée:', url);
+      
+      return { success: true, url };
+    } catch (error: any) {
+      console.error('❌ Erreur test upload:', error.message);
+      return { success: false, error: error.message };
+    }
+  }
 }
