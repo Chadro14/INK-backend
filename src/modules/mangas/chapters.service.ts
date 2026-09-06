@@ -108,7 +108,7 @@ export class ChaptersService {
   }
 
   // ============================================
-  // 2. FINALISATION DU CHAPITRE
+  // 2. FINALISATION DU CHAPITRE - CORRIGÉ ✅
   // ============================================
   async finalizeChapter(mangaId: string, userId: string, dto: FinalizeChapterDto) {
     console.log('🔍 === FINALIZE CHAPTER DEBUG ===');
@@ -120,6 +120,7 @@ export class ChaptersService {
     console.log('📌 dto.keys length:', dto.keys?.length);
     console.log('📌 dto.isDraft:', dto.isDraft);
     console.log('📌 dto.keys[0] (pour PDF):', dto.keys?.[0]);
+    console.log('📌 dto.coverUrl:', dto.coverUrl); // ✅ AJOUTÉ
     console.log('🔍 === FIN DEBUG ===');
 
     const manga = await this.findMangaByIdOrSlug(mangaId);
@@ -181,6 +182,7 @@ export class ChaptersService {
           title: dto.title?.trim() || null,
           contentType: ChapterContentType.PDF,
           pdfKey: dto.keys[0],
+          coverUrl: dto.coverUrl?.trim() || null, // ✅ AJOUTÉ
           isFree: calculatedPrice === 0,
           price: calculatedPrice,
           isDraft,
@@ -210,6 +212,7 @@ export class ChaptersService {
         title: dto.title?.trim() || null,
         contentType: ChapterContentType.IMAGES,
         pages: pages as any,
+        coverUrl: dto.coverUrl?.trim() || null, // ✅ AJOUTÉ
         pageCount: pages.length,
         isFree: calculatedPrice === 0,
         price: calculatedPrice,
