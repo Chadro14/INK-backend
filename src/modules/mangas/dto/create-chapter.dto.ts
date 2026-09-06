@@ -54,7 +54,7 @@ export class FinalizeChapterDto {
 
   @IsArray()
   @IsString({ each: true })
-  keys: string[]; // ← Clé unique pour les URLs (PDF ou images)
+  keys: string[];
 
   @IsString()
   @IsIn(['PHOTOS', 'PDF'])
@@ -72,6 +72,11 @@ export class FinalizeChapterDto {
   @IsOptional()
   @IsString()
   freePageIndexes?: string;
+
+  // ✅ AJOUT : Couverture du chapitre
+  @IsOptional()
+  @IsString()
+  coverUrl?: string;
 }
 
 // ============================================
