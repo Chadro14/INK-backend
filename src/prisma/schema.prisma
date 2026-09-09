@@ -53,7 +53,7 @@ model User {
   bannedAt            DateTime?
   bannedBy            String?
 
-  theme              String?   @default("dark")  // ✅ AJOUT : thème clair/sombre
+  theme              String?   @default("dark")
 
   mangas             Manga[]
   comments           Comment[]
@@ -108,6 +108,7 @@ model User {
   reelComments       ReelComment[]
   reelViews          ReelView[]
   reelBookmarks      ReelBookmark[]
+  reelCommentLikes   ReelCommentLike[]  // ✅ AJOUT
 
   createdAt          DateTime  @default(now())
   updatedAt          DateTime  @updatedAt
@@ -956,7 +957,6 @@ enum EventType {
   TOURNAMENT
 }
 
-// ✅ CORRECTION : VoteType avec 5 étoiles
 enum VoteType {
   UP
   DOWN
@@ -995,13 +995,12 @@ enum BadgeCategory {
   SEASONAL
 }
 
-// BADGE
 model Badge {
   id          String        @id @default(uuid())
   name        String
   slug        String        @unique
   description String?       @db.Text
-  icon        String        // crown, star, trophy, etc.
+  icon        String
   color       String        @default("#FBBF24")
   gradient    String?
   glowColor   String?
@@ -1018,7 +1017,6 @@ model Badge {
   @@index([category, rarity])
 }
 
-// BADGE D'UN UTILISATEUR
 model UserBadge {
   id          String    @id @default(uuid())
   userId      String
@@ -1047,9 +1045,9 @@ model Reel {
   id            String          @id @default(uuid())
   title         String
   description   String?         @db.Text
-  videoUrl      String          // URL de la vidéo (Supabase)
-  thumbnailUrl  String?         // URL de la vignette
-  duration      Int?            // Durée en secondes (20-30s)
+  videoUrl      String
+  thumbnailUrl  String?
+  duration      Int?
   viewsCount    Int             @default(0)
   likesCount    Int             @default(0)
   commentsCount Int             @default(0)
@@ -1058,8 +1056,8 @@ model Reel {
   authorId      String
   author        User            @relation(fields: [authorId], references: [id], onDelete: Cascade)
   
-  musicTitle    String?         // Titre de la musique
-  musicArtist   String?         // Artiste de la musique
+  musicTitle    String?
+  musicArtist   String?
   
   status        ReelStatus      @default(PUBLISHED)
   isFeatured    Boolean         @default(false)
@@ -1109,6 +1107,10 @@ model ReelComment {
   reelId    String
   reel      Reel     @relation(fields: [reelId], references: [id], onDelete: Cascade)
   content   String   @db.Text
+  
+  // ✅ AJOUT : likesCount pour les commentaires
+  likesCount Int     @default(0)
+  
   createdAt DateTime @default(now())
   updatedAt DateTime @updatedAt
 
@@ -1116,8 +1118,28 @@ model ReelComment {
   parent    ReelComment? @relation("ReelReplies", fields: [parentId], references: [id], onDelete: Cascade)
   replies   ReelComment[] @relation("ReelReplies")
 
+  // ✅ AJOUT : relation avec les likes
+  commentLikes ReelCommentLike[]
+
   @@index([reelId, createdAt])
   @@index([parentId])
+}
+
+// ============================================
+// ❤️ LIKES SUR COMMENTAIRES DE REELS (NOUVEAU)
+// ============================================
+
+model ReelCommentLike {
+  id        String   @id @default(uuid())
+  userId    String
+  user      User     @relation(fields: [userId], references: [id], onDelete: Cascade)
+  commentId String
+  comment   ReelComment @relation(fields: [commentId], references: [id], onDelete: Cascade)
+  createdAt DateTime @default(now())
+
+  @@unique([userId, commentId])
+  @@index([commentId, userId])
+  @@index([userId, commentId])
 }
 
 // ============================================
