@@ -684,7 +684,7 @@ export class MangasService {
       orderBy: { createdAt: 'desc' },
     });
 
-    // ✅ SIGNER LES URLS DES COUVERTURES
+    // ✅ SIGNER LES URLS DES COUVERTURES - CORRIGÉ
     const signedMangas = await Promise.all(
       mangas.map(async (manga) => {
         let signedCoverUrl = null;
@@ -694,12 +694,21 @@ export class MangasService {
             if (manga.coverUrl.startsWith('http://') || manga.coverUrl.startsWith('https://')) {
               signedCoverUrl = manga.coverUrl;
             } else {
-              // Sinon, signer l'URL
-              signedCoverUrl = await this.storage.getSignedUrl(manga.coverUrl);
+              // Sinon, signer l'URL avec une durée explicite de 1 an
+              signedCoverUrl = await this.storage.getSignedUrl(
+                manga.coverUrl,
+                3600 * 24 * 365, // 1 an
+                'chapters'
+              );
             }
           } catch (error) {
             console.error(`❌ Erreur signature URL pour ${manga.title}:`, error.message);
-            signedCoverUrl = null;
+            // 🔥 FALLBACK : utiliser l'URL publique si la signature échoue
+            try {
+              signedCoverUrl = this.storage.getPublicUrl(manga.coverUrl, 'chapters');
+            } catch {
+              signedCoverUrl = null;
+            }
           }
         }
         return {
