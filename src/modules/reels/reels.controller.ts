@@ -147,4 +147,79 @@ export class ReelsController {
     const result = await this.reelsService.getUploadUrl(req.user.id, filename);
     return { success: true, data: result };
   }
+
+  // ============================================
+  // 11. AJOUTER UN COMMENTAIRE
+  // ============================================
+  @Post(':id/comments')
+  @UseGuards(JwtAuthGuard)
+  async addComment(
+    @Param('id') id: string,
+    @Req() req: any,
+    @Body('content') content: string,
+    @Body('parentId') parentId?: string,
+  ) {
+    if (!content || content.trim().length === 0) {
+      return { success: false, message: 'Le contenu est requis' };
+    }
+    const comment = await this.reelsService.addComment(
+      id,
+      req.user.id,
+      content.trim(),
+      parentId,
+    );
+    return { success: true, data: comment };
+  }
+
+  // ============================================
+  // 12. RÉCUPÉRER LES COMMENTAIRES D'UN REEL
+  // ============================================
+  @Get(':id/comments')
+  async getComments(
+    @Param('id') id: string,
+    @Req() req?: any,
+  ) {
+    const userId = req?.user?.id || null;
+    const comments = await this.reelsService.getComments(id, userId);
+    return { success: true, data: comments };
+  }
+
+  // ============================================
+  // 13. LIKER UN COMMENTAIRE
+  // ============================================
+  @Post('comments/:commentId/like')
+  @UseGuards(JwtAuthGuard)
+  async likeComment(
+    @Param('commentId') commentId: string,
+    @Req() req: any,
+  ) {
+    const result = await this.reelsService.likeComment(commentId, req.user.id);
+    return { success: true, ...result };
+  }
+
+  // ============================================
+  // 14. SUPPRIMER UN COMMENTAIRE
+  // ============================================
+  @Delete('comments/:commentId')
+  @UseGuards(JwtAuthGuard)
+  async deleteComment(
+    @Param('commentId') commentId: string,
+    @Req() req: any,
+  ) {
+    const result = await this.reelsService.deleteComment(commentId, req.user.id);
+    return { success: true, ...result };
+  }
+
+  // ============================================
+  // 15. VÉRIFIER SI L'UTILISATEUR A LIKÉ UN COMMENTAIRE
+  // ============================================
+  @Get('comments/:commentId/liked')
+  @UseGuards(JwtAuthGuard)
+  async hasLikedComment(
+    @Param('commentId') commentId: string,
+    @Req() req: any,
+  ) {
+    const result = await this.reelsService.hasLikedComment(commentId, req.user.id);
+    return { success: true, ...result };
+  }
 }
