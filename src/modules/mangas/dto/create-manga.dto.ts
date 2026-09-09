@@ -26,5 +26,5 @@ export class CreateMangaDto {
 
   @IsOptional()
   @IsString()
-  coverImage?: string;  // Base64 ou URL
+  coverUrl?: string;  // ✅ URL de la couverture (générée par finalizeCover)
 }
