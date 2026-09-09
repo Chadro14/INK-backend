@@ -84,26 +84,26 @@ export class ReelsService {
       this.prisma.reel.count({ where }),
     ]);
 
-    // Signer les URLs vidéo (pour Supabase)
+    // ✅ CORRECTION : Utiliser le bucket 'reels'
     const signedReels = await Promise.all(
       reels.map(async (reel) => {
         let signedVideoUrl = reel.videoUrl;
         let signedThumbnailUrl = reel.thumbnailUrl;
 
         try {
-          if (!reel.videoUrl.startsWith('http://') && !reel.videoUrl.startsWith('https://')) {
+          if (reel.videoUrl && !reel.videoUrl.startsWith('http://') && !reel.videoUrl.startsWith('https://')) {
             signedVideoUrl = await this.storage.getSignedUrl(
               reel.videoUrl,
-              3600 * 24,
-              'chapters'
+              3600 * 24 * 7, // 7 jours
+              'reels' // ✅ CORRECTION : bucket 'reels'
             );
           }
 
           if (reel.thumbnailUrl && !reel.thumbnailUrl.startsWith('http://') && !reel.thumbnailUrl.startsWith('https://')) {
             signedThumbnailUrl = await this.storage.getSignedUrl(
               reel.thumbnailUrl,
-              3600 * 24 * 7,
-              'chapters'
+              3600 * 24 * 30, // 30 jours
+              'reels' // ✅ CORRECTION : bucket 'reels'
             );
           }
         } catch (error) {
@@ -194,19 +194,19 @@ export class ReelsService {
     let signedThumbnailUrl = reel.thumbnailUrl;
 
     try {
-      if (!reel.videoUrl.startsWith('http://') && !reel.videoUrl.startsWith('https://')) {
+      if (reel.videoUrl && !reel.videoUrl.startsWith('http://') && !reel.videoUrl.startsWith('https://')) {
         signedVideoUrl = await this.storage.getSignedUrl(
           reel.videoUrl,
-          3600 * 24,
-          'chapters'
+          3600 * 24 * 7,
+          'reels' // ✅ CORRECTION : bucket 'reels'
         );
       }
 
       if (reel.thumbnailUrl && !reel.thumbnailUrl.startsWith('http://') && !reel.thumbnailUrl.startsWith('https://')) {
         signedThumbnailUrl = await this.storage.getSignedUrl(
           reel.thumbnailUrl,
-          3600 * 24 * 7,
-          'chapters'
+          3600 * 24 * 30,
+          'reels' // ✅ CORRECTION : bucket 'reels'
         );
       }
     } catch (error) {
@@ -281,10 +281,10 @@ export class ReelsService {
 
     try {
       if (reel.videoUrl && !reel.videoUrl.startsWith('http')) {
-        await this.storage.delete(reel.videoUrl, 'chapters');
+        await this.storage.delete(reel.videoUrl, 'reels'); // ✅ CORRECTION
       }
       if (reel.thumbnailUrl && !reel.thumbnailUrl.startsWith('http')) {
-        await this.storage.delete(reel.thumbnailUrl, 'chapters');
+        await this.storage.delete(reel.thumbnailUrl, 'reels'); // ✅ CORRECTION
       }
     } catch (error) {
       console.error('Erreur suppression fichiers:', error);
@@ -455,7 +455,8 @@ export class ReelsService {
   // ============================================
   async getUploadUrl(userId: string, filename: string) {
     const key = `reels/${userId}/${Date.now()}-${filename}`;
-    const upload = await this.storage.getUploadUrl(key, 'chapters');
+    // ✅ CORRECTION : Utiliser le bucket 'reels'
+    const upload = await this.storage.getUploadUrl(key, 'reels');
     return { key, ...upload };
   }
 
