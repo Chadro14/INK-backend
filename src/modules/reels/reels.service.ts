@@ -91,27 +91,25 @@ export class ReelsService {
         let signedThumbnailUrl = reel.thumbnailUrl;
 
         try {
-          // ✅ Utiliser 'chapters' comme bucketType (le bucket CHAPTERS1)
           if (!reel.videoUrl.startsWith('http://') && !reel.videoUrl.startsWith('https://')) {
             signedVideoUrl = await this.storage.getSignedUrl(
               reel.videoUrl,
-              3600 * 24, // 24 heures
-              'chapters'  // ✅ CHANGÉ : 'reels' → 'chapters'
+              3600 * 24,
+              'chapters'
             );
           }
 
           if (reel.thumbnailUrl && !reel.thumbnailUrl.startsWith('http://') && !reel.thumbnailUrl.startsWith('https://')) {
             signedThumbnailUrl = await this.storage.getSignedUrl(
               reel.thumbnailUrl,
-              3600 * 24 * 7, // 7 jours
-              'chapters'  // ✅ CHANGÉ : 'reels' → 'chapters'
+              3600 * 24 * 7,
+              'chapters'
             );
           }
         } catch (error) {
           console.error('Erreur signature URL reel:', error);
         }
 
-        // Vérifier si l'utilisateur a liké
         let isLiked = false;
         let isBookmarked = false;
 
@@ -200,7 +198,7 @@ export class ReelsService {
         signedVideoUrl = await this.storage.getSignedUrl(
           reel.videoUrl,
           3600 * 24,
-          'chapters'  // ✅ CHANGÉ
+          'chapters'
         );
       }
 
@@ -208,7 +206,7 @@ export class ReelsService {
         signedThumbnailUrl = await this.storage.getSignedUrl(
           reel.thumbnailUrl,
           3600 * 24 * 7,
-          'chapters'  // ✅ CHANGÉ
+          'chapters'
         );
       }
     } catch (error) {
@@ -281,13 +279,12 @@ export class ReelsService {
       throw new ForbiddenException('Vous n\'êtes pas l\'auteur de ce reel');
     }
 
-    // Supprimer les fichiers du storage
     try {
       if (reel.videoUrl && !reel.videoUrl.startsWith('http')) {
-        await this.storage.delete(reel.videoUrl, 'chapters');  // ✅ CHANGÉ
+        await this.storage.delete(reel.videoUrl, 'chapters');
       }
       if (reel.thumbnailUrl && !reel.thumbnailUrl.startsWith('http')) {
-        await this.storage.delete(reel.thumbnailUrl, 'chapters');  // ✅ CHANGÉ
+        await this.storage.delete(reel.thumbnailUrl, 'chapters');
       }
     } catch (error) {
       console.error('Erreur suppression fichiers:', error);
@@ -326,7 +323,6 @@ export class ReelsService {
 
       return { liked: true };
     } catch (error) {
-      // Déjà liké
       await this.prisma.reelLike.delete({
         where: {
           userId_reelId: {
@@ -459,8 +455,210 @@ export class ReelsService {
   // ============================================
   async getUploadUrl(userId: string, filename: string) {
     const key = `reels/${userId}/${Date.now()}-${filename}`;
-    // ✅ Utiliser 'chapters' car le bucket s'appelle CHAPTERS1
     const upload = await this.storage.getUploadUrl(key, 'chapters');
     return { key, ...upload };
+  }
+
+  // ============================================
+  // 11. AJOUTER UN COMMENTAIRE
+  // ============================================
+  async addComment(reelId: string, userId: string, content: string, parentId?: string) {
+    const reel = await this.prisma.reel.findUnique({
+      where: { id: reelId },
+      select: { id: true },
+    });
+
+    if (!reel) {
+      throw new NotFoundException('Reel non trouvé');
+    }
+
+    if (parentId) {
+      const parent = await this.prisma.reelComment.findUnique({
+        where: { id: parentId },
+        select: { id: true },
+      });
+      if (!parent) {
+        throw new NotFoundException('Commentaire parent non trouvé');
+      }
+    }
+
+    const comment = await this.prisma.reelComment.create({
+      data: {
+        content,
+        userId,
+        reelId,
+        parentId: parentId || null,
+      },
+      include: {
+        user: { select: AUTHOR_SELECT },
+        _count: {
+          select: { commentLikes: true },
+        },
+      },
+    });
+
+    await this.prisma.reel.update({
+      where: { id: reelId },
+      data: { commentsCount: { increment: 1 } },
+    });
+
+    return {
+      ...comment,
+      likesCount: comment._count.commentLikes,
+      isLiked: false,
+    };
+  }
+
+  // ============================================
+  // 12. RÉCUPÉRER LES COMMENTAIRES D'UN REEL
+  // ============================================
+  async getComments(reelId: string, userId?: string) {
+    const reel = await this.prisma.reel.findUnique({
+      where: { id: reelId },
+      select: { id: true },
+    });
+
+    if (!reel) {
+      throw new NotFoundException('Reel non trouvé');
+    }
+
+    const comments = await this.prisma.reelComment.findMany({
+      where: {
+        reelId,
+        parentId: null,
+      },
+      include: {
+        user: { select: AUTHOR_SELECT },
+        replies: {
+          include: {
+            user: { select: AUTHOR_SELECT },
+            _count: {
+              select: { commentLikes: true },
+            },
+          },
+          orderBy: { createdAt: 'asc' },
+        },
+        _count: {
+          select: { commentLikes: true },
+        },
+      },
+      orderBy: { createdAt: 'desc' },
+    });
+
+    let userLikes: string[] = [];
+    if (userId) {
+      const likes = await this.prisma.reelCommentLike.findMany({
+        where: { userId },
+        select: { commentId: true },
+      });
+      userLikes = likes.map((l) => l.commentId);
+    }
+
+    return comments.map((comment) => ({
+      ...comment,
+      isLiked: userLikes.includes(comment.id),
+      likesCount: comment._count.commentLikes,
+      replies: comment.replies.map((reply) => ({
+        ...reply,
+        isLiked: userLikes.includes(reply.id),
+        likesCount: reply._count.commentLikes,
+      })),
+    }));
+  }
+
+  // ============================================
+  // 13. LIKER UN COMMENTAIRE DE REEL
+  // ============================================
+  async likeComment(commentId: string, userId: string) {
+    const comment = await this.prisma.reelComment.findUnique({
+      where: { id: commentId },
+      select: { id: true, reelId: true },
+    });
+
+    if (!comment) {
+      throw new NotFoundException('Commentaire non trouvé');
+    }
+
+    try {
+      await this.prisma.reelCommentLike.create({
+        data: {
+          userId,
+          commentId,
+        },
+      });
+
+      await this.prisma.reelComment.update({
+        where: { id: commentId },
+        data: { likesCount: { increment: 1 } },
+      });
+
+      return { liked: true };
+    } catch (error) {
+      await this.prisma.reelCommentLike.delete({
+        where: {
+          userId_commentId: {
+            userId,
+            commentId,
+          },
+        },
+      });
+
+      await this.prisma.reelComment.update({
+        where: { id: commentId },
+        data: { likesCount: { decrement: 1 } },
+      });
+
+      return { liked: false };
+    }
+  }
+
+  // ============================================
+  // 14. SUPPRIMER UN COMMENTAIRE
+  // ============================================
+  async deleteComment(commentId: string, userId: string) {
+    const comment = await this.prisma.reelComment.findUnique({
+      where: { id: commentId },
+      select: { userId: true, reelId: true },
+    });
+
+    if (!comment) {
+      throw new NotFoundException('Commentaire non trouvé');
+    }
+
+    if (comment.userId !== userId) {
+      throw new ForbiddenException('Vous n\'êtes pas l\'auteur de ce commentaire');
+    }
+
+    // Supprimer les réponses d'abord
+    await this.prisma.reelComment.deleteMany({
+      where: { parentId: commentId },
+    });
+
+    await this.prisma.reelComment.delete({
+      where: { id: commentId },
+    });
+
+    await this.prisma.reel.update({
+      where: { id: comment.reelId },
+      data: { commentsCount: { decrement: 1 } },
+    });
+
+    return { message: 'Commentaire supprimé' };
+  }
+
+  // ============================================
+  // 15. VÉRIFIER SI L'UTILISATEUR A LIKÉ UN COMMENTAIRE
+  // ============================================
+  async hasLikedComment(commentId: string, userId: string) {
+    const like = await this.prisma.reelCommentLike.findUnique({
+      where: {
+        userId_commentId: {
+          userId,
+          commentId,
+        },
+      },
+    });
+
+    return { isLiked: !!like };
   }
 }
