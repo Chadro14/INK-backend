@@ -53,6 +53,8 @@ model User {
   bannedAt            DateTime?
   bannedBy            String?
 
+  theme              String?   @default("dark")  // ✅ AJOUT : thème clair/sombre
+
   mangas             Manga[]
   comments           Comment[]
   commentLikes       CommentLike[]
@@ -99,6 +101,13 @@ model User {
   ticketParticipations TicketParticipation[]
 
   creatorRequests    CreatorRequest[]
+
+  // ✅ REELS
+  reels              Reel[]
+  reelLikes          ReelLike[]
+  reelComments       ReelComment[]
+  reelViews          ReelView[]
+  reelBookmarks      ReelBookmark[]
 
   createdAt          DateTime  @default(now())
   updatedAt          DateTime  @updatedAt
@@ -1022,4 +1031,127 @@ model UserBadge {
   @@unique([userId, badgeId])
   @@index([userId])
   @@index([badgeId])
+}
+
+// ============================================
+// 🎬 REELS (vidéos courtes 20-30s)
+// ============================================
+
+enum ReelStatus {
+  DRAFT
+  PUBLISHED
+  ARCHIVED
+}
+
+model Reel {
+  id            String          @id @default(uuid())
+  title         String
+  description   String?         @db.Text
+  videoUrl      String          // URL de la vidéo (Supabase)
+  thumbnailUrl  String?         // URL de la vignette
+  duration      Int?            // Durée en secondes (20-30s)
+  viewsCount    Int             @default(0)
+  likesCount    Int             @default(0)
+  commentsCount Int             @default(0)
+  sharesCount   Int             @default(0)
+  
+  authorId      String
+  author        User            @relation(fields: [authorId], references: [id], onDelete: Cascade)
+  
+  musicTitle    String?         // Titre de la musique
+  musicArtist   String?         // Artiste de la musique
+  
+  status        ReelStatus      @default(PUBLISHED)
+  isFeatured    Boolean         @default(false)
+  isPrivate     Boolean         @default(false)
+  
+  tags          String[]        @default([])
+  
+  createdAt     DateTime        @default(now())
+  updatedAt     DateTime        @updatedAt
+  publishedAt   DateTime?       @default(now())
+  
+  comments      ReelComment[]
+  likes         ReelLike[]
+  views         ReelView[]
+  bookmarks     ReelBookmark[]
+  
+  @@index([authorId, createdAt])
+  @@index([status, createdAt])
+  @@index([viewsCount, likesCount])
+  @@index([isFeatured])
+}
+
+// ============================================
+// ❤️ LIKES SUR REELS
+// ============================================
+
+model ReelLike {
+  id        String   @id @default(uuid())
+  userId    String
+  user      User     @relation(fields: [userId], references: [id], onDelete: Cascade)
+  reelId    String
+  reel      Reel     @relation(fields: [reelId], references: [id], onDelete: Cascade)
+  createdAt DateTime @default(now())
+
+  @@unique([userId, reelId])
+  @@index([reelId, userId])
+}
+
+// ============================================
+// 💬 COMMENTAIRES SUR REELS
+// ============================================
+
+model ReelComment {
+  id        String   @id @default(uuid())
+  userId    String
+  user      User     @relation(fields: [userId], references: [id], onDelete: Cascade)
+  reelId    String
+  reel      Reel     @relation(fields: [reelId], references: [id], onDelete: Cascade)
+  content   String   @db.Text
+  createdAt DateTime @default(now())
+  updatedAt DateTime @updatedAt
+
+  parentId  String?
+  parent    ReelComment? @relation("ReelReplies", fields: [parentId], references: [id], onDelete: Cascade)
+  replies   ReelComment[] @relation("ReelReplies")
+
+  @@index([reelId, createdAt])
+  @@index([parentId])
+}
+
+// ============================================
+// 👁️ VUES SUR REELS
+// ============================================
+
+model ReelView {
+  id        String   @id @default(uuid())
+  userId    String?
+  user      User?    @relation(fields: [userId], references: [id], onDelete: Cascade)
+  reelId    String
+  reel      Reel     @relation(fields: [reelId], references: [id], onDelete: Cascade)
+  sessionId String?
+  ipAddress String?
+  userAgent String?
+  createdAt DateTime @default(now())
+
+  @@unique([userId, reelId])
+  @@unique([sessionId, reelId])
+  @@index([reelId, createdAt])
+}
+
+// ============================================
+// 📌 FAVORIS / BOOKMARKS SUR REELS
+// ============================================
+
+model ReelBookmark {
+  id        String   @id @default(uuid())
+  userId    String
+  user      User     @relation(fields: [userId], references: [id], onDelete: Cascade)
+  reelId    String
+  reel      Reel     @relation(fields: [reelId], references: [id], onDelete: Cascade)
+  createdAt DateTime @default(now())
+
+  @@unique([userId, reelId])
+  @@index([userId, createdAt])
 }
