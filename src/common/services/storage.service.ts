@@ -7,9 +7,11 @@ export class StorageService {
   private supabase: SupabaseClient;
   private readonly logger = new Logger(StorageService.name);
 
+  // ✅ AJOUT : 'reels' pour les vidéos courtes
   public readonly buckets: Record<string, string> = {
     chapters: 'chapters',
     avatars: 'avatars',
+    reels: 'reels',        // ✅ NOUVEAU
   };
 
   constructor(private configService: ConfigService) {
@@ -46,7 +48,7 @@ export class StorageService {
   // ==========================================
   // MÉTHODES POUR L'UPLOAD DIRECT (FRONTEND) - CORRIGÉ ✅
   // ==========================================
-  async getUploadUrl(key: string, bucketType: 'chapters' | 'avatars' = 'chapters') {
+  async getUploadUrl(key: string, bucketType: 'chapters' | 'avatars' | 'reels' = 'chapters') {
     if (!key) {
       throw new BadRequestException("La clé (key) du fichier est requise pour générer l'URL d'upload");
     }
@@ -75,7 +77,7 @@ export class StorageService {
     };
   }
 
-  getPublicUrl(key: string, bucketType: 'chapters' | 'avatars' = 'chapters'): string {
+  getPublicUrl(key: string, bucketType: 'chapters' | 'avatars' | 'reels' = 'chapters'): string {
     if (!key) return '';
     if (key.startsWith('http://') || key.startsWith('https://')) return key;
 
@@ -87,7 +89,7 @@ export class StorageService {
   // ==========================================
   // MÉTHODES BACKEND
   // ==========================================
-  async upload(key: string, file: Buffer, mimeType: string, bucketType: string = 'chapters'): Promise<string> {
+  async upload(key: string, file: Buffer, mimeType: string, bucketType: 'chapters' | 'avatars' | 'reels' = 'chapters'): Promise<string> {
     if (!key) {
       throw new BadRequestException('La clé (key) du fichier est requise pour l\'upload');
     }
@@ -109,7 +111,7 @@ export class StorageService {
     return data.path;
   }
 
-  async getSignedUrl(key: string, expiresIn: number = 3600, bucketType: string = 'chapters'): Promise<string> {
+  async getSignedUrl(key: string, expiresIn: number = 3600, bucketType: 'chapters' | 'avatars' | 'reels' = 'chapters'): Promise<string> {
     if (!key) return '';
 
     if (key.startsWith('http://') || key.startsWith('https://')) {
@@ -125,13 +127,13 @@ export class StorageService {
     if (error) {
       this.logger.error(`Échec de la génération de l'URL signée pour ${cleanKey} dans ${bucket}: ${error.message}`);
       // ✅ En cas d'erreur, retourner l'URL publique
-      return this.getPublicUrl(key, bucketType as any);
+      return this.getPublicUrl(key, bucketType);
     }
 
     return data.signedUrl;
   }
 
-  async delete(key: string, bucketType: string = 'chapters'): Promise<void> {
+  async delete(key: string, bucketType: 'chapters' | 'avatars' | 'reels' = 'chapters'): Promise<void> {
     if (!key) return;
 
     if (key.startsWith('http://') || key.startsWith('https://')) {
