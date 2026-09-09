@@ -91,12 +91,12 @@ export class ReelsService {
         let signedThumbnailUrl = reel.thumbnailUrl;
 
         try {
-          // Signer l'URL de la vidéo si ce n'est pas déjà une URL publique
+          // ✅ Utiliser 'chapters' comme bucketType (le bucket CHAPTERS1)
           if (!reel.videoUrl.startsWith('http://') && !reel.videoUrl.startsWith('https://')) {
             signedVideoUrl = await this.storage.getSignedUrl(
               reel.videoUrl,
               3600 * 24, // 24 heures
-              'reels'
+              'chapters'  // ✅ CHANGÉ : 'reels' → 'chapters'
             );
           }
 
@@ -104,7 +104,7 @@ export class ReelsService {
             signedThumbnailUrl = await this.storage.getSignedUrl(
               reel.thumbnailUrl,
               3600 * 24 * 7, // 7 jours
-              'reels'
+              'chapters'  // ✅ CHANGÉ : 'reels' → 'chapters'
             );
           }
         } catch (error) {
@@ -200,7 +200,7 @@ export class ReelsService {
         signedVideoUrl = await this.storage.getSignedUrl(
           reel.videoUrl,
           3600 * 24,
-          'reels'
+          'chapters'  // ✅ CHANGÉ
         );
       }
 
@@ -208,7 +208,7 @@ export class ReelsService {
         signedThumbnailUrl = await this.storage.getSignedUrl(
           reel.thumbnailUrl,
           3600 * 24 * 7,
-          'reels'
+          'chapters'  // ✅ CHANGÉ
         );
       }
     } catch (error) {
@@ -284,10 +284,10 @@ export class ReelsService {
     // Supprimer les fichiers du storage
     try {
       if (reel.videoUrl && !reel.videoUrl.startsWith('http')) {
-        await this.storage.delete(reel.videoUrl, 'reels');
+        await this.storage.delete(reel.videoUrl, 'chapters');  // ✅ CHANGÉ
       }
       if (reel.thumbnailUrl && !reel.thumbnailUrl.startsWith('http')) {
-        await this.storage.delete(reel.thumbnailUrl, 'reels');
+        await this.storage.delete(reel.thumbnailUrl, 'chapters');  // ✅ CHANGÉ
       }
     } catch (error) {
       console.error('Erreur suppression fichiers:', error);
@@ -392,12 +392,10 @@ export class ReelsService {
       throw new NotFoundException('Reel non trouvé');
     }
 
-    // Si l'auteur regarde son propre reel, ne pas compter
     if (userId && reel.authorId === userId) {
       return { viewsCount: 0 };
     }
 
-    // Vérifier si déjà vu
     const existing = await this.prisma.reelView.findFirst({
       where: {
         reelId,
@@ -461,7 +459,8 @@ export class ReelsService {
   // ============================================
   async getUploadUrl(userId: string, filename: string) {
     const key = `reels/${userId}/${Date.now()}-${filename}`;
-    const upload = await this.storage.getUploadUrl(key, 'reels');
+    // ✅ Utiliser 'chapters' car le bucket s'appelle CHAPTERS1
+    const upload = await this.storage.getUploadUrl(key, 'chapters');
     return { key, ...upload };
   }
 }
