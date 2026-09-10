@@ -6,7 +6,7 @@ import {
 } from '@nestjs/common';
 import { PrismaService } from '../../prisma/prisma.service';
 import { StorageService } from '../../common/services/storage.service';
-import { ReelStatus } from '@prisma/client';
+import { ReelStatus, ReelType } from '@prisma/client';
 import { CreateReelDto } from './dto/create-reel.dto';
 import { UpdateReelDto } from './dto/update-reel.dto';
 
@@ -17,6 +17,36 @@ const AUTHOR_SELECT = {
   avatarColor: true,
   isCertified: true,
   badgeColor: true,
+};
+
+// ✅ Relations à inclure pour le feed/détail
+const REEL_RELATIONS = {
+  author: { select: AUTHOR_SELECT },
+  manga: {
+    select: {
+      id: true,
+      title: true,
+      slug: true,
+      coverUrl: true,
+    },
+  },
+  chapter: {
+    select: {
+      id: true,
+      number: true,
+      title: true,
+      mangaId: true,
+    },
+  },
+  event: {
+    select: {
+      id: true,
+      title: true,
+      type: true,
+      coverUrl: true,
+    },
+  },
+  featuredCreator: { select: AUTHOR_SELECT },
 };
 
 @Injectable()
@@ -30,6 +60,39 @@ export class ReelsService {
   // 1. CRÉER UN REEL
   // ============================================
   async create(userId: string, dto: CreateReelDto) {
+    // ✅ Vérifications des liens si fournis
+    if (dto.mangaId) {
+      const manga = await this.prisma.manga.findUnique({
+        where: { id: dto.mangaId },
+        select: { id: true },
+      });
+      if (!manga) throw new BadRequestException('Manga non trouvé');
+    }
+
+    if (dto.chapterId) {
+      const chapter = await this.prisma.chapter.findUnique({
+        where: { id: dto.chapterId },
+        select: { id: true },
+      });
+      if (!chapter) throw new BadRequestException('Chapitre non trouvé');
+    }
+
+    if (dto.eventId) {
+      const event = await this.prisma.event.findUnique({
+        where: { id: dto.eventId },
+        select: { id: true },
+      });
+      if (!event) throw new BadRequestException('Événement non trouvé');
+    }
+
+    if (dto.featuredCreatorId) {
+      const creator = await this.prisma.user.findUnique({
+        where: { id: dto.featuredCreatorId },
+        select: { id: true },
+      });
+      if (!creator) throw new BadRequestException('Créateur non trouvé');
+    }
+
     return this.prisma.reel.create({
       data: {
         title: dto.title,
@@ -43,10 +106,16 @@ export class ReelsService {
         isPrivate: dto.isPrivate || false,
         authorId: userId,
         publishedAt: new Date(),
+
+        // ✅ Nouveaux champs
+        type: dto.type || ReelType.OTHER,
+        ctaLabel: dto.ctaLabel || null,
+        mangaId: dto.mangaId || null,
+        chapterId: dto.chapterId || null,
+        eventId: dto.eventId || null,
+        featuredCreatorId: dto.featuredCreatorId || null,
       },
-      include: {
-        author: { select: AUTHOR_SELECT },
-      },
+      include: REEL_RELATIONS,
     });
   }
 
@@ -57,13 +126,29 @@ export class ReelsService {
     userId?: string,
     page: number = 1,
     limit: number = 10,
+    filters?: {
+      type?: ReelType;
+      mangaId?: string;
+      eventId?: string;
+    },
   ) {
     const skip = (page - 1) * limit;
 
-    const where = {
+    const where: any = {
       status: ReelStatus.PUBLISHED,
       isPrivate: false,
     };
+
+    // ✅ Filtres
+    if (filters?.type) {
+      where.type = filters.type;
+    }
+    if (filters?.mangaId) {
+      where.mangaId = filters.mangaId;
+    }
+    if (filters?.eventId) {
+      where.eventId = filters.eventId;
+    }
 
     const [reels, total] = await Promise.all([
       this.prisma.reel.findMany({
@@ -71,7 +156,7 @@ export class ReelsService {
         skip,
         take: limit,
         include: {
-          author: { select: AUTHOR_SELECT },
+          ...REEL_RELATIONS,
           _count: {
             select: {
               likes: true,
@@ -163,7 +248,7 @@ export class ReelsService {
     const reel = await this.prisma.reel.findUnique({
       where: { id },
       include: {
-        author: { select: AUTHOR_SELECT },
+        ...REEL_RELATIONS,
         _count: {
           select: {
             likes: true,
@@ -242,23 +327,31 @@ export class ReelsService {
       throw new ForbiddenException('Vous n\'êtes pas l\'auteur de ce reel');
     }
 
+    const updateData: any = {};
+
+    if (dto.title !== undefined) updateData.title = dto.title;
+    if (dto.description !== undefined) updateData.description = dto.description;
+    if (dto.videoUrl !== undefined) updateData.videoUrl = dto.videoUrl;
+    if (dto.thumbnailUrl !== undefined) updateData.thumbnailUrl = dto.thumbnailUrl;
+    if (dto.duration !== undefined) updateData.duration = dto.duration;
+    if (dto.musicTitle !== undefined) updateData.musicTitle = dto.musicTitle;
+    if (dto.musicArtist !== undefined) updateData.musicArtist = dto.musicArtist;
+    if (dto.tags !== undefined) updateData.tags = dto.tags;
+    if (dto.isPrivate !== undefined) updateData.isPrivate = dto.isPrivate;
+    if (dto.status !== undefined) updateData.status = dto.status;
+
+    // ✅ Nouveaux champs
+    if (dto.type !== undefined) updateData.type = dto.type;
+    if (dto.ctaLabel !== undefined) updateData.ctaLabel = dto.ctaLabel;
+    if (dto.mangaId !== undefined) updateData.mangaId = dto.mangaId;
+    if (dto.chapterId !== undefined) updateData.chapterId = dto.chapterId;
+    if (dto.eventId !== undefined) updateData.eventId = dto.eventId;
+    if (dto.featuredCreatorId !== undefined) updateData.featuredCreatorId = dto.featuredCreatorId;
+
     return this.prisma.reel.update({
       where: { id },
-      data: {
-        title: dto.title,
-        description: dto.description,
-        videoUrl: dto.videoUrl,
-        thumbnailUrl: dto.thumbnailUrl,
-        duration: dto.duration,
-        musicTitle: dto.musicTitle,
-        musicArtist: dto.musicArtist,
-        tags: dto.tags,
-        isPrivate: dto.isPrivate,
-        status: dto.status,
-      },
-      include: {
-        author: { select: AUTHOR_SELECT },
-      },
+      data: updateData,
+      include: REEL_RELATIONS,
     });
   }
 
@@ -296,10 +389,9 @@ export class ReelsService {
   }
 
   // ============================================
-  // 6. LIKER UN REEL — ✅ ALIGNÉ sur LikesService
+  // 6. LIKER UN REEL
   // ============================================
   async like(reelId: string, userId: string) {
-    // 1. Vérifier que le reel existe
     const reel = await this.prisma.reel.findUnique({
       where: { id: reelId },
       select: { id: true, likesCount: true },
@@ -309,7 +401,6 @@ export class ReelsService {
       throw new NotFoundException('Reel non trouvé');
     }
 
-    // 2. Vérifier si le like existe déjà
     const existingLike = await this.prisma.reelLike.findUnique({
       where: {
         userId_reelId: {
@@ -320,47 +411,36 @@ export class ReelsService {
     });
 
     if (existingLike) {
-      // ✅ SUPPRIMER LE LIKE
       await this.prisma.reelLike.delete({
         where: { id: existingLike.id },
       });
 
-      // ✅ Décrémenter et récupérer la nouvelle valeur
       const updated = await this.prisma.reel.update({
         where: { id: reelId },
         data: { likesCount: { decrement: 1 } },
         select: { likesCount: true },
       });
 
-      return {
-        liked: false,
-        likesCount: updated.likesCount,
-      };
+      return { liked: false, likesCount: updated.likesCount };
     }
 
-    // ✅ CRÉER LE LIKE
     await this.prisma.reelLike.create({
       data: { userId, reelId },
     });
 
-    // ✅ Incrémenter et récupérer la nouvelle valeur
     const updated = await this.prisma.reel.update({
       where: { id: reelId },
       data: { likesCount: { increment: 1 } },
       select: { likesCount: true },
     });
 
-    return {
-      liked: true,
-      likesCount: updated.likesCount,
-    };
+    return { liked: true, likesCount: updated.likesCount };
   }
 
   // ============================================
-  // 7. BOOKMARK UN REEL — ✅ ALIGNÉ sur FavoritesService
+  // 7. BOOKMARK UN REEL
   // ============================================
   async bookmark(reelId: string, userId: string) {
-    // 1. Vérifier que le reel existe
     const reel = await this.prisma.reel.findUnique({
       where: { id: reelId },
       select: { id: true },
@@ -370,7 +450,6 @@ export class ReelsService {
       throw new NotFoundException('Reel non trouvé');
     }
 
-    // 2. Vérifier si déjà en bookmark
     const existing = await this.prisma.reelBookmark.findUnique({
       where: {
         userId_reelId: {
@@ -381,14 +460,12 @@ export class ReelsService {
     });
 
     if (existing) {
-      // Supprimer des bookmarks
       await this.prisma.reelBookmark.delete({
         where: { id: existing.id },
       });
       return { isBookmarked: false };
     }
 
-    // Ajouter aux bookmarks
     await this.prisma.reelBookmark.create({
       data: { userId, reelId },
     });
@@ -408,12 +485,10 @@ export class ReelsService {
       throw new NotFoundException('Reel non trouvé');
     }
 
-    // Si l'auteur regarde son propre reel, ne pas compter
     if (userId && reel.authorId === userId) {
       return { viewsCount: 0 };
     }
 
-    // Vérifier si déjà vu
     const existing = await this.prisma.reelView.findFirst({
       where: {
         reelId,
@@ -454,7 +529,7 @@ export class ReelsService {
     const reels = await this.prisma.reel.findMany({
       where,
       include: {
-        author: { select: AUTHOR_SELECT },
+        ...REEL_RELATIONS,
         _count: {
           select: {
             likes: true,
@@ -482,10 +557,9 @@ export class ReelsService {
   }
 
   // ============================================
-  // 11. AJOUTER UN COMMENTAIRE — ✅ ALIGNÉ sur CommentsService
+  // 11. AJOUTER UN COMMENTAIRE
   // ============================================
   async addComment(reelId: string, userId: string, content: string, parentId?: string) {
-    // 1. Vérifier que le reel existe
     const reel = await this.prisma.reel.findUnique({
       where: { id: reelId },
       select: { id: true },
@@ -495,7 +569,6 @@ export class ReelsService {
       throw new NotFoundException('Reel non trouvé');
     }
 
-    // 2. Vérifier le parent si présent
     if (parentId) {
       const parent = await this.prisma.reelComment.findUnique({
         where: { id: parentId },
@@ -508,7 +581,6 @@ export class ReelsService {
       }
     }
 
-    // 3. Créer le commentaire
     const comment = await this.prisma.reelComment.create({
       data: {
         userId,
@@ -524,7 +596,6 @@ export class ReelsService {
       },
     });
 
-    // 4. Incrémenter le compteur du reel
     await this.prisma.reel.update({
       where: { id: reelId },
       data: { commentsCount: { increment: 1 } },
@@ -538,7 +609,7 @@ export class ReelsService {
   }
 
   // ============================================
-  // 12. RÉCUPÉRER LES COMMENTAIRES — ✅ ALIGNÉ sur CommentsService
+  // 12. RÉCUPÉRER LES COMMENTAIRES
   // ============================================
   async getComments(
     reelId: string,
@@ -546,7 +617,6 @@ export class ReelsService {
     page: number = 1,
     limit: number = 20,
   ) {
-    // 1. Vérifier que le reel existe
     const reel = await this.prisma.reel.findUnique({
       where: { id: reelId },
       select: { id: true },
@@ -558,7 +628,6 @@ export class ReelsService {
 
     const skip = (page - 1) * limit;
 
-    // 2. Récupérer les commentaires parents paginés
     const [comments, total] = await Promise.all([
       this.prisma.reelComment.findMany({
         where: {
@@ -586,7 +655,6 @@ export class ReelsService {
       }),
     ]);
 
-    // 3. Récupérer les réponses pour tous les commentaires parents
     const commentIds = comments.map((c) => c.id);
     const replies = await this.prisma.reelComment.findMany({
       where: {
@@ -601,7 +669,6 @@ export class ReelsService {
       orderBy: { createdAt: 'asc' },
     });
 
-    // 4. Regrouper les réponses par parentId
     const repliesByParent = replies.reduce((acc, reply) => {
       const parentId = reply.parentId!;
       if (!acc[parentId]) acc[parentId] = [];
@@ -609,7 +676,6 @@ export class ReelsService {
       return acc;
     }, {} as Record<string, typeof replies>);
 
-    // 5. Vérifier si l'utilisateur a liké
     let userLikes: string[] = [];
     if (userId) {
       const likes = await this.prisma.reelCommentLike.findMany({
@@ -619,7 +685,6 @@ export class ReelsService {
       userLikes = likes.map((l) => l.commentId);
     }
 
-    // 6. Construire la réponse
     const commentsWithReplies = comments.map((comment) => ({
       ...comment,
       isLiked: userLikes.includes(comment.id),
@@ -644,10 +709,9 @@ export class ReelsService {
   }
 
   // ============================================
-  // 13. LIKER UN COMMENTAIRE — ✅ ALIGNÉ sur CommentsService.likeComment
+  // 13. LIKER UN COMMENTAIRE
   // ============================================
   async likeComment(commentId: string, userId: string) {
-    // 1. Vérifier que le commentaire existe
     const comment = await this.prisma.reelComment.findUnique({
       where: { id: commentId },
       select: { id: true, likesCount: true },
@@ -657,7 +721,6 @@ export class ReelsService {
       throw new NotFoundException('Commentaire non trouvé');
     }
 
-    // 2. Vérifier si l'utilisateur a déjà liké
     const existingLike = await this.prisma.reelCommentLike.findUnique({
       where: {
         userId_commentId: {
@@ -668,44 +731,34 @@ export class ReelsService {
     });
 
     if (existingLike) {
-      // ✅ SUPPRIMER LE LIKE
       await this.prisma.reelCommentLike.delete({
         where: { id: existingLike.id },
       });
 
-      // ✅ Décrémenter et récupérer la nouvelle valeur
       const updated = await this.prisma.reelComment.update({
         where: { id: commentId },
         data: { likesCount: { decrement: 1 } },
         select: { likesCount: true },
       });
 
-      return {
-        liked: false,
-        likesCount: updated.likesCount,
-      };
+      return { liked: false, likesCount: updated.likesCount };
     }
 
-    // ✅ AJOUTER LE LIKE
     await this.prisma.reelCommentLike.create({
       data: { userId, commentId },
     });
 
-    // ✅ Incrémenter et récupérer la nouvelle valeur
     const updated = await this.prisma.reelComment.update({
       where: { id: commentId },
       data: { likesCount: { increment: 1 } },
       select: { likesCount: true },
     });
 
-    return {
-      liked: true,
-      likesCount: updated.likesCount,
-    };
+    return { liked: true, likesCount: updated.likesCount };
   }
 
   // ============================================
-  // 14. SUPPRIMER UN COMMENTAIRE — ✅ ALIGNÉ sur CommentsService.delete
+  // 14. SUPPRIMER UN COMMENTAIRE
   // ============================================
   async deleteComment(commentId: string, userId: string) {
     const comment = await this.prisma.reelComment.findUnique({
@@ -717,7 +770,6 @@ export class ReelsService {
       throw new NotFoundException('Commentaire non trouvé');
     }
 
-    // Vérifier les droits : propriétaire OU ADMIN
     const user = await this.prisma.user.findUnique({
       where: { id: userId },
       select: { role: true },
@@ -727,17 +779,14 @@ export class ReelsService {
       throw new ForbiddenException('Vous ne pouvez pas supprimer ce commentaire');
     }
 
-    // Supprimer les réponses d'abord
     await this.prisma.reelComment.deleteMany({
       where: { parentId: commentId },
     });
 
-    // Supprimer le commentaire
     await this.prisma.reelComment.delete({
       where: { id: commentId },
     });
 
-    // Décrémenter le compteur du reel
     await this.prisma.reel.update({
       where: { id: comment.reelId },
       data: { commentsCount: { decrement: 1 } },
