@@ -172,16 +172,23 @@ export class ReelsController {
   }
 
   // ============================================
-  // 12. RÉCUPÉRER LES COMMENTAIRES D'UN REEL
+  // 12. RÉCUPÉRER LES COMMENTAIRES D'UN REEL — ✅ CORRIGÉ (pagination)
   // ============================================
   @Get(':id/comments')
   async getComments(
     @Param('id') id: string,
+    @Query('page') page?: string,
+    @Query('limit') limit?: string,
     @Req() req?: any,
   ) {
     const userId = req?.user?.id || null;
-    const comments = await this.reelsService.getComments(id, userId);
-    return { success: true, data: comments };
+    const result = await this.reelsService.getComments(
+      id,
+      userId,
+      page ? parseInt(page) : 1,
+      limit ? parseInt(limit) : 20,
+    );
+    return { success: true, ...result };
   }
 
   // ============================================
