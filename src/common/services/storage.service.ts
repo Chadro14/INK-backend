@@ -7,11 +7,15 @@ export class StorageService {
   private supabase: SupabaseClient;
   private readonly logger = new Logger(StorageService.name);
 
-  // ✅ AJOUT : 'reels' pour les vidéos courtes
+  /**
+   * ✅ Un seul bucket : "chapters"
+   * Tous les contenus (chapitres, couvertures, reels, avatars) vont dedans,
+   * organisés par préfixe dans la clé.
+   */
   public readonly buckets: Record<string, string> = {
     chapters: 'chapters',
-    avatars: 'avatars',
-    reels: 'reels',        // ✅ NOUVEAU
+    avatars: 'chapters',
+    reels: 'chapters',
   };
 
   constructor(private configService: ConfigService) {
@@ -26,27 +30,26 @@ export class StorageService {
   }
 
   /**
-   * Helper : Nettoie la clé et extrait le bon bucket si la clé contient un préfixe de bucket.
+   * Helper : Extrait le bucket (toujours "chapters") et nettoie la clé.
    */
   private resolveBucketAndKey(key: string, defaultBucketType: string = 'chapters') {
-    if (!key) return { bucket: this.buckets[defaultBucketType] || defaultBucketType, cleanKey: '' };
+    if (!key) {
+      return { bucket: 'chapters', cleanKey: '' };
+    }
 
     let cleanKey = key.trim();
-    let bucket = this.buckets[defaultBucketType] || defaultBucketType;
+    const bucket = 'chapters';
 
-    for (const [_, bucketName] of Object.entries(this.buckets)) {
-      if (cleanKey.startsWith(`${bucketName}/`)) {
-        bucket = bucketName;
-        cleanKey = cleanKey.replace(`${bucketName}/`, '');
-        break;
-      }
+    // Nettoyer un éventuel préfixe "chapters/" en début de clé
+    if (cleanKey.startsWith('chapters/')) {
+      cleanKey = cleanKey.replace('chapters/', '');
     }
 
     return { bucket, cleanKey };
   }
 
   // ==========================================
-  // MÉTHODES POUR L'UPLOAD DIRECT (FRONTEND) - CORRIGÉ ✅
+  // MÉTHODES POUR L'UPLOAD DIRECT (FRONTEND)
   // ==========================================
   async getUploadUrl(key: string, bucketType: 'chapters' | 'avatars' | 'reels' = 'chapters') {
     if (!key) {
@@ -55,25 +58,24 @@ export class StorageService {
 
     const { bucket, cleanKey } = this.resolveBucketAndKey(key, bucketType);
 
-    // ✅ Obtenir l'URL d'upload signée
     const { data, error } = await this.supabase.storage
       .from(bucket)
       .createSignedUploadUrl(cleanKey);
 
     if (error) {
+      this.logger.error(`Échec création URL upload pour ${cleanKey} dans ${bucket}: ${error.message}`);
       throw new InternalServerErrorException(`Échec de la création de l'URL d'upload: ${error.message}`);
     }
 
-    // ✅ Retourner l'URL complète + la clé
     const uploadUrl = data.signedUrl;
-    const publicUrl = `${this.supabase.storage.from(bucket).getPublicUrl(cleanKey).data.publicUrl}`;
+    const publicUrl = this.supabase.storage.from(bucket).getPublicUrl(cleanKey).data.publicUrl;
 
     return {
-      uploadUrl,      // ✅ URL pour faire le PUT
-      key: cleanKey,  // ✅ Clé pour finaliser
+      uploadUrl,
+      key: cleanKey,
       path: data.path,
       token: data.token,
-      publicUrl,      // ✅ URL publique
+      publicUrl,
     };
   }
 
@@ -89,9 +91,14 @@ export class StorageService {
   // ==========================================
   // MÉTHODES BACKEND
   // ==========================================
-  async upload(key: string, file: Buffer, mimeType: string, bucketType: 'chapters' | 'avatars' | 'reels' = 'chapters'): Promise<string> {
+  async upload(
+    key: string,
+    file: Buffer,
+    mimeType: string,
+    bucketType: 'chapters' | 'avatars' | 'reels' = 'chapters',
+  ): Promise<string> {
     if (!key) {
-      throw new BadRequestException('La clé (key) du fichier est requise pour l\'upload');
+      throw new BadRequestException("La clé (key) du fichier est requise pour l'upload");
     }
 
     const { bucket, cleanKey } = this.resolveBucketAndKey(key, bucketType);
@@ -104,14 +111,18 @@ export class StorageService {
       });
 
     if (error) {
-      this.logger.error(`Échec de l'upload de ${cleanKey} dans le bucket ${bucket}: ${error.message}`);
+      this.logger.error(`Échec upload de ${cleanKey} dans ${bucket}: ${error.message}`);
       throw new InternalServerErrorException(error.message);
     }
 
     return data.path;
   }
 
-  async getSignedUrl(key: string, expiresIn: number = 3600, bucketType: 'chapters' | 'avatars' | 'reels' = 'chapters'): Promise<string> {
+  async getSignedUrl(
+    key: string,
+    expiresIn: number = 3600,
+    bucketType: 'chapters' | 'avatars' | 'reels' = 'chapters',
+  ): Promise<string> {
     if (!key) return '';
 
     if (key.startsWith('http://') || key.startsWith('https://')) {
@@ -125,15 +136,17 @@ export class StorageService {
       .createSignedUrl(cleanKey, expiresIn);
 
     if (error) {
-      this.logger.error(`Échec de la génération de l'URL signée pour ${cleanKey} dans ${bucket}: ${error.message}`);
-      // ✅ En cas d'erreur, retourner l'URL publique
+      this.logger.error(`Échec génération URL signée pour ${cleanKey} dans ${bucket}: ${error.message}`);
       return this.getPublicUrl(key, bucketType);
     }
 
     return data.signedUrl;
   }
 
-  async delete(key: string, bucketType: 'chapters' | 'avatars' | 'reels' = 'chapters'): Promise<void> {
+  async delete(
+    key: string,
+    bucketType: 'chapters' | 'avatars' | 'reels' = 'chapters',
+  ): Promise<void> {
     if (!key) return;
 
     if (key.startsWith('http://') || key.startsWith('https://')) {
@@ -147,7 +160,7 @@ export class StorageService {
       .remove([cleanKey]);
 
     if (error) {
-      this.logger.error(`Échec de la suppression de ${cleanKey} depuis ${bucket}: ${error.message}`);
+      this.logger.error(`Échec suppression de ${cleanKey} depuis ${bucket}: ${error.message}`);
       throw new InternalServerErrorException(error.message);
     }
   }
@@ -159,16 +172,16 @@ export class StorageService {
     try {
       const testKey = `test-${Date.now()}.txt`;
       const testBuffer = Buffer.from('Test de connexion Supabase');
-      
+
       const uploadResult = await this.upload(testKey, testBuffer, 'text/plain', 'chapters');
       console.log('✅ Upload test réussi:', uploadResult);
-      
+
       const signedUrl = await this.getSignedUrl(testKey);
       console.log('✅ URL signée test:', signedUrl);
-      
+
       await this.delete(testKey);
       console.log('✅ Suppression test réussie');
-      
+
       return { success: true };
     } catch (error: any) {
       console.error('❌ Erreur test:', error.message);
