@@ -1,5 +1,16 @@
-import { IsString, IsOptional, IsBoolean, IsArray, IsUrl, IsNumber, MaxLength } from 'class-validator';
+import {
+  IsString,
+  IsOptional,
+  IsBoolean,
+  IsArray,
+  IsUrl,
+  IsNumber,
+  IsEnum,
+  IsUUID,
+  MaxLength,
+} from 'class-validator';
 import { Type } from 'class-transformer';
+import { ReelType } from '@prisma/client';
 
 export class CreateReelDto {
   @IsString()
@@ -8,6 +19,7 @@ export class CreateReelDto {
 
   @IsOptional()
   @IsString()
+  @MaxLength(500)
   description?: string;
 
   @IsUrl()
@@ -38,4 +50,32 @@ export class CreateReelDto {
   @IsOptional()
   @IsBoolean()
   isPrivate?: boolean;
+
+  // ✅ NOUVEAU : Type de Reel
+  @IsOptional()
+  @IsEnum(ReelType)
+  type?: ReelType;
+
+  // ✅ NOUVEAU : CTA
+  @IsOptional()
+  @IsString()
+  @MaxLength(50)
+  ctaLabel?: string;
+
+  // ✅ NOUVEAU : Liens vers le contenu INKdrop
+  @IsOptional()
+  @IsUUID()
+  mangaId?: string;
+
+  @IsOptional()
+  @IsUUID()
+  chapterId?: string;
+
+  @IsOptional()
+  @IsUUID()
+  eventId?: string;
+
+  @IsOptional()
+  @IsUUID()
+  featuredCreatorId?: string;
 }
