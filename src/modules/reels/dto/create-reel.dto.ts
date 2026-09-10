@@ -8,6 +8,7 @@ import {
   IsEnum,
   IsUUID,
   MaxLength,
+  Max,
 } from 'class-validator';
 import { Type } from 'class-transformer';
 import { ReelType } from '@prisma/client';
@@ -29,9 +30,11 @@ export class CreateReelDto {
   @IsUrl()
   thumbnailUrl?: string;
 
+  // ✅ RÈGLE : max 30 secondes
   @IsOptional()
   @IsNumber()
   @Type(() => Number)
+  @Max(30, { message: 'La vidéo ne doit pas dépasser 30 secondes' })
   duration?: number;
 
   @IsOptional()
@@ -51,18 +54,18 @@ export class CreateReelDto {
   @IsBoolean()
   isPrivate?: boolean;
 
-  // ✅ NOUVEAU : Type de Reel
+  // ✅ Type de Reel
   @IsOptional()
   @IsEnum(ReelType)
   type?: ReelType;
 
-  // ✅ NOUVEAU : CTA
+  // ✅ CTA
   @IsOptional()
   @IsString()
   @MaxLength(50)
   ctaLabel?: string;
 
-  // ✅ NOUVEAU : Liens vers le contenu INKdrop
+  // ✅ Liens vers le contenu INKdrop
   @IsOptional()
   @IsUUID()
   mangaId?: string;
