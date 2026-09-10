@@ -36,7 +36,7 @@ export class MangasController {
   }
 
   // ============================================
-  // 2. LISTE DES MANGAS (PAGINÉE) - AVEC FILTRE AUTHOR
+  // 2. LISTE DES MANGAS (PAGINÉE)
   // ============================================
   @Get()
   async findAll(
@@ -45,7 +45,7 @@ export class MangasController {
     @Query('search') search?: string,
     @Query('genre') genre?: string,
     @Query('status') status?: string,
-    @Query('authorId') authorId?: string, // ✅ AJOUTÉ
+    @Query('authorId') authorId?: string,
   ) {
     const filters = { search, genre, status, authorId };
     const result = await this.mangasService.findAll(
@@ -66,7 +66,40 @@ export class MangasController {
   }
 
   // ============================================
-  // 4. RECHERCHER UN MANGA PAR ID OU SLUG
+  // 4. MIGRER LES SLUGS (ADMIN) — ⚠️ DOIT ÊTRE AVANT :identifier
+  // ============================================
+  @Post('migrate-slugs')
+  @UseGuards(JwtAuthGuard)
+  async migrateSlugs(@Req() req: any) {
+    const user = await this.mangasService['prisma'].user.findUnique({
+      where: { id: req.user.id },
+      select: { role: true },
+    });
+
+    if (user?.role !== 'ADMIN') {
+      return { success: false, message: 'Accès réservé aux administrateurs' };
+    }
+
+    const result = await this.mangasService.migrateSlugs();
+    return { success: true, ...result };
+  }
+
+  // ============================================
+  // 5. RÉCUPÉRER LES MANGAS D'UN CRÉATEUR — ✅ DÉPLACÉ AVANT :identifier
+  // ============================================
+  @Get('creator/:userId')
+  @UseGuards(JwtAuthGuard)
+  async getCreatorMangas(@Param('userId') userId: string) {
+    const result = await this.mangasService.getCreatorMangasWithStats(userId);
+    return {
+      success: true,
+      data: result.mangas,
+      totals: result.totals,
+    };
+  }
+
+  // ============================================
+  // 6. RECHERCHER UN MANGA PAR ID OU SLUG — ⚠️ DOIT ÊTRE APRÈS les routes spécifiques
   // ============================================
   @Get(':identifier')
   async findOne(@Param('identifier') identifier: string) {
@@ -75,7 +108,7 @@ export class MangasController {
   }
 
   // ============================================
-  // 5. METTRE À JOUR UN MANGA
+  // 7. METTRE À JOUR UN MANGA
   // ============================================
   @Put(':id')
   @UseGuards(JwtAuthGuard)
@@ -89,7 +122,7 @@ export class MangasController {
   }
 
   // ============================================
-  // 6. SUPPRIMER UN MANGA
+  // 8. SUPPRIMER UN MANGA
   // ============================================
   @Delete(':id')
   @UseGuards(JwtAuthGuard)
@@ -99,7 +132,7 @@ export class MangasController {
   }
 
   // ============================================
-  // 7. INCRÉMENTER LES VUES D'UN MANGA
+  // 9. INCRÉMENTER LES VUES D'UN MANGA
   // ============================================
   @Post(':id/view')
   async incrementView(@Param('id') id: string, @Req() req: any) {
@@ -121,7 +154,7 @@ export class MangasController {
   }
 
   // ============================================
-  // 8. URLS D'UPLOAD POUR LA COUVERTURE
+  // 10. URLS D'UPLOAD POUR LA COUVERTURE
   // ============================================
   @Post(':id/cover/upload-url')
   @UseGuards(JwtAuthGuard)
@@ -131,7 +164,7 @@ export class MangasController {
   }
 
   // ============================================
-  // 9. FINALISER LA COUVERTURE
+  // 11. FINALISER LA COUVERTURE
   // ============================================
   @Post(':id/cover/finalize')
   @UseGuards(JwtAuthGuard)
@@ -145,7 +178,7 @@ export class MangasController {
   }
 
   // ============================================
-  // 10. URLS D'UPLOAD POUR LES CHAPITRES
+  // 12. URLS D'UPLOAD POUR LES CHAPITRES
   // ============================================
   @Post(':id/upload-urls')
   @UseGuards(JwtAuthGuard)
@@ -159,7 +192,7 @@ export class MangasController {
   }
 
   // ============================================
-  // 11. METTRE À JOUR LE SLUG
+  // 13. METTRE À JOUR LE SLUG
   // ============================================
   @Patch(':id/slug')
   @UseGuards(JwtAuthGuard)
@@ -170,39 +203,6 @@ export class MangasController {
   ) {
     const manga = await this.mangasService.updateSlug(id, slug, req.user.id);
     return { success: true, data: manga };
-  }
-
-  // ============================================
-  // 12. MIGRER LES SLUGS (ADMIN)
-  // ============================================
-  @Post('migrate-slugs')
-  @UseGuards(JwtAuthGuard)
-  async migrateSlugs(@Req() req: any) {
-    const user = await this.mangasService['prisma'].user.findUnique({
-      where: { id: req.user.id },
-      select: { role: true },
-    });
-
-    if (user?.role !== 'ADMIN') {
-      return { success: false, message: 'Accès réservé aux administrateurs' };
-    }
-
-    const result = await this.mangasService.migrateSlugs();
-    return { success: true, ...result };
-  }
-
-  // ============================================
-  // 13. RÉCUPÉRER LES MANGAS D'UN CRÉATEUR AVEC STATS
-  // ============================================
-  @Get('creator/:userId')
-  @UseGuards(JwtAuthGuard)
-  async getCreatorMangas(@Param('userId') userId: string) {
-    const result = await this.mangasService.getCreatorMangasWithStats(userId);
-    return { 
-      success: true, 
-      data: result.mangas, 
-      totals: result.totals 
-    };
   }
 
   // ============================================
@@ -232,26 +232,26 @@ export class MangasController {
     @Req() req: any,
   ) {
     const manga = await this.mangasService.findByIdOrSlug(identifier);
-    
+
     if (manga.authorId !== req.user.id) {
-      return { 
-        success: false, 
-        message: "Vous n'êtes pas l'auteur de ce manga." 
+      return {
+        success: false,
+        message: "Vous n'êtes pas l'auteur de ce manga.",
       };
     }
-    
+
     const { position, isPaidPosition } = await this.mangasService.getMangaPosition(
       req.user.id,
       manga.id,
     );
-    
+
     return {
       success: true,
       data: {
         position,
         isPaidPosition,
         canHavePaidChapters: isPaidPosition,
-        message: isPaidPosition 
+        message: isPaidPosition
           ? `Position ${position} (impaire) - Vous pouvez publier des chapitres payants.`
           : `Position ${position} (paire) - Ce manga doit être gratuit.`,
       },
