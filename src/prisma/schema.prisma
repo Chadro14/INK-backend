@@ -108,7 +108,8 @@ model User {
   reelComments       ReelComment[]
   reelViews          ReelView[]
   reelBookmarks      ReelBookmark[]
-  reelCommentLikes   ReelCommentLike[]  // ✅ AJOUT
+  reelCommentLikes   ReelCommentLike[]
+  featuredInReels    Reel[]  @relation("FeaturedInReels")  // ✅ NOUVEAU
 
   createdAt          DateTime  @default(now())
   updatedAt          DateTime  @updatedAt
@@ -306,6 +307,9 @@ model Manga {
   // ✅ ÉVÉNEMENTS
   eventSubmissions EventSubmission[]
 
+  // ✅ REELS
+  reels            Reel[]   // ✅ NOUVEAU
+
   createdAt        DateTime @default(now())
   updatedAt        DateTime @updatedAt
 
@@ -351,6 +355,9 @@ model Chapter {
 
   // ✅ ÉVÉNEMENTS
   eventSubmissions EventSubmission[]
+
+  // ✅ REELS
+  reels            Reel[]   // ✅ NOUVEAU
 
   @@unique([mangaId, number])
   @@index([mangaId, publishedAt])
@@ -857,6 +864,9 @@ model Event {
   rankings       EventRanking[]
   submissions    EventSubmission[]
 
+  // ✅ REELS
+  reels          Reel[]   // ✅ NOUVEAU
+
   @@index([type, startDate, endDate])
   @@index([isActive, startDate, endDate])
 }
@@ -1032,13 +1042,42 @@ model UserBadge {
 }
 
 // ============================================
-// 🎬 REELS (vidéos courtes 20-30s)
+// 🎬 REELS — VISION COMPLÈTE
 // ============================================
 
 enum ReelStatus {
   DRAFT
   PUBLISHED
   ARCHIVED
+}
+
+// ✅ NOUVEAU : Type de Reel (moteur de découverte)
+enum ReelType {
+  // Mangas
+  MANGA_TEASER
+  MANGA_CHARACTER
+  MANGA_CHAPTER_PREVIEW
+  MANGA_ANNOUNCEMENT
+  MANGA_TRAILER
+  
+  // Créateurs
+  CREATOR_PORTFOLIO
+  CREATOR_TIMELAPSE
+  CREATOR_MAKING_OF
+  
+  // Événements
+  EVENT_PROMO
+  EVENT_BATTLE
+  EVENT_DRAWING_CHALLENGE
+  RISING_CREATOR
+  INKDROP_AWARDS
+  INKDROP_TOURNAMENT
+  
+  // Plateforme
+  INKDROP_OFFICIAL
+  
+  // Générique
+  OTHER
 }
 
 model Reel {
@@ -1063,6 +1102,25 @@ model Reel {
   isFeatured    Boolean         @default(false)
   isPrivate     Boolean         @default(false)
   
+  // ✅ Type + CTA
+  type          ReelType        @default(OTHER)
+  ctaLabel      String?
+  isOfficial    Boolean         @default(false)
+  isPromoted    Boolean         @default(false)
+  
+  // ✅ Liens vers le contenu INKdrop
+  mangaId           String?
+  manga             Manga?    @relation(fields: [mangaId], references: [id], onDelete: SetNull)
+  
+  chapterId         String?
+  chapter           Chapter?  @relation(fields: [chapterId], references: [id], onDelete: SetNull)
+  
+  eventId           String?
+  event             Event?    @relation(fields: [eventId], references: [id], onDelete: SetNull)
+  
+  featuredCreatorId String?
+  featuredCreator   User?     @relation("FeaturedInReels", fields: [featuredCreatorId], references: [id], onDelete: SetNull)
+  
   tags          String[]        @default([])
   
   createdAt     DateTime        @default(now())
@@ -1076,8 +1134,12 @@ model Reel {
   
   @@index([authorId, createdAt])
   @@index([status, createdAt])
+  @@index([type, createdAt])
+  @@index([mangaId])
+  @@index([eventId])
   @@index([viewsCount, likesCount])
   @@index([isFeatured])
+  @@index([isOfficial])
 }
 
 // ============================================
@@ -1108,7 +1170,6 @@ model ReelComment {
   reel      Reel     @relation(fields: [reelId], references: [id], onDelete: Cascade)
   content   String   @db.Text
   
-  // ✅ AJOUT : likesCount pour les commentaires
   likesCount Int     @default(0)
   
   createdAt DateTime @default(now())
@@ -1118,7 +1179,6 @@ model ReelComment {
   parent    ReelComment? @relation("ReelReplies", fields: [parentId], references: [id], onDelete: Cascade)
   replies   ReelComment[] @relation("ReelReplies")
 
-  // ✅ AJOUT : relation avec les likes
   commentLikes ReelCommentLike[]
 
   @@index([reelId, createdAt])
@@ -1126,7 +1186,7 @@ model ReelComment {
 }
 
 // ============================================
-// ❤️ LIKES SUR COMMENTAIRES DE REELS (NOUVEAU)
+// ❤️ LIKES SUR COMMENTAIRES DE REELS
 // ============================================
 
 model ReelCommentLike {
