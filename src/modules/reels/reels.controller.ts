@@ -12,6 +12,7 @@ import {
 } from '@nestjs/common';
 import { ReelsService } from './reels.service';
 import { JwtAuthGuard } from '../../common/guards/jwt-auth.guard';
+import { OptionalJwtAuthGuard } from '../../common/guards/optional-jwt-auth.guard';
 import { CreateReelDto } from './dto/create-reel.dto';
 import { UpdateReelDto } from './dto/update-reel.dto';
 
@@ -20,9 +21,10 @@ export class ReelsController {
   constructor(private readonly reelsService: ReelsService) {}
 
   // ============================================
-  // 1. FEED DES REELS
+  // 1. FEED DES REELS — ✅ GUARD OPTIONNEL
   // ============================================
   @Get()
+  @UseGuards(OptionalJwtAuthGuard)
   async getFeed(
     @Query('page') page?: string,
     @Query('limit') limit?: string,
@@ -38,9 +40,10 @@ export class ReelsController {
   }
 
   // ============================================
-  // 2. REELS D'UN UTILISATEUR
+  // 2. REELS D'UN UTILISATEUR — ✅ GUARD OPTIONNEL
   // ============================================
   @Get('user/:userId')
+  @UseGuards(OptionalJwtAuthGuard)
   async getUserReels(
     @Param('userId') userId: string,
     @Req() req?: any,
@@ -51,9 +54,10 @@ export class ReelsController {
   }
 
   // ============================================
-  // 3. DÉTAIL D'UN REEL
+  // 3. DÉTAIL D'UN REEL — ✅ GUARD OPTIONNEL
   // ============================================
   @Get(':id')
+  @UseGuards(OptionalJwtAuthGuard)
   async getReel(
     @Param('id') id: string,
     @Req() req?: any,
@@ -118,9 +122,10 @@ export class ReelsController {
   }
 
   // ============================================
-  // 9. COMPTER UNE VUE
+  // 9. COMPTER UNE VUE — ✅ GUARD OPTIONNEL
   // ============================================
   @Post(':id/view')
+  @UseGuards(OptionalJwtAuthGuard)
   async view(
     @Param('id') id: string,
     @Req() req: any,
@@ -172,9 +177,10 @@ export class ReelsController {
   }
 
   // ============================================
-  // 12. RÉCUPÉRER LES COMMENTAIRES D'UN REEL — ✅ CORRIGÉ (pagination)
+  // 12. RÉCUPÉRER LES COMMENTAIRES D'UN REEL — ✅ GUARD OPTIONNEL
   // ============================================
   @Get(':id/comments')
+  @UseGuards(OptionalJwtAuthGuard)
   async getComments(
     @Param('id') id: string,
     @Query('page') page?: string,
