@@ -3,7 +3,6 @@ import {
   IsOptional,
   IsBoolean,
   IsArray,
-  IsUrl,
   IsNumber,
   IsEnum,
   IsUUID,
@@ -23,11 +22,13 @@ export class CreateReelDto {
   @MaxLength(500)
   description?: string;
 
-  @IsUrl()
+  // ✅ Retiré @IsUrl() — c'est une CLÉ, pas une URL
+  @IsString()
   videoUrl: string;
 
+  // ✅ Retiré @IsUrl() — c'est une CLÉ, pas une URL
   @IsOptional()
-  @IsUrl()
+  @IsString()
   thumbnailUrl?: string;
 
   // ✅ RÈGLE : max 30 secondes
