@@ -6,8 +6,10 @@ import {
   IsNumber,
   IsEnum,
   IsUUID,
+  IsDateString,
   MaxLength,
   Max,
+  Min,
 } from 'class-validator';
 import { Type } from 'class-transformer';
 import { ReelType } from '@prisma/client';
@@ -22,11 +24,11 @@ export class CreateReelDto {
   @MaxLength(500)
   description?: string;
 
-  // ✅ Retiré @IsUrl() — c'est une CLÉ, pas une URL
+  // ✅ Clé (pas URL)
   @IsString()
   videoUrl: string;
 
-  // ✅ Retiré @IsUrl() — c'est une CLÉ, pas une URL
+  // ✅ Clé (pas URL)
   @IsOptional()
   @IsString()
   thumbnailUrl?: string;
@@ -37,6 +39,20 @@ export class CreateReelDto {
   @Type(() => Number)
   @Max(30, { message: 'La vidéo ne doit pas dépasser 30 secondes' })
   duration?: number;
+
+  // ✅ NOUVEAU : Trim virtuel (début en secondes)
+  @IsOptional()
+  @IsNumber()
+  @Type(() => Number)
+  @Min(0, { message: 'Le début du trim ne peut pas être négatif' })
+  trimStart?: number;
+
+  // ✅ NOUVEAU : Trim virtuel (fin en secondes)
+  @IsOptional()
+  @IsNumber()
+  @Type(() => Number)
+  @Min(0, { message: 'La fin du trim ne peut pas être négative' })
+  trimEnd?: number;
 
   @IsOptional()
   @IsString()
@@ -54,6 +70,11 @@ export class CreateReelDto {
   @IsOptional()
   @IsBoolean()
   isPrivate?: boolean;
+
+  // ✅ NOUVEAU : Publication programmée (date ISO)
+  @IsOptional()
+  @IsDateString()
+  scheduledAt?: string;
 
   // ✅ Type de Reel
   @IsOptional()
@@ -82,4 +103,10 @@ export class CreateReelDto {
   @IsOptional()
   @IsUUID()
   featuredCreatorId?: string;
+
+  // ✅ NOUVEAU : IDs des utilisateurs mentionnés
+  @IsOptional()
+  @IsArray()
+  @IsUUID('4', { each: true, message: 'Chaque mention doit être un UUID valide' })
+  mentionIds?: string[];
 }
