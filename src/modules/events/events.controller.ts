@@ -14,6 +14,7 @@ import { EventsService } from './events.service';
 import { JwtAuthGuard } from '../../common/guards/jwt-auth.guard';
 import { OptionalJwtAuthGuard } from '../../common/guards/optional-jwt-auth.guard';
 import { AdminGuard } from '../../common/guards/admin.guard';
+import { StorageService } from '../../common/services/storage.service'; // ✅ AJOUT
 import { CreateEventDto } from './dto/create-event.dto';
 import { UpdateEventDto } from './dto/update-event.dto';
 import { SubmitEventDto } from './dto/submit-event.dto';
@@ -21,11 +22,14 @@ import { VoteEventDto } from './dto/vote-event.dto';
 
 @Controller('events')
 export class EventsController {
-  constructor(private eventsService: EventsService) {}
+  constructor(
+    private eventsService: EventsService,
+    private storage: StorageService, // ✅ AJOUT
+  ) {}
 
   // ============================================
   // LISTE DES ÉVÉNEMENTS
-  // ✅ Guard optionnel : permet d'avoir userParticipation si connecté
+  // ✅ Guard optionnel
   // ============================================
   @Get()
   @UseGuards(OptionalJwtAuthGuard)
@@ -40,7 +44,7 @@ export class EventsController {
 
   // ============================================
   // RÉCUPÉRER UN ÉVÉNEMENT PAR ID
-  // ✅ Guard optionnel : renvoie userParticipation si connecté
+  // ✅ Guard optionnel
   // ============================================
   @Get(':id')
   @UseGuards(OptionalJwtAuthGuard)
@@ -76,6 +80,28 @@ export class EventsController {
       limit ? parseInt(limit) : 20,
     );
     return { success: true, data: rankings };
+  }
+
+  // ============================================
+  // ✅ NOUVEAU : GÉNÉRER UNE URL D'UPLOAD POUR SOUMISSION
+  // Utilise le système d'URL signée (comme les Reels)
+  // ============================================
+  @Post(':id/submission/upload-url')
+  @UseGuards(JwtAuthGuard)
+  async getSubmissionUploadUrl(
+    @Param('id') id: string,
+    @Req() req: any,
+    @Body('filename') filename: string,
+  ) {
+    if (!filename) {
+      return { success: false, message: 'Nom de fichier requis' };
+    }
+
+    // Clé dans le bucket chapters : events/{eventId}/{userId}/{timestamp}-{filename}
+    const key = `events/${id}/${req.user.id}/${Date.now()}-${filename}`;
+    const upload = await this.storage.getUploadUrl(key, 'chapters');
+
+    return { success: true, data: { key, ...upload } };
   }
 
   // ============================================
