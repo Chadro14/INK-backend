@@ -167,7 +167,7 @@ export class EventsService {
 
   // ============================================
   // RÉCUPÉRER UN ÉVÉNEMENT PAR ID
-  // ✅ Signature des images + userVoted par soumission
+  // ✅ Signature des images + userVoted + infos créateur complètes
   // ============================================
   async getEventById(eventId: string, userId?: string) {
     const event = await this.prisma.event.findUnique({
@@ -186,6 +186,9 @@ export class EventsService {
                 id: true,
                 username: true,
                 avatarUrl: true,
+                avatarColor: true, // ✅ AJOUT
+                isCertified: true, // ✅ AJOUT
+                badgeColor: true,  // ✅ AJOUT
               },
             },
             manga: {
@@ -245,7 +248,25 @@ export class EventsService {
           }
         }
 
-        // ✅ Vérifier si l'utilisateur a voté pour cette soumission
+        // Signer la couverture du manga si présente
+        let signedMangaCoverUrl = submission.manga?.coverUrl;
+        if (
+          submission.manga?.coverUrl &&
+          !submission.manga.coverUrl.startsWith('http://') &&
+          !submission.manga.coverUrl.startsWith('https://')
+        ) {
+          try {
+            signedMangaCoverUrl = await this.storage.getSignedUrl(
+              submission.manga.coverUrl,
+              3600 * 24 * 7,
+              'chapters',
+            );
+          } catch (error) {
+            console.error('Erreur signature manga coverUrl:', error);
+          }
+        }
+
+        // ✅ Vérifier si l'utilisateur a voté
         let userVoted = false;
         let userVoteType: string | null = null;
 
@@ -268,6 +289,9 @@ export class EventsService {
         return {
           ...submission,
           imageUrl: signedImageUrl,
+          manga: submission.manga
+            ? { ...submission.manga, coverUrl: signedMangaCoverUrl }
+            : null,
           userVoted,
           userVoteType,
         };
