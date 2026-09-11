@@ -11,6 +11,7 @@ import {
   Req,
 } from '@nestjs/common';
 import { ReelsService } from './reels.service';
+import { PrismaService } from '../../prisma/prisma.service';
 import { JwtAuthGuard } from '../../common/guards/jwt-auth.guard';
 import { OptionalJwtAuthGuard } from '../../common/guards/optional-jwt-auth.guard';
 import { CreateReelDto } from './dto/create-reel.dto';
@@ -18,10 +19,13 @@ import { UpdateReelDto } from './dto/update-reel.dto';
 
 @Controller('reels')
 export class ReelsController {
-  constructor(private readonly reelsService: ReelsService) {}
+  constructor(
+    private readonly reelsService: ReelsService,
+    private prisma: PrismaService, // ✅ AJOUT pour la recherche d'utilisateurs
+  ) {}
 
   // ============================================
-  // 1. FEED DES REELS — ✅ GUARD OPTIONNEL
+  // 1. FEED DES REELS
   // ============================================
   @Get()
   @UseGuards(OptionalJwtAuthGuard)
@@ -40,35 +44,64 @@ export class ReelsController {
   }
 
   // ============================================
-  // 2. REELS D'UN UTILISATEUR — ✅ GUARD OPTIONNEL
+  // 2. RECHERCHE D'UTILISATEURS (pour mentions @)
+  // ✅ DOIT ÊTRE AVANT @Get(':id')
+  // ============================================
+  @Get('search/users')
+  @UseGuards(JwtAuthGuard)
+  async searchUsers(@Query('q') q: string, @Req() req: any) {
+    if (!q || q.trim().length < 2) {
+      return { success: true, data: [] };
+    }
+
+    const users = await this.prisma.user.findMany({
+      where: {
+        AND: [
+          { id: { not: req.user.id } },
+          {
+            OR: [{ username: { contains: q, mode: 'insensitive' } }],
+          },
+        ],
+      },
+      select: {
+        id: true,
+        username: true,
+        avatarUrl: true,
+        avatarColor: true,
+        isCertified: true,
+        badgeColor: true,
+      },
+      take: 10,
+      orderBy: { username: 'asc' },
+    });
+
+    return { success: true, data: users };
+  }
+
+  // ============================================
+  // 3. REELS D'UN UTILISATEUR
   // ============================================
   @Get('user/:userId')
   @UseGuards(OptionalJwtAuthGuard)
-  async getUserReels(
-    @Param('userId') userId: string,
-    @Req() req?: any,
-  ) {
+  async getUserReels(@Param('userId') userId: string, @Req() req?: any) {
     const viewerId = req?.user?.id || null;
     const reels = await this.reelsService.getUserReels(userId, viewerId);
     return { success: true, data: reels };
   }
 
   // ============================================
-  // 3. DÉTAIL D'UN REEL — ✅ GUARD OPTIONNEL
+  // 4. DÉTAIL D'UN REEL
   // ============================================
   @Get(':id')
   @UseGuards(OptionalJwtAuthGuard)
-  async getReel(
-    @Param('id') id: string,
-    @Req() req?: any,
-  ) {
+  async getReel(@Param('id') id: string, @Req() req?: any) {
     const userId = req?.user?.id || null;
     const reel = await this.reelsService.findById(id, userId);
     return { success: true, data: reel };
   }
 
   // ============================================
-  // 4. CRÉER UN REEL
+  // 5. CRÉER UN REEL
   // ============================================
   @Post()
   @UseGuards(JwtAuthGuard)
@@ -78,7 +111,7 @@ export class ReelsController {
   }
 
   // ============================================
-  // 5. METTRE À JOUR UN REEL
+  // 6. METTRE À JOUR UN REEL
   // ============================================
   @Put(':id')
   @UseGuards(JwtAuthGuard)
@@ -92,7 +125,7 @@ export class ReelsController {
   }
 
   // ============================================
-  // 6. SUPPRIMER UN REEL
+  // 7. SUPPRIMER UN REEL
   // ============================================
   @Delete(':id')
   @UseGuards(JwtAuthGuard)
@@ -102,7 +135,7 @@ export class ReelsController {
   }
 
   // ============================================
-  // 7. LIKER UN REEL
+  // 8. LIKER UN REEL
   // ============================================
   @Post(':id/like')
   @UseGuards(JwtAuthGuard)
@@ -112,7 +145,7 @@ export class ReelsController {
   }
 
   // ============================================
-  // 8. BOOKMARK UN REEL
+  // 9. BOOKMARK UN REEL
   // ============================================
   @Post(':id/bookmark')
   @UseGuards(JwtAuthGuard)
@@ -122,7 +155,7 @@ export class ReelsController {
   }
 
   // ============================================
-  // 9. COMPTER UNE VUE — ✅ GUARD OPTIONNEL
+  // 10. COMPTER UNE VUE
   // ============================================
   @Post(':id/view')
   @UseGuards(OptionalJwtAuthGuard)
@@ -141,7 +174,7 @@ export class ReelsController {
   }
 
   // ============================================
-  // 10. URL D'UPLOAD POUR VIDÉO
+  // 11. URL D'UPLOAD POUR VIDÉO
   // ============================================
   @Post('upload-url')
   @UseGuards(JwtAuthGuard)
@@ -154,7 +187,7 @@ export class ReelsController {
   }
 
   // ============================================
-  // 11. AJOUTER UN COMMENTAIRE
+  // 12. AJOUTER UN COMMENTAIRE
   // ============================================
   @Post(':id/comments')
   @UseGuards(JwtAuthGuard)
@@ -177,7 +210,7 @@ export class ReelsController {
   }
 
   // ============================================
-  // 12. RÉCUPÉRER LES COMMENTAIRES D'UN REEL — ✅ GUARD OPTIONNEL
+  // 13. RÉCUPÉRER LES COMMENTAIRES D'UN REEL
   // ============================================
   @Get(':id/comments')
   @UseGuards(OptionalJwtAuthGuard)
@@ -198,7 +231,7 @@ export class ReelsController {
   }
 
   // ============================================
-  // 13. LIKER UN COMMENTAIRE
+  // 14. LIKER UN COMMENTAIRE
   // ============================================
   @Post('comments/:commentId/like')
   @UseGuards(JwtAuthGuard)
@@ -211,7 +244,7 @@ export class ReelsController {
   }
 
   // ============================================
-  // 14. SUPPRIMER UN COMMENTAIRE
+  // 15. SUPPRIMER UN COMMENTAIRE
   // ============================================
   @Delete('comments/:commentId')
   @UseGuards(JwtAuthGuard)
@@ -224,7 +257,7 @@ export class ReelsController {
   }
 
   // ============================================
-  // 15. VÉRIFIER SI L'UTILISATEUR A LIKÉ UN COMMENTAIRE
+  // 16. VÉRIFIER SI L'UTILISATEUR A LIKÉ UN COMMENTAIRE
   // ============================================
   @Get('comments/:commentId/liked')
   @UseGuards(JwtAuthGuard)
