@@ -45,7 +45,7 @@ export class ReelsController {
 
   // ============================================
   // 2. RECHERCHE D'UTILISATEURS (pour mentions @)
-  // ✅ DOIT ÊTRE AVANT @Get(':id')
+  // ✅ DOIT ÊTRE AVANT @Get(':id') sinon capturé
   // ============================================
   @Get('search/users')
   @UseGuards(JwtAuthGuard)
