@@ -5,6 +5,9 @@ import { PrismaService } from '../../prisma/prisma.service';
 export class EventRankingService {
   constructor(private prisma: PrismaService) {}
 
+  // ============================================
+  // GÉNÉRER LE CLASSEMENT D'UN ÉVÉNEMENT
+  // ============================================
   async generateRanking(eventId: string) {
     const event = await this.prisma.event.findUnique({
       where: { id: eventId },
@@ -16,6 +19,7 @@ export class EventRankingService {
                 id: true,
                 username: true,
                 avatarUrl: true,
+                avatarColor: true,
                 isCertified: true,
                 badgeColor: true,
               },
@@ -30,12 +34,18 @@ export class EventRankingService {
       throw new Error('Événement non trouvé');
     }
 
+    // Supprimer l'ancien classement
     await this.prisma.eventRanking.deleteMany({
       where: { eventId },
     });
 
+    // Calculer le score pour chaque participation
     const rankings = event.participations.map((participation) => {
-      const voteScore = participation.votesReceived.reduce(
+      const votesReceived = participation.votesReceived || [];
+      const totalVotes = votesReceived.length;
+
+      // Score pondéré = somme des poids (ou 1 par vote par défaut)
+      const weightedScore = votesReceived.reduce(
         (sum, vote) => sum + (vote.weight || 1),
         0,
       );
@@ -44,17 +54,20 @@ export class EventRankingService {
         eventId,
         userId: participation.userId,
         participationId: participation.id,
-        score: voteScore * 10,
+        score: weightedScore,
         rank: 0,
         metrics: {
-          votes: voteScore,
+          votes: totalVotes,           // ✅ Nombre de votes
+          weightedScore: weightedScore, // ✅ Score pondéré
         },
         user: participation.user,
       };
     });
 
+    // Trier par score décroissant
     rankings.sort((a, b) => b.score - a.score);
 
+    // Assigner le rang
     const ranked = rankings.map((item, index) => ({
       ...item,
       rank: index + 1,
