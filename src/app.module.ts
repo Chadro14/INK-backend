@@ -1,6 +1,7 @@
 // src/app.module.ts
 import { Module } from '@nestjs/common';
 import { ConfigModule } from '@nestjs/config';
+import { ScheduleModule } from '@nestjs/schedule'; // ✅ AJOUT
 import { CommonModule } from './common/common.module';
 import { AuthModule } from './modules/auth/auth.module';
 import { UsersModule } from './modules/users/users.module';
@@ -29,7 +30,7 @@ import { ManasModule } from './modules/manas/manas.module';
 import { QrModule } from './modules/qr/qr.module';
 import { TicketsModule } from './modules/tickets/tickets.module';
 import { BadgesModule } from './modules/badges/badges.module';
-import { ReelsModule } from './modules/reels/reels.module'; // ✅ AJOUTÉ
+import { ReelsModule } from './modules/reels/reels.module';
 
 @Module({
   imports: [
@@ -37,6 +38,7 @@ import { ReelsModule } from './modules/reels/reels.module'; // ✅ AJOUTÉ
       isGlobal: true,
       envFilePath: '.env',
     }),
+    ScheduleModule.forRoot(), // ✅ AJOUT — Active les crons
     CommonModule,
     PrismaModule,
     AuthModule,
@@ -65,7 +67,7 @@ import { ReelsModule } from './modules/reels/reels.module'; // ✅ AJOUTÉ
     QrModule,
     TicketsModule,
     BadgesModule,
-    ReelsModule, // ✅ AJOUTÉ
+    ReelsModule,
   ],
 })
 export class AppModule {}
