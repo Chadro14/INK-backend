@@ -58,6 +58,7 @@ export class ReelsService {
 
   // ============================================
   // 1. CRÉER UN REEL
+  // ✅ Gère : trim, scheduledAt, mentions + notifications
   // ============================================
   async create(userId: string, dto: CreateReelDto) {
     // ✅ Vérifications des liens si fournis
@@ -93,19 +94,41 @@ export class ReelsService {
       if (!creator) throw new BadRequestException('Créateur non trouvé');
     }
 
-    return this.prisma.reel.create({
+    // ✅ Déterminer le statut (programmé ou publié)
+    let status: ReelStatus = ReelStatus.PUBLISHED;
+    let publishedAt: Date | null = new Date();
+
+    if (dto.scheduledAt) {
+      const scheduledDate = new Date(dto.scheduledAt);
+      if (scheduledDate > new Date()) {
+        status = ReelStatus.SCHEDULED;
+        publishedAt = null;
+      }
+    }
+
+    // ✅ Créer le Reel
+    const reel = await this.prisma.reel.create({
       data: {
         title: dto.title,
         description: dto.description || null,
         videoUrl: dto.videoUrl,
         thumbnailUrl: dto.thumbnailUrl || null,
         duration: dto.duration || null,
+
+        // ✅ Trim virtuel
+        trimStart: dto.trimStart ?? 0,
+        trimEnd: dto.trimEnd ?? null,
+
         musicTitle: dto.musicTitle || null,
         musicArtist: dto.musicArtist || null,
         tags: dto.tags || [],
         isPrivate: dto.isPrivate || false,
         authorId: userId,
-        publishedAt: new Date(),
+
+        // ✅ Statut & programmation
+        status,
+        scheduledAt: dto.scheduledAt ? new Date(dto.scheduledAt) : null,
+        publishedAt,
 
         // ✅ Nouveaux champs
         type: dto.type || ReelType.OTHER,
@@ -117,6 +140,43 @@ export class ReelsService {
       },
       include: REEL_RELATIONS,
     });
+
+    // ✅ Créer les mentions + notifications
+    if (dto.mentionIds && dto.mentionIds.length > 0) {
+      // Filtrer : ne pas se mentionner soi-même + éviter les doublons
+      const uniqueMentionIds = Array.from(new Set(dto.mentionIds)).filter(
+        (id) => id !== userId,
+      );
+
+      if (uniqueMentionIds.length > 0) {
+        // Créer les mentions
+        await this.prisma.reelMention.createMany({
+          data: uniqueMentionIds.map((mentionId) => ({
+            reelId: reel.id,
+            userId: mentionId,
+          })),
+          skipDuplicates: true,
+        });
+
+        // Envoyer une notification à chaque mentionné
+        await Promise.all(
+          uniqueMentionIds.map((mentionId) =>
+            this.prisma.notification.create({
+              data: {
+                userId: mentionId,
+                type: 'SYSTEM',
+                title: 'Vous avez été mentionné',
+                body: `@${reel.author.username} vous a mentionné dans un Reel`,
+                link: `/reels/${reel.id}`,
+                metadata: { reelId: reel.id, fromUserId: userId },
+              },
+            }),
+          ),
+        );
+      }
+    }
+
+    return reel;
   }
 
   // ============================================
@@ -139,16 +199,9 @@ export class ReelsService {
       isPrivate: false,
     };
 
-    // ✅ Filtres
-    if (filters?.type) {
-      where.type = filters.type;
-    }
-    if (filters?.mangaId) {
-      where.mangaId = filters.mangaId;
-    }
-    if (filters?.eventId) {
-      where.eventId = filters.eventId;
-    }
+    if (filters?.type) where.type = filters.type;
+    if (filters?.mangaId) where.mangaId = filters.mangaId;
+    if (filters?.eventId) where.eventId = filters.eventId;
 
     const [reels, total] = await Promise.all([
       this.prisma.reel.findMany({
@@ -176,19 +229,26 @@ export class ReelsService {
         let signedThumbnailUrl = reel.thumbnailUrl;
 
         try {
-          if (!reel.videoUrl.startsWith('http://') && !reel.videoUrl.startsWith('https://')) {
+          if (
+            !reel.videoUrl.startsWith('http://') &&
+            !reel.videoUrl.startsWith('https://')
+          ) {
             signedVideoUrl = await this.storage.getSignedUrl(
               reel.videoUrl,
               3600 * 24,
-              'chapters'
+              'chapters',
             );
           }
 
-          if (reel.thumbnailUrl && !reel.thumbnailUrl.startsWith('http://') && !reel.thumbnailUrl.startsWith('https://')) {
+          if (
+            reel.thumbnailUrl &&
+            !reel.thumbnailUrl.startsWith('http://') &&
+            !reel.thumbnailUrl.startsWith('https://')
+          ) {
             signedThumbnailUrl = await this.storage.getSignedUrl(
               reel.thumbnailUrl,
               3600 * 24 * 7,
-              'chapters'
+              'chapters',
             );
           }
         } catch (error) {
@@ -230,7 +290,7 @@ export class ReelsService {
           isLiked,
           isBookmarked,
         };
-      })
+      }),
     );
 
     return {
@@ -249,6 +309,11 @@ export class ReelsService {
       where: { id },
       include: {
         ...REEL_RELATIONS,
+        mentions: {
+          include: {
+            user: { select: AUTHOR_SELECT },
+          },
+        },
         _count: {
           select: {
             likes: true,
@@ -256,14 +321,18 @@ export class ReelsService {
             views: true,
           },
         },
-        likes: userId ? {
-          where: { userId },
-          select: { userId: true },
-        } : false,
-        bookmarks: userId ? {
-          where: { userId },
-          select: { userId: true },
-        } : false,
+        likes: userId
+          ? {
+              where: { userId },
+              select: { userId: true },
+            }
+          : false,
+        bookmarks: userId
+          ? {
+              where: { userId },
+              select: { userId: true },
+            }
+          : false,
       },
     });
 
@@ -279,19 +348,26 @@ export class ReelsService {
     let signedThumbnailUrl = reel.thumbnailUrl;
 
     try {
-      if (!reel.videoUrl.startsWith('http://') && !reel.videoUrl.startsWith('https://')) {
+      if (
+        !reel.videoUrl.startsWith('http://') &&
+        !reel.videoUrl.startsWith('https://')
+      ) {
         signedVideoUrl = await this.storage.getSignedUrl(
           reel.videoUrl,
           3600 * 24,
-          'chapters'
+          'chapters',
         );
       }
 
-      if (reel.thumbnailUrl && !reel.thumbnailUrl.startsWith('http://') && !reel.thumbnailUrl.startsWith('https://')) {
+      if (
+        reel.thumbnailUrl &&
+        !reel.thumbnailUrl.startsWith('http://') &&
+        !reel.thumbnailUrl.startsWith('https://')
+      ) {
         signedThumbnailUrl = await this.storage.getSignedUrl(
           reel.thumbnailUrl,
           3600 * 24 * 7,
-          'chapters'
+          'chapters',
         );
       }
     } catch (error) {
@@ -334,25 +410,57 @@ export class ReelsService {
     if (dto.videoUrl !== undefined) updateData.videoUrl = dto.videoUrl;
     if (dto.thumbnailUrl !== undefined) updateData.thumbnailUrl = dto.thumbnailUrl;
     if (dto.duration !== undefined) updateData.duration = dto.duration;
+    if (dto.trimStart !== undefined) updateData.trimStart = dto.trimStart;
+    if (dto.trimEnd !== undefined) updateData.trimEnd = dto.trimEnd;
     if (dto.musicTitle !== undefined) updateData.musicTitle = dto.musicTitle;
     if (dto.musicArtist !== undefined) updateData.musicArtist = dto.musicArtist;
     if (dto.tags !== undefined) updateData.tags = dto.tags;
     if (dto.isPrivate !== undefined) updateData.isPrivate = dto.isPrivate;
     if (dto.status !== undefined) updateData.status = dto.status;
+    if (dto.scheduledAt !== undefined) {
+      updateData.scheduledAt = dto.scheduledAt
+        ? new Date(dto.scheduledAt)
+        : null;
+    }
 
-    // ✅ Nouveaux champs
     if (dto.type !== undefined) updateData.type = dto.type;
     if (dto.ctaLabel !== undefined) updateData.ctaLabel = dto.ctaLabel;
     if (dto.mangaId !== undefined) updateData.mangaId = dto.mangaId;
     if (dto.chapterId !== undefined) updateData.chapterId = dto.chapterId;
     if (dto.eventId !== undefined) updateData.eventId = dto.eventId;
-    if (dto.featuredCreatorId !== undefined) updateData.featuredCreatorId = dto.featuredCreatorId;
+    if (dto.featuredCreatorId !== undefined)
+      updateData.featuredCreatorId = dto.featuredCreatorId;
 
-    return this.prisma.reel.update({
+    const updatedReel = await this.prisma.reel.update({
       where: { id },
       data: updateData,
       include: REEL_RELATIONS,
     });
+
+    // ✅ Mettre à jour les mentions si fournies
+    if (dto.mentionIds !== undefined) {
+      // Supprimer les anciennes mentions
+      await this.prisma.reelMention.deleteMany({
+        where: { reelId: id },
+      });
+
+      // Créer les nouvelles mentions
+      const uniqueMentionIds = Array.from(new Set(dto.mentionIds)).filter(
+        (mentionId) => mentionId !== userId,
+      );
+
+      if (uniqueMentionIds.length > 0) {
+        await this.prisma.reelMention.createMany({
+          data: uniqueMentionIds.map((mentionId) => ({
+            reelId: id,
+            userId: mentionId,
+          })),
+          skipDuplicates: true,
+        });
+      }
+    }
+
+    return updatedReel;
   }
 
   // ============================================
@@ -523,7 +631,9 @@ export class ReelsService {
   async getUserReels(userId: string, viewerId?: string) {
     const where = {
       authorId: userId,
-      ...(viewerId !== userId ? { isPrivate: false, status: ReelStatus.PUBLISHED } : {}),
+      ...(viewerId !== userId
+        ? { isPrivate: false, status: ReelStatus.PUBLISHED }
+        : {}),
     };
 
     const reels = await this.prisma.reel.findMany({
@@ -559,7 +669,12 @@ export class ReelsService {
   // ============================================
   // 11. AJOUTER UN COMMENTAIRE
   // ============================================
-  async addComment(reelId: string, userId: string, content: string, parentId?: string) {
+  async addComment(
+    reelId: string,
+    userId: string,
+    content: string,
+    parentId?: string,
+  ) {
     const reel = await this.prisma.reel.findUnique({
       where: { id: reelId },
       select: { id: true },
@@ -577,7 +692,9 @@ export class ReelsService {
         throw new NotFoundException('Commentaire parent non trouvé');
       }
       if (parent.reelId !== reelId) {
-        throw new BadRequestException('Le commentaire parent ne correspond pas à ce reel');
+        throw new BadRequestException(
+          'Le commentaire parent ne correspond pas à ce reel',
+        );
       }
     }
 
@@ -669,12 +786,15 @@ export class ReelsService {
       orderBy: { createdAt: 'asc' },
     });
 
-    const repliesByParent = replies.reduce((acc, reply) => {
-      const parentId = reply.parentId!;
-      if (!acc[parentId]) acc[parentId] = [];
-      acc[parentId].push(reply);
-      return acc;
-    }, {} as Record<string, typeof replies>);
+    const repliesByParent = replies.reduce(
+      (acc, reply) => {
+        const parentId = reply.parentId!;
+        if (!acc[parentId]) acc[parentId] = [];
+        acc[parentId].push(reply);
+        return acc;
+      },
+      {} as Record<string, typeof replies>,
+    );
 
     let userLikes: string[] = [];
     if (userId) {
@@ -744,70 +864,4 @@ export class ReelsService {
       return { liked: false, likesCount: updated.likesCount };
     }
 
-    await this.prisma.reelCommentLike.create({
-      data: { userId, commentId },
-    });
-
-    const updated = await this.prisma.reelComment.update({
-      where: { id: commentId },
-      data: { likesCount: { increment: 1 } },
-      select: { likesCount: true },
-    });
-
-    return { liked: true, likesCount: updated.likesCount };
-  }
-
-  // ============================================
-  // 14. SUPPRIMER UN COMMENTAIRE
-  // ============================================
-  async deleteComment(commentId: string, userId: string) {
-    const comment = await this.prisma.reelComment.findUnique({
-      where: { id: commentId },
-      select: { userId: true, reelId: true },
-    });
-
-    if (!comment) {
-      throw new NotFoundException('Commentaire non trouvé');
-    }
-
-    const user = await this.prisma.user.findUnique({
-      where: { id: userId },
-      select: { role: true },
-    });
-
-    if (comment.userId !== userId && user?.role !== 'ADMIN') {
-      throw new ForbiddenException('Vous ne pouvez pas supprimer ce commentaire');
-    }
-
-    await this.prisma.reelComment.deleteMany({
-      where: { parentId: commentId },
-    });
-
-    await this.prisma.reelComment.delete({
-      where: { id: commentId },
-    });
-
-    await this.prisma.reel.update({
-      where: { id: comment.reelId },
-      data: { commentsCount: { decrement: 1 } },
-    });
-
-    return { message: 'Commentaire supprimé avec succès' };
-  }
-
-  // ============================================
-  // 15. VÉRIFIER SI L'UTILISATEUR A LIKÉ UN COMMENTAIRE
-  // ============================================
-  async hasLikedComment(commentId: string, userId: string) {
-    const like = await this.prisma.reelCommentLike.findUnique({
-      where: {
-        userId_commentId: {
-          userId,
-          commentId,
-        },
-      },
-    });
-
-    return { isLiked: !!like };
-  }
-}
+    await this.prisma.reelComment
