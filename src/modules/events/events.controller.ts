@@ -24,8 +24,8 @@ export class EventsController {
   constructor(private eventsService: EventsService) {}
 
   // ============================================
-  // LISTE DES ÉVÉNEMENTS AVEC FILTRE
-  // ✅ GUARD OPTIONNEL — pour personnaliser si connecté
+  // LISTE DES ÉVÉNEMENTS
+  // ✅ Guard optionnel : permet d'avoir userParticipation si connecté
   // ============================================
   @Get()
   @UseGuards(OptionalJwtAuthGuard)
@@ -40,7 +40,7 @@ export class EventsController {
 
   // ============================================
   // RÉCUPÉRER UN ÉVÉNEMENT PAR ID
-  // ✅ GUARD OPTIONNEL — pour renvoyer userParticipation
+  // ✅ Guard optionnel : renvoie userParticipation si connecté
   // ============================================
   @Get(':id')
   @UseGuards(OptionalJwtAuthGuard)
@@ -62,7 +62,7 @@ export class EventsController {
 
   // ============================================
   // RÉCUPÉRER LE CLASSEMENT
-  // ✅ GUARD OPTIONNEL
+  // ✅ Guard optionnel
   // ============================================
   @Get(':id/ranking')
   @UseGuards(OptionalJwtAuthGuard)
@@ -71,7 +71,6 @@ export class EventsController {
     @Query('limit') limit?: string,
     @Req() req?: any,
   ) {
-    const userId = req?.user?.id || null;
     const rankings = await this.eventsService.getRanking(
       id,
       limit ? parseInt(limit) : 20,
