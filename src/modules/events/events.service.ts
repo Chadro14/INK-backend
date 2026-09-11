@@ -5,6 +5,7 @@ import {
   ForbiddenException,
 } from '@nestjs/common';
 import { PrismaService } from '../../prisma/prisma.service';
+import { StorageService } from '../../common/services/storage.service'; // ✅ AJOUT
 import { CreateEventDto } from './dto/create-event.dto';
 import { UpdateEventDto } from './dto/update-event.dto';
 import { EventRankingService } from './event-ranking.service';
@@ -13,7 +14,7 @@ import { NotificationsService } from '../notifications/notifications.service';
 import { EventProgressService } from './event-progress.service';
 import { SubmitEventDto } from './dto/submit-event.dto';
 import { VoteEventDto } from './dto/vote-event.dto';
-import { VoteType } from '@prisma/client'; // ✅ AJOUTER CET IMPORT
+import { VoteType } from '@prisma/client';
 
 @Injectable()
 export class EventsService {
@@ -23,6 +24,7 @@ export class EventsService {
     private rewardsService: EventRewardsService,
     private notificationsService: NotificationsService,
     private progressService: EventProgressService,
+    private storage: StorageService, // ✅ AJOUT
   ) {}
 
   // ============================================
@@ -119,6 +121,31 @@ export class EventsService {
       orderBy: { startDate: 'asc' },
     });
 
+    // ✅ Signer les coverUrl si présents
+    const signedEvents = await Promise.all(
+      events.map(async (event) => {
+        let signedCoverUrl = event.coverUrl;
+
+        if (
+          event.coverUrl &&
+          !event.coverUrl.startsWith('http://') &&
+          !event.coverUrl.startsWith('https://')
+        ) {
+          try {
+            signedCoverUrl = await this.storage.getSignedUrl(
+              event.coverUrl,
+              3600 * 24 * 7,
+              'chapters',
+            );
+          } catch (error) {
+            console.error('Erreur signature coverUrl event:', error);
+          }
+        }
+
+        return { ...event, coverUrl: signedCoverUrl };
+      }),
+    );
+
     if (userId) {
       const participations = await this.prisma.eventParticipation.findMany({
         where: {
@@ -127,7 +154,7 @@ export class EventsService {
         },
       });
 
-      return events.map((event) => ({
+      return signedEvents.map((event) => ({
         ...event,
         userParticipation: participations.find(
           (p) => p.eventId === event.id,
@@ -135,11 +162,12 @@ export class EventsService {
       }));
     }
 
-    return events;
+    return signedEvents;
   }
 
   // ============================================
   // RÉCUPÉRER UN ÉVÉNEMENT PAR ID
+  // ✅ Signature des images des soumissions
   // ============================================
   async getEventById(eventId: string, userId?: string) {
     const event = await this.prisma.event.findUnique({
@@ -177,6 +205,52 @@ export class EventsService {
       throw new NotFoundException('Événement non trouvé');
     }
 
+    // ✅ Signer coverUrl de l'événement
+    let signedEventCoverUrl = event.coverUrl;
+    if (
+      event.coverUrl &&
+      !event.coverUrl.startsWith('http://') &&
+      !event.coverUrl.startsWith('https://')
+    ) {
+      try {
+        signedEventCoverUrl = await this.storage.getSignedUrl(
+          event.coverUrl,
+          3600 * 24 * 7,
+          'chapters',
+        );
+      } catch (error) {
+        console.error('Erreur signature coverUrl event:', error);
+      }
+    }
+
+    // ✅ Signer les images des soumissions
+    const signedSubmissions = await Promise.all(
+      event.submissions.map(async (submission) => {
+        let signedImageUrl = submission.imageUrl;
+
+        if (
+          submission.imageUrl &&
+          !submission.imageUrl.startsWith('http://') &&
+          !submission.imageUrl.startsWith('https://')
+        ) {
+          try {
+            signedImageUrl = await this.storage.getSignedUrl(
+              submission.imageUrl,
+              3600 * 24 * 7,
+              'chapters',
+            );
+          } catch (error) {
+            console.error('Erreur signature image submission:', error);
+          }
+        }
+
+        return {
+          ...submission,
+          imageUrl: signedImageUrl,
+        };
+      }),
+    );
+
     let userParticipation = null;
     if (userId) {
       userParticipation = await this.prisma.eventParticipation.findUnique({
@@ -196,6 +270,8 @@ export class EventsService {
 
     return {
       ...event,
+      coverUrl: signedEventCoverUrl,
+      submissions: signedSubmissions,
       userParticipation,
       userProgress,
     };
@@ -234,7 +310,7 @@ export class EventsService {
       throw new BadRequestException('Vous participez déjà à cet événement');
     }
 
-    const config = event.config as any || {};
+    const config = (event.config as any) || {};
     const maxParticipants = config.maxParticipants || 999999;
     const currentParticipants = await this.prisma.eventParticipation.count({
       where: { eventId },
@@ -265,13 +341,9 @@ export class EventsService {
   }
 
   // ============================================
-  // SOUMETTRE UNE ŒUVRE À UN ÉVÉNEMENT
+  // SOUMETTRE UNE ŒUVRE
   // ============================================
-  async submitToEvent(
-    userId: string,
-    eventId: string,
-    dto: SubmitEventDto,
-  ) {
+  async submitToEvent(userId: string, eventId: string, dto: SubmitEventDto) {
     const event = await this.prisma.event.findUnique({
       where: { id: eventId },
     });
@@ -335,13 +407,9 @@ export class EventsService {
   }
 
   // ============================================
-  // VOTER POUR UNE SOUMISSION
+  // VOTER
   // ============================================
-  async voteForSubmission(
-    userId: string,
-    eventId: string,
-    dto: VoteEventDto,
-  ) {
+  async voteForSubmission(userId: string, eventId: string, dto: VoteEventDto) {
     const event = await this.prisma.event.findUnique({
       where: { id: eventId },
     });
@@ -366,7 +434,9 @@ export class EventsService {
     }
 
     if (submission.eventId !== eventId) {
-      throw new BadRequestException('Cette soumission ne fait pas partie de cet événement');
+      throw new BadRequestException(
+        'Cette soumission ne fait pas partie de cet événement',
+      );
     }
 
     const participation = await this.prisma.eventParticipation.findUnique({
@@ -385,7 +455,9 @@ export class EventsService {
     }
 
     if (submission.userId === userId) {
-      throw new BadRequestException('Vous ne pouvez pas voter pour votre propre soumission');
+      throw new BadRequestException(
+        'Vous ne pouvez pas voter pour votre propre soumission',
+      );
     }
 
     const existingVote = await this.prisma.eventVote.findFirst({
@@ -400,17 +472,15 @@ export class EventsService {
       throw new BadRequestException('Vous avez déjà voté pour cette soumission');
     }
 
-    // ✅ CORRECTION : Utiliser l'enum VoteType de Prisma
     const vote = await this.prisma.eventVote.create({
       data: {
         userId,
         eventId,
         participationId: submission.participationId,
-        voteType: dto.voteType, // ✅ Maintenant compatible
+        voteType: dto.voteType,
       },
     });
 
-    // Mettre à jour le score de la soumission
     let scoreIncrement = 0;
     switch (dto.voteType) {
       case VoteType.UP:
@@ -485,7 +555,7 @@ export class EventsService {
   }
 
   // ============================================
-  // RÉCUPÉRER LE CLASSEMENT
+  // CLASSEMENT
   // ============================================
   async getRanking(eventId: string, limit: number = 20) {
     const event = await this.prisma.event.findUnique({
@@ -525,7 +595,7 @@ export class EventsService {
   }
 
   // ============================================
-  // RÉCUPÉRER LA PROGRESSION DE L'UTILISATEUR
+  // PROGRESSION
   // ============================================
   async getUserEventProgress(userId: string, eventId: string) {
     return this.progressService.getUserProgress(userId, eventId);
@@ -619,7 +689,7 @@ export class EventsService {
   }
 
   // ============================================
-  // RÉCUPÉRER LES PARTICIPANTS D'UN ÉVÉNEMENT
+  // RÉCUPÉRER LES PARTICIPANTS
   // ============================================
   async getParticipants(eventId: string, page: number = 1, limit: number = 20) {
     const skip = (page - 1) * limit;
@@ -657,7 +727,7 @@ export class EventsService {
   }
 
   // ============================================
-  // METTRE À JOUR LA PROGRESSION D'UN PARTICIPANT
+  // METTRE À JOUR LA PROGRESSION
   // ============================================
   async updateProgress(userId: string, eventId: string, progress: any) {
     const participation = await this.prisma.eventParticipation.findUnique({
