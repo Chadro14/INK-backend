@@ -5,7 +5,7 @@ import {
   ForbiddenException,
 } from '@nestjs/common';
 import { PrismaService } from '../../prisma/prisma.service';
-import { StorageService } from '../../common/services/storage.service'; // ✅ AJOUT
+import { StorageService } from '../../common/services/storage.service';
 import { CreateEventDto } from './dto/create-event.dto';
 import { UpdateEventDto } from './dto/update-event.dto';
 import { EventRankingService } from './event-ranking.service';
@@ -24,7 +24,7 @@ export class EventsService {
     private rewardsService: EventRewardsService,
     private notificationsService: NotificationsService,
     private progressService: EventProgressService,
-    private storage: StorageService, // ✅ AJOUT
+    private storage: StorageService,
   ) {}
 
   // ============================================
@@ -167,7 +167,7 @@ export class EventsService {
 
   // ============================================
   // RÉCUPÉRER UN ÉVÉNEMENT PAR ID
-  // ✅ Signature des images des soumissions
+  // ✅ Signature des images + userVoted par soumission
   // ============================================
   async getEventById(eventId: string, userId?: string) {
     const event = await this.prisma.event.findUnique({
@@ -223,9 +223,10 @@ export class EventsService {
       }
     }
 
-    // ✅ Signer les images des soumissions
+    // ✅ Signer les images + vérifier si l'utilisateur a voté
     const signedSubmissions = await Promise.all(
       event.submissions.map(async (submission) => {
+        // Signer l'image
         let signedImageUrl = submission.imageUrl;
 
         if (
@@ -244,9 +245,31 @@ export class EventsService {
           }
         }
 
+        // ✅ Vérifier si l'utilisateur a voté pour cette soumission
+        let userVoted = false;
+        let userVoteType: string | null = null;
+
+        if (userId) {
+          const existingVote = await this.prisma.eventVote.findFirst({
+            where: {
+              userId,
+              eventId: event.id,
+              participationId: submission.participationId,
+            },
+            select: { voteType: true },
+          });
+
+          if (existingVote) {
+            userVoted = true;
+            userVoteType = existingVote.voteType;
+          }
+        }
+
         return {
           ...submission,
           imageUrl: signedImageUrl,
+          userVoted,
+          userVoteType,
         };
       }),
     );
