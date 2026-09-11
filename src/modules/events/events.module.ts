@@ -10,6 +10,7 @@ import { PrismaModule } from '../../prisma/prisma.module';
 import { ManasModule } from '../manas/manas.module';
 import { TicketsModule } from '../tickets/tickets.module';
 import { NotificationsModule } from '../notifications/notifications.module';
+import { StorageService } from '../../common/services/storage.service'; // ✅ AJOUT
 
 @Module({
   imports: [
@@ -25,7 +26,8 @@ import { NotificationsModule } from '../notifications/notifications.module';
     EventVotingService,
     EventRewardsService,
     EventRankingService,
-    EventProgressService, // ✅ AJOUTÉ
+    EventProgressService,
+    StorageService, // ✅ AJOUT
   ],
   exports: [
     EventsService,
@@ -33,7 +35,7 @@ import { NotificationsModule } from '../notifications/notifications.module';
     EventVotingService,
     EventRewardsService,
     EventRankingService,
-    EventProgressService, // ✅ AJOUTÉ
+    EventProgressService,
   ],
 })
 export class EventsModule {}
