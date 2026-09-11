@@ -167,7 +167,6 @@ export class EventsService {
 
   // ============================================
   // RÉCUPÉRER UN ÉVÉNEMENT PAR ID
-  // ✅ Signature des images + userVoted + infos créateur complètes
   // ============================================
   async getEventById(eventId: string, userId?: string) {
     const event = await this.prisma.event.findUnique({
@@ -186,9 +185,9 @@ export class EventsService {
                 id: true,
                 username: true,
                 avatarUrl: true,
-                avatarColor: true, // ✅ AJOUT
-                isCertified: true, // ✅ AJOUT
-                badgeColor: true,  // ✅ AJOUT
+                avatarColor: true,
+                isCertified: true,
+                badgeColor: true,
               },
             },
             manga: {
@@ -229,7 +228,6 @@ export class EventsService {
     // ✅ Signer les images + vérifier si l'utilisateur a voté
     const signedSubmissions = await Promise.all(
       event.submissions.map(async (submission) => {
-        // Signer l'image
         let signedImageUrl = submission.imageUrl;
 
         if (
@@ -248,7 +246,6 @@ export class EventsService {
           }
         }
 
-        // Signer la couverture du manga si présente
         let signedMangaCoverUrl = submission.manga?.coverUrl;
         if (
           submission.manga?.coverUrl &&
@@ -266,7 +263,6 @@ export class EventsService {
           }
         }
 
-        // ✅ Vérifier si l'utilisateur a voté
         let userVoted = false;
         let userVoteType: string | null = null;
 
@@ -378,7 +374,7 @@ export class EventsService {
     await this.notificationsService.create({
       userId,
       type: 'SYSTEM',
-      title: '🎉 Participation confirmée !',
+      title: 'Participation confirmée',
       body: `Vous participez maintenant à l'événement "${event.title}"`,
       link: `/events/${eventId}`,
       metadata: { eventId },
@@ -603,6 +599,7 @@ export class EventsService {
 
   // ============================================
   // CLASSEMENT
+  // ✅ Régénéré à chaque appel pour avoir les données à jour
   // ============================================
   async getRanking(eventId: string, limit: number = 20) {
     const event = await this.prisma.event.findUnique({
@@ -613,32 +610,11 @@ export class EventsService {
       throw new NotFoundException('Événement non trouvé');
     }
 
-    let rankings = await this.prisma.eventRanking.findMany({
-      where: { eventId },
-      include: {
-        user: {
-          select: {
-            id: true,
-            username: true,
-            avatarUrl: true,
-            isCertified: true,
-            badgeColor: true,
-          },
-        },
-      },
-      orderBy: { rank: 'asc' },
-      take: limit,
-    });
+    // ✅ TOUJOURS régénérer le classement pour avoir les données à jour
+    const generated = await this.rankingService.generateRanking(eventId);
 
-    if (rankings.length === 0) {
-      const generated = await this.rankingService.generateRanking(eventId);
-      return generated.map((item) => ({
-        ...item,
-        user: item.user || null,
-      }));
-    }
-
-    return rankings;
+    // Appliquer la limite
+    return generated.slice(0, limit);
   }
 
   // ============================================
