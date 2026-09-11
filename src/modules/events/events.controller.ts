@@ -12,6 +12,7 @@ import {
 } from '@nestjs/common';
 import { EventsService } from './events.service';
 import { JwtAuthGuard } from '../../common/guards/jwt-auth.guard';
+import { OptionalJwtAuthGuard } from '../../common/guards/optional-jwt-auth.guard';
 import { AdminGuard } from '../../common/guards/admin.guard';
 import { CreateEventDto } from './dto/create-event.dto';
 import { UpdateEventDto } from './dto/update-event.dto';
@@ -24,23 +25,27 @@ export class EventsController {
 
   // ============================================
   // LISTE DES ÉVÉNEMENTS AVEC FILTRE
+  // ✅ GUARD OPTIONNEL — pour personnaliser si connecté
   // ============================================
   @Get()
+  @UseGuards(OptionalJwtAuthGuard)
   async getEvents(
     @Req() req: any,
     @Query('filter') filter?: 'all' | 'active' | 'upcoming' | 'past',
   ) {
-    const userId = req.user?.id;
+    const userId = req.user?.id || null;
     const events = await this.eventsService.getEvents(userId, filter);
     return { success: true, data: events };
   }
 
   // ============================================
   // RÉCUPÉRER UN ÉVÉNEMENT PAR ID
+  // ✅ GUARD OPTIONNEL — pour renvoyer userParticipation
   // ============================================
   @Get(':id')
+  @UseGuards(OptionalJwtAuthGuard)
   async getEvent(@Param('id') id: string, @Req() req: any) {
-    const userId = req.user?.id;
+    const userId = req.user?.id || null;
     const event = await this.eventsService.getEventById(id, userId);
     return { success: true, data: event };
   }
@@ -57,9 +62,16 @@ export class EventsController {
 
   // ============================================
   // RÉCUPÉRER LE CLASSEMENT
+  // ✅ GUARD OPTIONNEL
   // ============================================
   @Get(':id/ranking')
-  async getRanking(@Param('id') id: string, @Query('limit') limit?: string) {
+  @UseGuards(OptionalJwtAuthGuard)
+  async getRanking(
+    @Param('id') id: string,
+    @Query('limit') limit?: string,
+    @Req() req?: any,
+  ) {
+    const userId = req?.user?.id || null;
     const rankings = await this.eventsService.getRanking(
       id,
       limit ? parseInt(limit) : 20,
