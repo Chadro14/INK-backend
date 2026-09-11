@@ -109,7 +109,8 @@ model User {
   reelViews          ReelView[]
   reelBookmarks      ReelBookmark[]
   reelCommentLikes   ReelCommentLike[]
-  featuredInReels    Reel[]  @relation("FeaturedInReels")  // ✅ NOUVEAU
+  featuredInReels    Reel[]  @relation("FeaturedInReels")
+  reelMentions       ReelMention[] // ✅ NOUVEAU
 
   createdAt          DateTime  @default(now())
   updatedAt          DateTime  @updatedAt
@@ -304,11 +305,8 @@ model Manga {
   views            View[]
   ticketUses       TicketUse[]
 
-  // ✅ ÉVÉNEMENTS
   eventSubmissions EventSubmission[]
-
-  // ✅ REELS
-  reels            Reel[]   // ✅ NOUVEAU
+  reels            Reel[]
 
   createdAt        DateTime @default(now())
   updatedAt        DateTime @updatedAt
@@ -353,11 +351,8 @@ model Chapter {
   views       View[]
   ticketUses  TicketUse[]
 
-  // ✅ ÉVÉNEMENTS
   eventSubmissions EventSubmission[]
-
-  // ✅ REELS
-  reels            Reel[]   // ✅ NOUVEAU
+  reels            Reel[]
 
   @@unique([mangaId, number])
   @@index([mangaId, publishedAt])
@@ -640,6 +635,7 @@ enum NotificationType {
   EVENT_ENDED
   EVENT_REWARD
   EVENT_REMINDER
+  REEL_MENTION    // ✅ NOUVEAU
 }
 
 // ============================================
@@ -863,9 +859,7 @@ model Event {
   votes          EventVote[]
   rankings       EventRanking[]
   submissions    EventSubmission[]
-
-  // ✅ REELS
-  reels          Reel[]   // ✅ NOUVEAU
+  reels          Reel[]
 
   @@index([type, startDate, endDate])
   @@index([isActive, startDate, endDate])
@@ -1047,11 +1041,12 @@ model UserBadge {
 
 enum ReelStatus {
   DRAFT
+  SCHEDULED    // ✅ NOUVEAU : Reel programmé
   PUBLISHED
   ARCHIVED
 }
 
-// ✅ NOUVEAU : Type de Reel (moteur de découverte)
+// ✅ Type de Reel (moteur de découverte)
 enum ReelType {
   // Mangas
   MANGA_TEASER
@@ -1087,6 +1082,11 @@ model Reel {
   videoUrl      String
   thumbnailUrl  String?
   duration      Int?
+  
+  // ✅ NOUVEAU : Trim virtuel (découpe sans recouper le fichier)
+  trimStart     Float?          @default(0)      // Début en secondes
+  trimEnd       Float?                           // Fin en secondes (null = fin de la vidéo)
+  
   viewsCount    Int             @default(0)
   likesCount    Int             @default(0)
   commentsCount Int             @default(0)
@@ -1101,6 +1101,9 @@ model Reel {
   status        ReelStatus      @default(PUBLISHED)
   isFeatured    Boolean         @default(false)
   isPrivate     Boolean         @default(false)
+  
+  // ✅ NOUVEAU : Publication programmée
+  scheduledAt   DateTime?       // Date de publication programmée
   
   // ✅ Type + CTA
   type          ReelType        @default(OTHER)
@@ -1131,6 +1134,7 @@ model Reel {
   likes         ReelLike[]
   views         ReelView[]
   bookmarks     ReelBookmark[]
+  mentions      ReelMention[]   // ✅ NOUVEAU : Mentions de créateurs
   
   @@index([authorId, createdAt])
   @@index([status, createdAt])
@@ -1140,6 +1144,7 @@ model Reel {
   @@index([viewsCount, likesCount])
   @@index([isFeatured])
   @@index([isOfficial])
+  @@index([scheduledAt, status])   // ✅ NOUVEAU : Pour le cron de publication
 }
 
 // ============================================
@@ -1236,4 +1241,21 @@ model ReelBookmark {
 
   @@unique([userId, reelId])
   @@index([userId, createdAt])
+}
+
+// ============================================
+// 📢 MENTIONS DANS LES REELS
+// ============================================
+
+model ReelMention {
+  id        String   @id @default(uuid())
+  reelId    String
+  reel      Reel     @relation(fields: [reelId], references: [id], onDelete: Cascade)
+  userId    String
+  user      User     @relation(fields: [userId], references: [id], onDelete: Cascade)
+  createdAt DateTime @default(now())
+
+  @@unique([reelId, userId])
+  @@index([userId, createdAt])
+  @@index([reelId])
 }
