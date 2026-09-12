@@ -63,7 +63,11 @@ model User {
   payments           Payment[]
   earnings           CreatorEarning[]
   payouts            Payout[]
-  notifications      Notification[]
+  
+  // ✅ NOTIFICATIONS : reçues et envoyées (relations nommées)
+  receivedNotifications Notification[] @relation("ReceivedNotifications")
+  sentNotifications     Notification[] @relation("SentNotifications")
+  
   watchHistory       InkStreamWatchHistory[]
   favorites          Favorite[]
   views              View[]
@@ -110,7 +114,7 @@ model User {
   reelBookmarks      ReelBookmark[]
   reelCommentLikes   ReelCommentLike[]
   featuredInReels    Reel[]  @relation("FeaturedInReels")
-  reelMentions       ReelMention[] // ✅ NOUVEAU
+  reelMentions       ReelMention[]
 
   createdAt          DateTime  @default(now())
   updatedAt          DateTime  @updatedAt
@@ -610,8 +614,15 @@ model InkStreamWatchHistory {
 // ============================================
 model Notification {
   id        String           @id @default(uuid())
+  
+  // ✅ Destinataire
   userId    String
-  user      User             @relation(fields: [userId], references: [id], onDelete: Cascade)
+  user      User             @relation("ReceivedNotifications", fields: [userId], references: [id], onDelete: Cascade)
+  
+  // ✅ Déclencheur (nullable pour les notifs système)
+  fromUserId String?
+  fromUser   User?          @relation("SentNotifications", fields: [fromUserId], references: [id], onDelete: SetNull)
+  
   type      NotificationType
   title     String
   body      String?
@@ -621,6 +632,7 @@ model Notification {
   createdAt DateTime         @default(now())
 
   @@index([userId, isRead, createdAt])
+  @@index([fromUserId])
 }
 
 enum NotificationType {
@@ -635,7 +647,7 @@ enum NotificationType {
   EVENT_ENDED
   EVENT_REWARD
   EVENT_REMINDER
-  REEL_MENTION    // ✅ NOUVEAU
+  REEL_MENTION
 }
 
 // ============================================
@@ -1041,26 +1053,22 @@ model UserBadge {
 
 enum ReelStatus {
   DRAFT
-  SCHEDULED    // ✅ NOUVEAU : Reel programmé
+  SCHEDULED
   PUBLISHED
   ARCHIVED
 }
 
-// ✅ Type de Reel (moteur de découverte)
 enum ReelType {
-  // Mangas
   MANGA_TEASER
   MANGA_CHARACTER
   MANGA_CHAPTER_PREVIEW
   MANGA_ANNOUNCEMENT
   MANGA_TRAILER
   
-  // Créateurs
   CREATOR_PORTFOLIO
   CREATOR_TIMELAPSE
   CREATOR_MAKING_OF
   
-  // Événements
   EVENT_PROMO
   EVENT_BATTLE
   EVENT_DRAWING_CHALLENGE
@@ -1068,10 +1076,8 @@ enum ReelType {
   INKDROP_AWARDS
   INKDROP_TOURNAMENT
   
-  // Plateforme
   INKDROP_OFFICIAL
   
-  // Générique
   OTHER
 }
 
@@ -1083,9 +1089,8 @@ model Reel {
   thumbnailUrl  String?
   duration      Int?
   
-  // ✅ NOUVEAU : Trim virtuel (découpe sans recouper le fichier)
-  trimStart     Float?          @default(0)      // Début en secondes
-  trimEnd       Float?                           // Fin en secondes (null = fin de la vidéo)
+  trimStart     Float?          @default(0)
+  trimEnd       Float?
   
   viewsCount    Int             @default(0)
   likesCount    Int             @default(0)
@@ -1102,16 +1107,13 @@ model Reel {
   isFeatured    Boolean         @default(false)
   isPrivate     Boolean         @default(false)
   
-  // ✅ NOUVEAU : Publication programmée
-  scheduledAt   DateTime?       // Date de publication programmée
+  scheduledAt   DateTime?
   
-  // ✅ Type + CTA
   type          ReelType        @default(OTHER)
   ctaLabel      String?
   isOfficial    Boolean         @default(false)
   isPromoted    Boolean         @default(false)
   
-  // ✅ Liens vers le contenu INKdrop
   mangaId           String?
   manga             Manga?    @relation(fields: [mangaId], references: [id], onDelete: SetNull)
   
@@ -1134,7 +1136,7 @@ model Reel {
   likes         ReelLike[]
   views         ReelView[]
   bookmarks     ReelBookmark[]
-  mentions      ReelMention[]   // ✅ NOUVEAU : Mentions de créateurs
+  mentions      ReelMention[]
   
   @@index([authorId, createdAt])
   @@index([status, createdAt])
@@ -1144,7 +1146,7 @@ model Reel {
   @@index([viewsCount, likesCount])
   @@index([isFeatured])
   @@index([isOfficial])
-  @@index([scheduledAt, status])   // ✅ NOUVEAU : Pour le cron de publication
+  @@index([scheduledAt, status])
 }
 
 // ============================================
