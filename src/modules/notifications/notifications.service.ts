@@ -1,42 +1,52 @@
-// src/modules/notifications/notifications.service.ts
 import { Injectable } from '@nestjs/common';
 import { PrismaService } from '../../prisma/prisma.service';
 import { NotificationType } from '@prisma/client';
+
+const FROM_USER_SELECT = {
+  id: true,
+  username: true,
+  avatarUrl: true,
+  avatarColor: true,
+  isCertified: true,
+  badgeColor: true,
+};
 
 @Injectable()
 export class NotificationsService {
   constructor(private prisma: PrismaService) {}
 
-  // ============================================
-  // CRÉER UNE NOTIFICATION - SIGNATURE CORRIGÉE
-  // ============================================
   async create(data: {
     userId: string;
+    fromUserId?: string;
     type: NotificationType;
     title: string;
     body?: string;
     link?: string;
     metadata?: any;
   }) {
-    // NETTOYAGE DES EMOJIS SANS SUPPRIMER LES ACCENTS
-    const cleanTitle = data.title.replace(/[\u{1F300}-\u{1FAFF}\u{2600}-\u{27BF}]/gu, '').trim();
-    const cleanBody = data.body ? data.body.replace(/[\u{1F300}-\u{1FAFF}\u{2600}-\u{27BF}]/gu, '').trim() : null;
+    const cleanTitle = data.title
+      .replace(/[\u{1F300}-\u{1FAFF}\u{2600}-\u{27BF}]/gu, '')
+      .trim();
+    const cleanBody = data.body
+      ? data.body.replace(/[\u{1F300}-\u{1FAFF}\u{2600}-\u{27BF}]/gu, '').trim()
+      : null;
 
     return this.prisma.notification.create({
       data: {
         userId: data.userId,
+        fromUserId: data.fromUserId || null,
         type: data.type,
         title: cleanTitle || data.title,
         body: cleanBody || data.body || null,
         link: data.link || null,
         metadata: data.metadata || null,
       },
+      include: {
+        fromUser: { select: FROM_USER_SELECT },
+      },
     });
   }
 
-  // ============================================
-  // RÉCUPÉRER LES NOTIFICATIONS D'UN UTILISATEUR
-  // ============================================
   async findByUser(
     userId: string,
     page: number = 1,
@@ -56,6 +66,9 @@ export class NotificationsService {
         orderBy: { createdAt: 'desc' },
         skip,
         take: limit,
+        include: {
+          fromUser: { select: FROM_USER_SELECT },
+        },
       }),
       this.prisma.notification.count({ where }),
     ]);
@@ -69,9 +82,6 @@ export class NotificationsService {
     };
   }
 
-  // ============================================
-  // RÉCUPÉRER LE NOMBRE DE NOTIFICATIONS NON LUES
-  // ============================================
   async countUnread(userId: string) {
     return this.prisma.notification.count({
       where: {
@@ -81,9 +91,6 @@ export class NotificationsService {
     });
   }
 
-  // ============================================
-  // MARQUER UNE NOTIFICATION COMME LUE
-  // ============================================
   async markAsRead(userId: string, notificationId: string) {
     const notification = await this.prisma.notification.findFirst({
       where: {
@@ -102,9 +109,6 @@ export class NotificationsService {
     });
   }
 
-  // ============================================
-  // MARQUER TOUTES LES NOTIFICATIONS COMME LUES
-  // ============================================
   async markAllAsRead(userId: string) {
     return this.prisma.notification.updateMany({
       where: {
@@ -115,9 +119,6 @@ export class NotificationsService {
     });
   }
 
-  // ============================================
-  // SUPPRIMER UNE NOTIFICATION
-  // ============================================
   async delete(userId: string, notificationId: string) {
     const notification = await this.prisma.notification.findFirst({
       where: {
@@ -135,23 +136,17 @@ export class NotificationsService {
     });
   }
 
-  // ============================================
-  // SUPPRIMER TOUTES LES NOTIFICATIONS D'UN UTILISATEUR
-  // ============================================
   async deleteAll(userId: string) {
     return this.prisma.notification.deleteMany({
       where: { userId },
     });
   }
 
-  // ============================================
-  // TEST - ENVOYER UNE NOTIFICATION DE TEST
-  // ============================================
   async sendTestNotification(userId: string) {
     return this.create({
       userId,
       type: NotificationType.SYSTEM,
-      title: '🔔 Notification de test',
+      title: 'Notification de test',
       body: 'Ceci est une notification de test pour vérifier que tout fonctionne correctement.',
       metadata: { test: true, timestamp: new Date().toISOString() },
     });
