@@ -1,9 +1,14 @@
 import { Injectable, NotFoundException, BadRequestException } from '@nestjs/common';
 import { PrismaService } from '../../prisma/prisma.service';
+import { NotificationsService } from '../notifications/notifications.service';
+import { NotificationType } from '@prisma/client';
 
 @Injectable()
 export class FollowService {
-  constructor(private prisma: PrismaService) {}
+  constructor(
+    private prisma: PrismaService,
+    private notificationsService: NotificationsService,
+  ) {}
 
   async follow(followerId: string, followingId: string) {
     if (followerId === followingId) {
@@ -42,15 +47,19 @@ export class FollowService {
       data: { followerId, followingId },
     });
 
-    // ✅ Notification sans emojis
-    await this.prisma.notification.create({
-      data: {
-        userId: followingId,
-        type: 'NEW_SUBSCRIBER',
-        title: 'Nouvel abonné',
-        body: `${followerId} a commencé à vous suivre`,
-        metadata: { followerId },
-      },
+    const follower = await this.prisma.user.findUnique({
+      where: { id: followerId },
+      select: { username: true },
+    });
+
+    await this.notificationsService.create({
+      userId: followingId,
+      fromUserId: followerId,
+      type: NotificationType.NEW_SUBSCRIBER,
+      title: 'Nouvel abonné',
+      body: `@${follower?.username || "Quelqu'un"} a commencé à vous suivre`,
+      link: `/creator/${follower?.username || ''}`,
+      metadata: { followerId },
     });
 
     return { following: true };
