@@ -11,9 +11,6 @@ export class UsersService {
     private emailService: EmailService,
   ) {}
 
-  // ============================================
-  // RÉCUPÉRER UN UTILISATEUR PAR ID
-  // ============================================
   async findById(id: string) {
     const user = await this.prisma.user.findUnique({
       where: { id },
@@ -36,18 +33,12 @@ export class UsersService {
     return user;
   }
 
-  // ============================================
-  // RÉCUPÉRER UN UTILISATEUR PAR EMAIL
-  // ============================================
   async findByEmail(email: string) {
     return this.prisma.user.findUnique({
       where: { email },
     });
   }
 
-  // ============================================
-  // RÉCUPÉRER UN UTILISATEUR PAR USERNAME
-  // ============================================
   async findByUsername(username: string) {
     const user = await this.prisma.user.findUnique({
       where: { username },
@@ -70,9 +61,6 @@ export class UsersService {
     return user;
   }
 
-  // ============================================
-  // METTRE À JOUR UN UTILISATEUR
-  // ============================================
   async update(userId: string, data: { username?: string; email?: string; bio?: string }) {
     const user = await this.prisma.user.update({
       where: { id: userId },
@@ -82,9 +70,6 @@ export class UsersService {
     return user;
   }
 
-  // ============================================
-  // METTRE À JOUR L'AVATAR
-  // ============================================
   async updateAvatar(userId: string, avatarUrl: string | null) {
     return this.prisma.user.update({
       where: { id: userId },
@@ -92,9 +77,6 @@ export class UsersService {
     });
   }
 
-  // ============================================
-  // METTRE À JOUR LA COULEUR D'AVATAR
-  // ============================================
   async updateAvatarColor(userId: string, avatarColor: string) {
     return this.prisma.user.update({
       where: { id: userId },
@@ -102,9 +84,6 @@ export class UsersService {
     });
   }
 
-  // ============================================
-  // GESTION DE LA CERTIFICATION & DU BADGE
-  // ============================================
   async updateBadgeColor(userId: string, badgeColor: string) {
     const user = await this.prisma.user.findUnique({ where: { id: userId } });
 
@@ -135,18 +114,12 @@ export class UsersService {
     });
   }
 
-  // ============================================
-  // SUPPRIMER UN UTILISATEUR
-  // ============================================
   async delete(userId: string) {
     return this.prisma.user.delete({
       where: { id: userId },
     });
   }
 
-  // ============================================
-  // RÉCUPÉRER LES STATISTIQUES
-  // ============================================
   async getStats(userId: string) {
     const user = await this.prisma.user.findUnique({
       where: { id: userId },
@@ -173,9 +146,6 @@ export class UsersService {
     return user;
   }
 
-  // ============================================
-  // RÉCUPÉRER LES CRÉATEURS CERTIFIÉS
-  // ============================================
   async getTopCreators(limit: number = 6) {
     return this.prisma.user.findMany({
       where: { isCertified: true },
@@ -201,9 +171,6 @@ export class UsersService {
     });
   }
 
-  // ============================================
-  // SAUVEGARDER L'ÉTAT
-  // ============================================
   async saveState(userId: string, state: any) {
     return this.prisma.user.update({
       where: { id: userId },
@@ -211,9 +178,6 @@ export class UsersService {
     });
   }
 
-  // ============================================
-  // CHARGER L'ÉTAT
-  // ============================================
   async loadState(userId: string) {
     const user = await this.prisma.user.findUnique({
       where: { id: userId },
@@ -223,9 +187,6 @@ export class UsersService {
     return user?.appState || null;
   }
 
-  // ============================================
-  // ✅ CHANGER LE MOT DE PASSE (SANS ANCIEN)
-  // ============================================
   async changePassword(userId: string, newPassword: string) {
     const user = await this.prisma.user.findUnique({
       where: { id: userId },
@@ -257,7 +218,7 @@ export class UsersService {
         data: {
           userId,
           type: 'SYSTEM',
-          title: '🔐 Mot de passe modifié',
+          title: 'Mot de passe modifié',
           body: 'Votre mot de passe a été modifié avec succès.',
         },
       }),
@@ -272,9 +233,6 @@ export class UsersService {
     return { success: true, message: 'Mot de passe modifié avec succès' };
   }
 
-  // ============================================
-  // ✅ CHANGER L'EMAIL (Étape 1 : Demande)
-  // ============================================
   async requestEmailChange(userId: string, newEmail: string, password: string) {
     const user = await this.prisma.user.findUnique({
       where: { id: userId },
@@ -320,9 +278,6 @@ export class UsersService {
     };
   }
 
-  // ============================================
-  // ✅ CHANGER L'EMAIL (Étape 2 : Confirmation)
-  // ============================================
   async confirmEmailChange(token: string) {
     const request = await this.prisma.emailChangeRequest.findUnique({
       where: { token },
@@ -349,7 +304,7 @@ export class UsersService {
         data: {
           userId: request.userId,
           type: 'SYSTEM',
-          title: '📧 Email modifié',
+          title: 'Email modifié',
           body: `Votre adresse email a été modifiée avec succès vers ${request.newEmail}.`,
         },
       }),
@@ -365,9 +320,6 @@ export class UsersService {
     return { success: true, message: 'Email modifié avec succès' };
   }
 
-  // ============================================
-  // ✅ GESTION DES NOTIFICATIONS
-  // ============================================
   async updateNotificationSettings(userId: string, settings: any) {
     const user = await this.prisma.user.findUnique({
       where: { id: userId },
@@ -383,9 +335,6 @@ export class UsersService {
     });
   }
 
-  // ============================================
-  // ✅ GESTION DES PRÉFÉRENCES
-  // ============================================
   async updatePreferences(userId: string, preferences: any) {
     const user = await this.prisma.user.findUnique({
       where: { id: userId },
@@ -401,9 +350,6 @@ export class UsersService {
     });
   }
 
-  // ============================================
-  // ✅ SUPPRIMER LE COMPTE
-  // ============================================
   async deleteAccount(userId: string, password: string) {
     const user = await this.prisma.user.findUnique({
       where: { id: userId },
@@ -441,9 +387,6 @@ export class UsersService {
     return { success: true, message: 'Compte supprimé avec succès' };
   }
 
-  // ============================================
-  // ✅ RÉCUPÉRER LE STATUT PREMIUM
-  // ============================================
   async getPremiumStatus(userId: string) {
     const user = await this.prisma.user.findUnique({
       where: { id: userId },
@@ -474,9 +417,6 @@ export class UsersService {
     };
   }
 
-  // ============================================
-  // VALIDATION DE LA FORCE DU MOT DE PASSE
-  // ============================================
   private validatePasswordStrength(password: string) {
     const errors = [];
 
@@ -498,7 +438,7 @@ export class UsersService {
 
     if (errors.length > 0) {
       throw new BadRequestException(
-        `Mot de passe trop faible : ${errors.join(', ')}`
+        `Mot de passe trop faible : ${errors.join(', ')}`,
       );
     }
   }
