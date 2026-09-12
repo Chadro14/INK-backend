@@ -64,7 +64,6 @@ model User {
   earnings           CreatorEarning[]
   payouts            Payout[]
   
-  // ✅ NOTIFICATIONS : reçues et envoyées (relations nommées)
   receivedNotifications Notification[] @relation("ReceivedNotifications")
   sentNotifications     Notification[] @relation("SentNotifications")
   
@@ -84,13 +83,11 @@ model User {
   sentMessages       Message[] @relation("SentMessages")
   receivedMessages   Message[] @relation("ReceivedMessages")
 
-  // ✅ ÉVÉNEMENTS
   eventParticipations EventParticipation[]
   eventVotes         EventVote[]
   eventRankings      EventRanking[]
   eventSubmissions   EventSubmission[]
 
-  // ✅ BADGES
   userBadges         UserBadge[]
 
   passwordResets     PasswordReset[]
@@ -106,7 +103,6 @@ model User {
 
   creatorRequests    CreatorRequest[]
 
-  // ✅ REELS
   reels              Reel[]
   reelLikes          ReelLike[]
   reelComments       ReelComment[]
@@ -615,11 +611,9 @@ model InkStreamWatchHistory {
 model Notification {
   id        String           @id @default(uuid())
   
-  // ✅ Destinataire
   userId    String
   user      User             @relation("ReceivedNotifications", fields: [userId], references: [id], onDelete: Cascade)
   
-  // ✅ Déclencheur (nullable pour les notifs système)
   fromUserId String?
   fromUser   User?          @relation("SentNotifications", fields: [fromUserId], references: [id], onDelete: SetNull)
   
@@ -639,6 +633,7 @@ enum NotificationType {
   NEW_CHAPTER
   NEW_COMMENT
   NEW_SUBSCRIBER
+  NEW_LIKE
   EARNING
   CERTIFICATION
   PREMIUM_EXPIRY
@@ -1149,10 +1144,6 @@ model Reel {
   @@index([scheduledAt, status])
 }
 
-// ============================================
-// ❤️ LIKES SUR REELS
-// ============================================
-
 model ReelLike {
   id        String   @id @default(uuid())
   userId    String
@@ -1164,10 +1155,6 @@ model ReelLike {
   @@unique([userId, reelId])
   @@index([reelId, userId])
 }
-
-// ============================================
-// 💬 COMMENTAIRES SUR REELS
-// ============================================
 
 model ReelComment {
   id        String   @id @default(uuid())
@@ -1192,10 +1179,6 @@ model ReelComment {
   @@index([parentId])
 }
 
-// ============================================
-// ❤️ LIKES SUR COMMENTAIRES DE REELS
-// ============================================
-
 model ReelCommentLike {
   id        String   @id @default(uuid())
   userId    String
@@ -1208,10 +1191,6 @@ model ReelCommentLike {
   @@index([commentId, userId])
   @@index([userId, commentId])
 }
-
-// ============================================
-// 👁️ VUES SUR REELS
-// ============================================
 
 model ReelView {
   id        String   @id @default(uuid())
@@ -1229,10 +1208,6 @@ model ReelView {
   @@index([reelId, createdAt])
 }
 
-// ============================================
-// 📌 FAVORIS / BOOKMARKS SUR REELS
-// ============================================
-
 model ReelBookmark {
   id        String   @id @default(uuid())
   userId    String
@@ -1244,10 +1219,6 @@ model ReelBookmark {
   @@unique([userId, reelId])
   @@index([userId, createdAt])
 }
-
-// ============================================
-// 📢 MENTIONS DANS LES REELS
-// ============================================
 
 model ReelMention {
   id        String   @id @default(uuid())
