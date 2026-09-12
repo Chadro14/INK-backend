@@ -657,6 +657,7 @@ export class ReelsService {
 
   // ============================================
   // 9. RÉCUPÉRER LES REELS D'UN UTILISATEUR
+  // ✅ CORRIGÉ : signature URLs + isLiked/isBookmarked
   // ============================================
   async getUserReels(userId: string, viewerId?: string) {
     const where = {
@@ -680,11 +681,78 @@ export class ReelsService {
       orderBy: { createdAt: 'desc' },
     });
 
-    return reels.map((reel) => ({
-      ...reel,
-      likesCount: reel._count.likes,
-      commentsCount: reel._count.comments,
-    }));
+    // ✅ Signer les URLs + calculer isLiked/isBookmarked (comme getFeed)
+    const signedReels = await Promise.all(
+      reels.map(async (reel) => {
+        let signedVideoUrl = reel.videoUrl;
+        let signedThumbnailUrl = reel.thumbnailUrl;
+
+        try {
+          if (
+            !reel.videoUrl.startsWith('http://') &&
+            !reel.videoUrl.startsWith('https://')
+          ) {
+            signedVideoUrl = await this.storage.getSignedUrl(
+              reel.videoUrl,
+              3600 * 24,
+              'chapters',
+            );
+          }
+
+          if (
+            reel.thumbnailUrl &&
+            !reel.thumbnailUrl.startsWith('http://') &&
+            !reel.thumbnailUrl.startsWith('https://')
+          ) {
+            signedThumbnailUrl = await this.storage.getSignedUrl(
+              reel.thumbnailUrl,
+              3600 * 24 * 7,
+              'chapters',
+            );
+          }
+        } catch (error) {
+          console.error('Erreur signature URL reel:', error);
+        }
+
+        let isLiked = false;
+        let isBookmarked = false;
+
+        if (viewerId) {
+          const [like, bookmark] = await Promise.all([
+            this.prisma.reelLike.findUnique({
+              where: {
+                userId_reelId: {
+                  userId: viewerId,
+                  reelId: reel.id,
+                },
+              },
+            }),
+            this.prisma.reelBookmark.findUnique({
+              where: {
+                userId_reelId: {
+                  userId: viewerId,
+                  reelId: reel.id,
+                },
+              },
+            }),
+          ]);
+          isLiked = !!like;
+          isBookmarked = !!bookmark;
+        }
+
+        return {
+          ...reel,
+          videoUrl: signedVideoUrl,
+          thumbnailUrl: signedThumbnailUrl,
+          likesCount: reel._count.likes,
+          commentsCount: reel._count.comments,
+          isLiked,
+          isBookmarked,
+        };
+      }),
+    );
+
+    return signedReels;
   }
 
   // ============================================
