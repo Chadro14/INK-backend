@@ -1,14 +1,13 @@
-// src/modules/manas/manas.module.ts
 import { Module } from '@nestjs/common';
-import { ManasController } from './manas.controller';
 import { ManasService } from './manas.service';
-import { BalanceController } from './balance.controller';
-import { BalanceService } from './balance.service';
-import { PrismaService } from '../../prisma/prisma.service';
+import { ManasController } from './manas.controller';
+import { PrismaModule } from '../../prisma/prisma.module';
+import { NotificationsModule } from '../notifications/notifications.module';
 
 @Module({
-  controllers: [ManasController, BalanceController],
-  providers: [ManasService, BalanceService, PrismaService],
-  exports: [ManasService, BalanceService],
+  imports: [PrismaModule, NotificationsModule],
+  controllers: [ManasController],
+  providers: [ManasService],
+  exports: [ManasService],
 })
 export class ManasModule {}
