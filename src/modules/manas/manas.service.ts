@@ -1,15 +1,15 @@
-// src/modules/manas/manas.service.ts
 import { Injectable, NotFoundException, BadRequestException } from '@nestjs/common';
 import { PrismaService } from '../../prisma/prisma.service';
-import { ManasTransactionType } from '@prisma/client';
+import { NotificationsService } from '../notifications/notifications.service';
+import { ManasTransactionType, NotificationType } from '@prisma/client';
 
 @Injectable()
 export class ManasService {
-  constructor(private prisma: PrismaService) {}
+  constructor(
+    private prisma: PrismaService,
+    private notificationsService: NotificationsService,
+  ) {}
 
-  // ============================================
-  // RÉCUPÉRER LE SOLDE D'UN UTILISATEUR
-  // ============================================
   async getBalance(userId: string) {
     const user = await this.prisma.user.findUnique({
       where: { id: userId },
@@ -28,9 +28,6 @@ export class ManasService {
     };
   }
 
-  // ============================================
-  // CONSOMMER 1 MANA POUR REGARDER UN ANIME
-  // ============================================
   async consumeMana(userId: string, animeId: string, episodeNumber: number) {
     const user = await this.prisma.user.findUnique({
       where: { id: userId },
@@ -75,9 +72,6 @@ export class ManasService {
     };
   }
 
-  // ============================================
-  // AJOUTER DES MANAS - SIGNATURE CORRIGÉE
-  // ============================================
   async addManas(
     userId: string,
     amount: number,
@@ -111,9 +105,6 @@ export class ManasService {
     };
   }
 
-  // ============================================
-  // DÉPENSER DES MANAS - SIGNATURE CORRIGÉE
-  // ============================================
   async spendManas(
     userId: string,
     amount: number,
@@ -168,9 +159,6 @@ export class ManasService {
     };
   }
 
-  // ============================================
-  // ENVOYER DES MANAS À UN AMI
-  // ============================================
   async sendManas(
     senderId: string,
     receiverId: string,
@@ -193,6 +181,15 @@ export class ManasService {
       throw new NotFoundException('Utilisateur non trouvé');
     }
 
+    const sender = await this.prisma.user.findUnique({
+      where: { id: senderId },
+      select: { id: true, username: true },
+    });
+
+    if (!sender) {
+      throw new NotFoundException('Expéditeur non trouvé');
+    }
+
     await this.spendManas(
       senderId,
       amount,
@@ -204,10 +201,20 @@ export class ManasService {
     const result = await this.addManas(
       receiverId,
       amount,
-      `Reçu ${amount} MANAS de ${senderId}`,
+      `Reçu ${amount} MANAS de ${sender.username}`,
       ManasTransactionType.GIFT_RECEIVED,
-      { senderId },
+      { senderId, senderUsername: sender.username },
     );
+
+    await this.notificationsService.create({
+      userId: receiverId,
+      fromUserId: senderId,
+      type: NotificationType.EARNING,
+      title: 'MANAS reçus',
+      body: `@${sender.username} vous a envoyé ${amount} MANAS`,
+      link: `/creator/${sender.username}`,
+      metadata: { senderId, amount },
+    });
 
     return {
       success: true,
@@ -216,9 +223,6 @@ export class ManasService {
     };
   }
 
-  // ============================================
-  // VÉRIFIER SI L'UTILISATEUR EST CRÉATEUR
-  // ============================================
   private async isCreator(userId: string): Promise<boolean> {
     const user = await this.prisma.user.findUnique({
       where: { id: userId },
@@ -227,9 +231,6 @@ export class ManasService {
     return user?.role === 'CREATOR' || user?.role === 'ADMIN';
   }
 
-  // ============================================
-  // ACHETER UN CHAPITRE AVEC DES MANAS
-  // ============================================
   async purchaseChapter(
     userId: string,
     mangaId: string,
@@ -265,9 +266,6 @@ export class ManasService {
     };
   }
 
-  // ============================================
-  // COLLABORATION AVEC UN DESSINATEUR
-  // ============================================
   async collaborateWithCreator(
     userId: string,
     creatorId: string,
@@ -313,9 +311,6 @@ export class ManasService {
     };
   }
 
-  // ============================================
-  // HISTORIQUE DES TRANSACTIONS
-  // ============================================
   async getHistory(
     userId: string,
     page: number = 1,
@@ -348,9 +343,6 @@ export class ManasService {
     };
   }
 
-  // ============================================
-  // RÉCUPÉRER LES STATISTIQUES MANAS D'UN UTILISATEUR
-  // ============================================
   async getManasStats(userId: string) {
     const [totalEarned, totalSpent] = await Promise.all([
       this.prisma.manasTransaction.aggregate({
@@ -369,15 +361,11 @@ export class ManasService {
     };
   }
 
-  // ============================================
-  // GAGNER DES MANAS POUR UNE ACTION QUOTIDIENNE
-  // ============================================
   async earnDailyManas(
     userId: string,
     actionType: string,
     amount: number = 1,
   ) {
-    // Vérifier la limite quotidienne
     const today = new Date();
     today.setHours(0, 0, 0, 0);
 
@@ -391,7 +379,7 @@ export class ManasService {
       },
     });
 
-    const maxDaily = 10; // Max 10 actions par jour par type
+    const maxDaily = 10;
 
     if (todayActions && todayActions.count >= maxDaily) {
       return {
@@ -402,7 +390,6 @@ export class ManasService {
       };
     }
 
-    // Ajouter les MANAS
     await this.addManas(
       userId,
       amount,
@@ -411,7 +398,6 @@ export class ManasService {
       { actionType },
     );
 
-    // Mettre à jour le compteur quotidien
     const updated = await this.prisma.dailyManasAction.upsert({
       where: {
         userId_actionType_date: {
