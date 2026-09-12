@@ -5,29 +5,38 @@ import {
   BadRequestException,
 } from '@nestjs/common';
 import { PrismaService } from '../../prisma/prisma.service';
+import { NotificationsService } from '../notifications/notifications.service';
 import { CreateCommentDto } from './dto/create-comment.dto';
 import { UpdateCommentDto } from './dto/update-comment.dto';
 import { CommentQueryDto } from './dto/comment-query.dto';
-import { CommentStatus } from '@prisma/client';
+import { CommentStatus, NotificationType } from '@prisma/client';
 
 @Injectable()
 export class CommentsService {
-  constructor(private prisma: PrismaService) {}
+  constructor(
+    private prisma: PrismaService,
+    private notificationsService: NotificationsService,
+  ) {}
 
-  // ============================================
-  // AJOUTER UN COMMENTAIRE
-  // ============================================
   async create(userId: string, mangaId: string, dto: CreateCommentDto) {
     const manga = await this.prisma.manga.findUnique({
       where: { id: mangaId },
+      select: { id: true, authorId: true, slug: true, title: true },
     });
     if (!manga) {
       throw new NotFoundException('Manga non trouvé');
     }
 
+    let parentComment: {
+      id: string;
+      userId: string;
+      status: CommentStatus;
+    } | null = null;
+
     if (dto.parentId) {
       const parent = await this.prisma.comment.findUnique({
         where: { id: dto.parentId },
+        select: { id: true, userId: true, mangaId: true, status: true },
       });
       if (!parent) {
         throw new NotFoundException('Commentaire parent non trouvé');
@@ -35,6 +44,7 @@ export class CommentsService {
       if (parent.mangaId !== mangaId) {
         throw new BadRequestException('Le commentaire parent ne correspond pas à ce manga');
       }
+      parentComment = parent;
     }
 
     const comment = await this.prisma.comment.create({
@@ -66,19 +76,61 @@ export class CommentsService {
       data: { commentsCount: { increment: 1 } },
     });
 
+    const targetUserId = parentComment ? parentComment.userId : manga.authorId;
+
+    const shouldNotify =
+      targetUserId !== userId &&
+      (!parentComment || parentComment.status !== CommentStatus.DELETED);
+
+    if (shouldNotify) {
+      let link = `/manga/${mangaId}`;
+      if (dto.chapterId) {
+        try {
+          const chapter = await this.prisma.chapter.findUnique({
+            where: { id: dto.chapterId },
+            select: { number: true },
+          });
+          if (chapter) {
+            link = `/manga/${mangaId}/chapter/${chapter.number}`;
+          }
+        } catch (err) {
+          // Fallback sur le lien manga
+        }
+      }
+
+      const commenter = comment.user;
+      const title = parentComment ? 'Nouvelle réponse' : 'Nouveau commentaire';
+      const body = parentComment
+        ? `@${commenter.username} a répondu à votre commentaire`
+        : `@${commenter.username} a commenté "${manga.title}"`;
+
+      await this.notificationsService.create({
+        userId: targetUserId,
+        fromUserId: userId,
+        type: NotificationType.NEW_COMMENT,
+        title,
+        body,
+        link,
+        metadata: {
+          mangaId,
+          chapterId: dto.chapterId || null,
+          commentId: comment.id,
+          parentId: dto.parentId || null,
+        },
+      });
+    }
+
     return comment;
   }
 
-  // ============================================
-  // RÉCUPÉRER LES COMMENTAIRES D'UN MANGA
-  // ============================================
   async findByManga(mangaId: string, query: CommentQueryDto) {
     const { page = 1, limit = 20, sort = 'recent' } = query;
     const skip = (page - 1) * limit;
 
-    const orderBy = sort === 'popular'
-      ? { likesCount: 'desc' as const }
-      : { createdAt: 'desc' as const };
+    const orderBy =
+      sort === 'popular'
+        ? { likesCount: 'desc' as const }
+        : { createdAt: 'desc' as const };
 
     const [comments, total] = await Promise.all([
       this.prisma.comment.findMany({
@@ -119,7 +171,7 @@ export class CommentsService {
       }),
     ]);
 
-    const commentIds = comments.map(c => c.id);
+    const commentIds = comments.map((c) => c.id);
     const replies = await this.prisma.comment.findMany({
       where: {
         parentId: { in: commentIds },
@@ -140,14 +192,17 @@ export class CommentsService {
       orderBy: { createdAt: 'asc' },
     });
 
-    const repliesByParent = replies.reduce((acc, reply) => {
-      const parentId = reply.parentId!;
-      if (!acc[parentId]) acc[parentId] = [];
-      acc[parentId].push(reply);
-      return acc;
-    }, {} as Record<string, typeof replies>);
+    const repliesByParent = replies.reduce(
+      (acc, reply) => {
+        const parentId = reply.parentId!;
+        if (!acc[parentId]) acc[parentId] = [];
+        acc[parentId].push(reply);
+        return acc;
+      },
+      {} as Record<string, typeof replies>,
+    );
 
-    const commentsWithReplies = comments.map(comment => ({
+    const commentsWithReplies = comments.map((comment) => ({
       ...comment,
       replies: repliesByParent[comment.id] || [],
     }));
@@ -163,9 +218,6 @@ export class CommentsService {
     };
   }
 
-  // ============================================
-  // RÉCUPÉRER LES COMMENTAIRES D'UN CHAPITRE
-  // ============================================
   async findByChapter(chapterId: string, query: CommentQueryDto) {
     const { page = 1, limit = 20 } = query;
     const skip = (page - 1) * limit;
@@ -213,9 +265,6 @@ export class CommentsService {
     };
   }
 
-  // ============================================
-  // METTRE À JOUR UN COMMENTAIRE
-  // ============================================
   async update(userId: string, commentId: string, dto: UpdateCommentDto) {
     const comment = await this.prisma.comment.findUnique({
       where: { id: commentId },
@@ -226,7 +275,7 @@ export class CommentsService {
     }
 
     if (comment.userId !== userId) {
-      throw new ForbiddenException('Vous n\'êtes pas l\'auteur de ce commentaire');
+      throw new ForbiddenException("Vous n'êtes pas l'auteur de ce commentaire");
     }
 
     return this.prisma.comment.update({
@@ -250,9 +299,6 @@ export class CommentsService {
     });
   }
 
-  // ============================================
-  // SUPPRIMER UN COMMENTAIRE
-  // ============================================
   async delete(userId: string, commentId: string) {
     const comment = await this.prisma.comment.findUnique({
       where: { id: commentId },
@@ -287,11 +333,7 @@ export class CommentsService {
     return { message: 'Commentaire supprimé avec succès' };
   }
 
-  // ============================================
-  // ✅ LIKER UN COMMENTAIRE - CORRIGÉ
-  // ============================================
   async likeComment(userId: string, commentId: string) {
-    // 1. Vérifier que le commentaire existe
     const comment = await this.prisma.comment.findUnique({
       where: { id: commentId },
       select: { id: true, likesCount: true },
@@ -301,7 +343,6 @@ export class CommentsService {
       throw new NotFoundException('Commentaire non trouvé');
     }
 
-    // 2. Vérifier si l'utilisateur a déjà liké
     const existingLike = await this.prisma.commentLike.findUnique({
       where: {
         userId_commentId: {
@@ -312,12 +353,10 @@ export class CommentsService {
     });
 
     if (existingLike) {
-      // ✅ SUPPRIMER LE LIKE
       await this.prisma.commentLike.delete({
         where: { id: existingLike.id },
       });
 
-      // ✅ Décrémenter le compteur et récupérer la nouvelle valeur
       const updated = await this.prisma.comment.update({
         where: { id: commentId },
         data: { likesCount: { decrement: 1 } },
@@ -330,12 +369,10 @@ export class CommentsService {
       };
     }
 
-    // ✅ AJOUTER LE LIKE
     await this.prisma.commentLike.create({
       data: { userId, commentId },
     });
 
-    // ✅ Incrémenter le compteur et récupérer la nouvelle valeur
     const updated = await this.prisma.comment.update({
       where: { id: commentId },
       data: { likesCount: { increment: 1 } },
