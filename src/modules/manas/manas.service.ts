@@ -240,6 +240,10 @@ export class ManasService {
     return user?.role === 'CREATOR' || user?.role === 'ADMIN';
   }
 
+  // ============================================
+  // ACHETER UN CHAPITRE AVEC DES MANAS
+  // ✅ 100% des MANAS vont au créateur
+  // ============================================
   async purchaseChapter(
     userId: string,
     mangaId: string,
@@ -253,25 +257,135 @@ export class ManasService {
           number: chapterNumber,
         },
       },
-      select: { id: true, title: true, mangaId: true },
+      select: {
+        id: true,
+        title: true,
+        mangaId: true,
+        manga: {
+          select: { authorId: true, title: true },
+        },
+      },
     });
 
     if (!chapter) {
       throw new NotFoundException('Chapitre non trouvé');
     }
 
-    const result = await this.spendManas(
-      userId,
-      priceInManas,
-      `Achat du chapitre ${chapterNumber}`,
-      ManasTransactionType.CHAPTER_PURCHASE,
-      { mangaId, chapterNumber, chapterId: chapter.id },
-    );
+    if (!chapter.manga?.authorId) {
+      throw new BadRequestException('Auteur du manga introuvable');
+    }
+
+    // Le créateur ne peut pas acheter son propre chapitre
+    if (chapter.manga.authorId === userId) {
+      throw new BadRequestException(
+        'Vous ne pouvez pas acheter votre propre chapitre',
+      );
+    }
+
+    // Vérifier si le lecteur a déjà acheté ce chapitre
+    const existingPurchase = await this.prisma.manasTransaction.findFirst({
+      where: {
+        userId,
+        type: ManasTransactionType.CHAPTER_PURCHASE,
+        metadata: {
+          path: ['chapterId'],
+          equals: chapter.id,
+        },
+      },
+    });
+
+    if (existingPurchase) {
+      throw new BadRequestException('Vous avez déjà acheté ce chapitre');
+    }
+
+    const creatorId = chapter.manga.authorId;
+
+    // Transaction atomique : débit lecteur + crédit créateur (100%)
+    const result = await this.prisma.$transaction(async (tx) => {
+      // Récupérer le solde du lecteur
+      const buyer = await tx.user.findUnique({
+        where: { id: userId },
+        select: { manas: true, premiumActive: true },
+      });
+
+      if (!buyer) {
+        throw new NotFoundException('Utilisateur non trouvé');
+      }
+
+      // Premium = accès gratuit
+      if (buyer.premiumActive) {
+        return {
+          buyerBalance: buyer.manas,
+          creatorBalance: null,
+          isPremium: true,
+        };
+      }
+
+      if (buyer.manas < priceInManas) {
+        throw new BadRequestException('Solde de MANAS insuffisant');
+      }
+
+      // 1. Débiter le lecteur
+      const updatedBuyer = await tx.user.update({
+        where: { id: userId },
+        data: { manas: { decrement: priceInManas } },
+        select: { manas: true },
+      });
+
+      // 2. Créditer le créateur (100%)
+      const updatedCreator = await tx.user.update({
+        where: { id: creatorId },
+        data: { manas: { increment: priceInManas } },
+        select: { manas: true },
+      });
+
+      // 3. Transaction du lecteur (débit)
+      await tx.manasTransaction.create({
+        data: {
+          userId,
+          amount: -priceInManas,
+          type: ManasTransactionType.CHAPTER_PURCHASE,
+          description: `Achat du chapitre ${chapterNumber} - "${chapter.manga.title}"`,
+          metadata: {
+            mangaId,
+            chapterId: chapter.id,
+            chapterNumber,
+            creatorId,
+            price: priceInManas,
+          },
+        },
+      });
+
+      // 4. Transaction du créateur (crédit)
+      await tx.manasTransaction.create({
+        data: {
+          userId: creatorId,
+          amount: priceInManas,
+          type: ManasTransactionType.CHAPTER_PURCHASE,
+          description: `Vente du chapitre ${chapterNumber} - "${chapter.manga.title}"`,
+          metadata: {
+            mangaId,
+            chapterId: chapter.id,
+            chapterNumber,
+            buyerId: userId,
+            price: priceInManas,
+          },
+        },
+      });
+
+      return {
+        buyerBalance: updatedBuyer.manas,
+        creatorBalance: updatedCreator.manas,
+        isPremium: false,
+      };
+    });
 
     return {
       success: true,
-      message: `Chapitre ${chapterNumber} débloqué avec succès`,
-      balance: result.balance,
+      message: result.isPremium
+        ? `Chapitre ${chapterNumber} débloqué (Premium)`
+        : `Chapitre ${chapterNumber} débloqué avec succès`,
+      balance: result.buyerBalance,
     };
   }
 
