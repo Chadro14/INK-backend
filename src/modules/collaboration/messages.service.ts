@@ -17,6 +17,13 @@ const USER_SELECT = {
   badgeColor: true,
 };
 
+const MANGA_SELECT = {
+  id: true,
+  title: true,
+  slug: true,
+  coverUrl: true,
+};
+
 @Injectable()
 export class MessagesService {
   constructor(
@@ -25,11 +32,18 @@ export class MessagesService {
   ) {}
 
   // ============================================
-  // ENVOYER UN MESSAGE DANS UNE CONVERSATION
+  // ENVOYER UN MESSAGE (avec manga optionnel)
   // ============================================
-  async sendMessage(conversationId: string, senderId: string, content: string) {
-    if (!content || !content.trim()) {
-      throw new BadRequestException('Le message ne peut pas être vide');
+  async sendMessage(
+    conversationId: string,
+    senderId: string,
+    content: string,
+    mangaId?: string,
+  ) {
+    if ((!content || !content.trim()) && !mangaId) {
+      throw new BadRequestException(
+        'Le message doit contenir du texte ou un manga',
+      );
     }
 
     const conversation = await this.prisma.conversation.findUnique({
@@ -47,29 +61,53 @@ export class MessagesService {
       );
     }
 
+    // Si mangaId fourni : vérifier que le sender est bien l'auteur du manga
+    if (mangaId) {
+      const manga = await this.prisma.manga.findUnique({
+        where: { id: mangaId },
+        select: { authorId: true },
+      });
+
+      if (!manga) {
+        throw new NotFoundException('Manga non trouvé');
+      }
+
+      if (manga.authorId !== senderId) {
+        throw new ForbiddenException(
+          'Vous ne pouvez partager que vos propres mangas',
+        );
+      }
+    }
+
     const receiverId =
       conversation.user1Id === senderId
         ? conversation.user2Id
         : conversation.user1Id;
 
-    // Créer le message + mettre à jour la conversation
+    const trimmedContent = content?.trim() || '';
+    const preview = mangaId
+      ? `📚 ${trimmedContent || 'Manga partagé'}`.slice(0, 100)
+      : trimmedContent.slice(0, 100);
+
     const [message] = await this.prisma.$transaction([
       this.prisma.message.create({
         data: {
           senderId,
           receiverId,
           conversationId,
-          content: content.trim(),
+          content: trimmedContent,
+          mangaId: mangaId || null,
         },
         include: {
           sender: { select: USER_SELECT },
+          manga: { select: MANGA_SELECT },
         },
       }),
       this.prisma.conversation.update({
         where: { id: conversationId },
         data: {
           lastMessageAt: new Date(),
-          lastMessagePreview: content.trim().slice(0, 100),
+          lastMessagePreview: preview,
         },
       }),
     ]);
@@ -119,6 +157,7 @@ export class MessagesService {
         where: { conversationId },
         include: {
           sender: { select: USER_SELECT },
+          manga: { select: MANGA_SELECT },
         },
         orderBy: { createdAt: 'desc' },
         skip,
