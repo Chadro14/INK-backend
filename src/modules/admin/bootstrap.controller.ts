@@ -33,7 +33,7 @@ export class BootstrapController {
   }
 
   // ============================================
-  // DONNER DES MANAS À UN UTILISATEUR (test)
+  // DONNER DES MANAS À UN UTILISATEUR
   // ============================================
   @Get('grant-manas')
   async grantManas(
@@ -89,7 +89,7 @@ export class BootstrapController {
   }
 
   // ============================================
-  // PROMOUVOIR UN UTILISATEUR EN CREATOR CERTIFIÉ (test)
+  // PROMOUVOIR UN UTILISATEUR EN CREATOR CERTIFIÉ
   // ============================================
   @Get('make-creator')
   async makeCreator(
@@ -114,6 +114,88 @@ export class BootstrapController {
       username: user.username,
       role: user.role,
       isCertified: user.isCertified,
+    };
+  }
+
+  // ============================================
+  // ✅ DÉSIGNER LE COMPTE PLATEFORME
+  // (reçoit les frais de retrait)
+  // ============================================
+  @Get('set-platform-account')
+  async setPlatformAccount(
+    @Query('email') email: string,
+    @Query('secret') secret: string,
+  ) {
+    if (secret !== process.env.ADMIN_BOOTSTRAP_SECRET) {
+      throw new ForbiddenException('Secret invalide');
+    }
+
+    if (!email) {
+      throw new BadRequestException('email requis');
+    }
+
+    // 1. Enlever le flag à tous les autres comptes
+    await this.prisma.user.updateMany({
+      where: { isPlatformAccount: true },
+      data: { isPlatformAccount: false },
+    });
+
+    // 2. Le mettre sur l'email donné
+    const user = await this.prisma.user.update({
+      where: { email },
+      data: { isPlatformAccount: true },
+      select: {
+        id: true,
+        username: true,
+        email: true,
+        role: true,
+        isPlatformAccount: true,
+      },
+    });
+
+    return {
+      success: true,
+      message: 'Compte plateforme défini',
+      id: user.id,
+      username: user.username,
+      email: user.email,
+      role: user.role,
+      isPlatformAccount: user.isPlatformAccount,
+    };
+  }
+
+  // ============================================
+  // ✅ VOIR LE COMPTE PLATEFORME ACTUEL
+  // ============================================
+  @Get('platform-account')
+  async getPlatformAccount(@Query('secret') secret: string) {
+    if (secret !== process.env.ADMIN_BOOTSTRAP_SECRET) {
+      throw new ForbiddenException('Secret invalide');
+    }
+
+    const user = await this.prisma.user.findFirst({
+      where: { isPlatformAccount: true },
+      select: {
+        id: true,
+        username: true,
+        email: true,
+        role: true,
+        manas: true,
+        isPlatformAccount: true,
+      },
+    });
+
+    if (!user) {
+      return {
+        success: true,
+        message: 'Aucun compte plateforme défini',
+        data: null,
+      };
+    }
+
+    return {
+      success: true,
+      data: user,
     };
   }
 }
