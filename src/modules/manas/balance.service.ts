@@ -227,7 +227,7 @@ export class BalanceService {
   }
 
   // ============================================
-  // HISTORIQUE DES RETRAITS
+  // HISTORIQUE DES RETRAITS (créateur)
   // ============================================
   async getWithdrawalHistory(userId: string) {
     const payouts = await this.prisma.payout.findMany({
@@ -248,6 +248,137 @@ export class BalanceService {
       createdAt: p.requestedAt,
       completedAt: p.completedAt,
     }));
+  }
+
+  // ============================================
+  // ADMIN : LISTER TOUS LES RETRAITS
+  // ============================================
+  async getAllPayouts(
+    adminId: string,
+    filter: { status?: string; page?: number; limit?: number },
+  ) {
+    const admin = await this.prisma.user.findUnique({
+      where: { id: adminId },
+      select: { role: true },
+    });
+
+    if (admin?.role !== 'ADMIN') {
+      throw new BadRequestException(
+        'Seuls les administrateurs peuvent voir les retraits',
+      );
+    }
+
+    const page = filter.page || 1;
+    const limit = filter.limit || 20;
+    const skip = (page - 1) * limit;
+
+    const where: any = {};
+    if (filter.status) {
+      where.status = filter.status;
+    }
+
+    const [payouts, total] = await Promise.all([
+      this.prisma.payout.findMany({
+        where,
+        include: {
+          creator: {
+            select: {
+              id: true,
+              username: true,
+              email: true,
+              avatarUrl: true,
+              avatarColor: true,
+            },
+          },
+        },
+        orderBy: { requestedAt: 'desc' },
+        skip,
+        take: limit,
+      }),
+      this.prisma.payout.count({ where }),
+    ]);
+
+    return {
+      success: true,
+      data: payouts.map((p) => ({
+        id: p.id,
+        amount: p.amount,
+        currency: p.currency,
+        manasAmount: (p.metadata as any)?.manasAmount || 0,
+        fee: (p.metadata as any)?.fee || 0,
+        grossAmount: (p.metadata as any)?.grossAmount || 0,
+        operator: (p.metadata as any)?.operator || 'orange',
+        mobileNumber: p.mobileNumber,
+        status: p.status,
+        transactionId: p.transactionId,
+        requestedAt: p.requestedAt,
+        completedAt: p.completedAt,
+        rejectionReason: (p.metadata as any)?.rejectionReason || null,
+        creator: p.creator,
+      })),
+      meta: {
+        total,
+        page,
+        limit,
+        totalPages: Math.ceil(total / limit),
+      },
+    };
+  }
+
+  // ============================================
+  // ADMIN : DÉTAIL D'UN RETRAIT
+  // ============================================
+  async getPayoutById(adminId: string, payoutId: string) {
+    const admin = await this.prisma.user.findUnique({
+      where: { id: adminId },
+      select: { role: true },
+    });
+
+    if (admin?.role !== 'ADMIN') {
+      throw new BadRequestException(
+        'Seuls les administrateurs peuvent voir les retraits',
+      );
+    }
+
+    const payout = await this.prisma.payout.findUnique({
+      where: { id: payoutId },
+      include: {
+        creator: {
+          select: {
+            id: true,
+            username: true,
+            email: true,
+            avatarUrl: true,
+            avatarColor: true,
+            mobileNumber: true,
+          },
+        },
+      },
+    });
+
+    if (!payout) {
+      throw new NotFoundException('Retrait non trouvé');
+    }
+
+    return {
+      success: true,
+      data: {
+        id: payout.id,
+        amount: payout.amount,
+        currency: payout.currency,
+        manasAmount: (payout.metadata as any)?.manasAmount || 0,
+        fee: (payout.metadata as any)?.fee || 0,
+        grossAmount: (payout.metadata as any)?.grossAmount || 0,
+        operator: (payout.metadata as any)?.operator || 'orange',
+        mobileNumber: payout.mobileNumber,
+        status: payout.status,
+        transactionId: payout.transactionId,
+        requestedAt: payout.requestedAt,
+        completedAt: payout.completedAt,
+        rejectionReason: (payout.metadata as any)?.rejectionReason || null,
+        creator: payout.creator,
+      },
+    };
   }
 
   // ============================================
@@ -285,7 +416,6 @@ export class BalanceService {
       },
     });
 
-    // Notifier le créateur
     await this.notificationsService.create({
       userId: payout.creatorId,
       type: NotificationType.SYSTEM,
@@ -333,7 +463,6 @@ export class BalanceService {
       },
     });
 
-    // Notifier le créateur
     await this.notificationsService.create({
       userId: payout.creatorId,
       type: NotificationType.SYSTEM,
@@ -343,7 +472,6 @@ export class BalanceService {
       metadata: { payoutId },
     });
 
-    // Audit
     await this.prisma.auditLog.create({
       data: {
         userId: adminId,
@@ -390,7 +518,6 @@ export class BalanceService {
     const platformAccountId = metadata.platformAccountId;
 
     await this.prisma.$transaction(async (tx) => {
-      // 1. Marquer comme FAILED
       await tx.payout.update({
         where: { id: payoutId },
         data: {
@@ -403,7 +530,6 @@ export class BalanceService {
         },
       });
 
-      // 2. Rembourser le créateur
       await tx.user.update({
         where: { id: payout.creatorId },
         data: { manas: { increment: manasAmount } },
@@ -422,7 +548,6 @@ export class BalanceService {
         },
       });
 
-      // 3. Retirer les frais du compte plateforme
       if (platformAccountId && feeInManas > 0) {
         await tx.user.update({
           where: { id: platformAccountId },
@@ -441,7 +566,6 @@ export class BalanceService {
       }
     });
 
-    // Notifier le créateur
     await this.notificationsService.create({
       userId: payout.creatorId,
       type: NotificationType.SYSTEM,
@@ -451,7 +575,6 @@ export class BalanceService {
       metadata: { payoutId, reason },
     });
 
-    // Audit
     await this.prisma.auditLog.create({
       data: {
         userId: adminId,
