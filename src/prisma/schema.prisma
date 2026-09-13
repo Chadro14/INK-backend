@@ -38,6 +38,8 @@ model User {
   premiumPlan        PremiumPlan?
   lastUsernameChange DateTime?
 
+  isPlatformAccount  Boolean   @default(false)   // ✅ AJOUTÉ — compte plateforme (reçoit les frais)
+
   appState           Json?
 
   notificationSettings Json?
@@ -126,6 +128,7 @@ model User {
   @@index([role])
   @@index([isLocked])
   @@index([warningsCount])
+  @@index([isPlatformAccount])   // ✅ AJOUTÉ — pour findFirst({ isPlatformAccount: true })
 }
 
 // ============================================
@@ -313,7 +316,7 @@ model Manga {
 
   eventSubmissions EventSubmission[]
   reels            Reel[]
-  messages         Message[]   // ✅ AJOUTÉ — mangas partagés dans le chat
+  messages         Message[]
 
   createdAt        DateTime @default(now())
   updatedAt        DateTime @updatedAt
@@ -654,6 +657,7 @@ enum NotificationType {
   COLLABORATION_ACCEPTED
   COLLABORATION_REJECTED
   NEW_MESSAGE
+  WITHDRAWAL_UPDATE
 }
 
 // ============================================
@@ -703,7 +707,6 @@ model Message {
   conversationId  String?
   conversation    Conversation? @relation(fields: [conversationId], references: [id], onDelete: Cascade)
   
-  // ✅ Manga partagé (optionnel)
   mangaId         String?
   manga           Manga?   @relation(fields: [mangaId], references: [id], onDelete: SetNull)
   
