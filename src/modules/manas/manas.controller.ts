@@ -7,14 +7,20 @@ import {
   Query,
   UseGuards,
   Req,
+  BadRequestException,
+  ForbiddenException,
 } from '@nestjs/common';
 import { JwtAuthGuard } from '../../common/guards/jwt-auth.guard';
 import { ManasService } from './manas.service';
+import { PrismaService } from '../../prisma/prisma.service';
 import { ManasTransactionType } from '@prisma/client';
 
 @Controller('manas')
 export class ManasController {
-  constructor(private manasService: ManasService) {}
+  constructor(
+    private manasService: ManasService,
+    private prisma: PrismaService,
+  ) {}
 
   // ============================================
   // RÉCUPÉRER LE SOLDE
@@ -73,7 +79,7 @@ export class ManasController {
   }
 
   // ============================================
-  // COLLABORATION AVEC UN DESSINATEUR
+  // COLLABORATION AVEC UN DESSINATEUR (ancien système)
   // ============================================
   @Post('collaborate')
   @UseGuards(JwtAuthGuard)
@@ -87,5 +93,42 @@ export class ManasController {
       body.creatorId,
       body.amountInManas || 250,
     );
+  }
+
+  // ============================================
+  // ADMIN — DONNER DES MANAS À UN UTILISATEUR
+  // ============================================
+  @Post('admin/grant')
+  @UseGuards(JwtAuthGuard)
+  async grantManas(
+    @Req() req: any,
+    @Body('userId') userId: string,
+    @Body('amount') amount: number,
+    @Body('reason') reason?: string,
+  ) {
+    const adminId = req.user?.id || req.user?.sub;
+
+    const admin = await this.prisma.user.findUnique({
+      where: { id: adminId },
+      select: { role: true },
+    });
+
+    if (admin?.role !== 'ADMIN') {
+      throw new ForbiddenException('Réservé aux administrateurs');
+    }
+
+    if (!userId || !amount || amount <= 0) {
+      throw new BadRequestException('userId et amount (positif) requis');
+    }
+
+    const result = await this.manasService.addManas(
+      userId,
+      amount,
+      reason || `Grant admin (${amount} MANAS)`,
+      ManasTransactionType.ADMIN_GRANT,
+      { adminId },
+    );
+
+    return { success: true, ...result };
   }
 }
