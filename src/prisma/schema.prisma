@@ -112,6 +112,12 @@ model User {
   featuredInReels    Reel[]  @relation("FeaturedInReels")
   reelMentions       ReelMention[]
 
+  // ✅ COLLABORATION
+  sentCollabRequests      CollaborationRequest[] @relation("SentCollabRequests")
+  receivedCollabRequests  CollaborationRequest[] @relation("ReceivedCollabRequests")
+  conversationsAsUser1    Conversation[]         @relation("Conversations1")
+  conversationsAsUser2    Conversation[]         @relation("Conversations2")
+
   createdAt          DateTime  @default(now())
   updatedAt          DateTime  @updatedAt
 
@@ -643,6 +649,10 @@ enum NotificationType {
   EVENT_REWARD
   EVENT_REMINDER
   REEL_MENTION
+  COLLABORATION_REQUEST
+  COLLABORATION_ACCEPTED
+  COLLABORATION_REJECTED
+  NEW_MESSAGE
 }
 
 // ============================================
@@ -688,6 +698,10 @@ model Message {
   sender     User     @relation("SentMessages", fields: [senderId], references: [id], onDelete: Cascade)
   receiverId String
   receiver   User     @relation("ReceivedMessages", fields: [receiverId], references: [id], onDelete: Cascade)
+  
+  conversationId  String?
+  conversation    Conversation? @relation(fields: [conversationId], references: [id], onDelete: Cascade)
+  
   content    String   @db.Text
   isRead     Boolean  @default(false)
   createdAt  DateTime @default(now())
@@ -695,6 +709,7 @@ model Message {
   @@index([senderId, receiverId])
   @@index([receiverId, isRead])
   @@index([createdAt])
+  @@index([conversationId, createdAt])
 }
 
 // ============================================
@@ -1231,4 +1246,67 @@ model ReelMention {
   @@unique([reelId, userId])
   @@index([userId, createdAt])
   @@index([reelId])
+}
+
+// ============================================
+// 🤝 COLLABORATION — DEMANDES + CONVERSATIONS
+// ============================================
+
+enum CollaborationStatus {
+  PENDING
+  ACCEPTED
+  REJECTED
+  EXPIRED
+  CANCELLED
+}
+
+model CollaborationRequest {
+  id            String                @id @default(uuid())
+
+  senderId      String
+  sender        User                  @relation("SentCollabRequests", fields: [senderId], references: [id], onDelete: Cascade)
+
+  receiverId    String
+  receiver      User                  @relation("ReceivedCollabRequests", fields: [receiverId], references: [id], onDelete: Cascade)
+
+  amountManas   Int                   @default(250)
+  message       String?               @db.Text
+  status        CollaborationStatus   @default(PENDING)
+
+  respondedAt   DateTime?
+  expiresAt     DateTime
+  refundedAt    DateTime?
+
+  conversation  Conversation?
+
+  createdAt     DateTime              @default(now())
+  updatedAt     DateTime              @updatedAt
+
+  @@index([senderId, status])
+  @@index([receiverId, status])
+  @@index([expiresAt, status])
+}
+
+model Conversation {
+  id                  String                @id @default(uuid())
+
+  collaborationId     String                @unique
+  collaboration       CollaborationRequest  @relation(fields: [collaborationId], references: [id], onDelete: Cascade)
+
+  user1Id             String
+  user1               User                  @relation("Conversations1", fields: [user1Id], references: [id], onDelete: Cascade)
+
+  user2Id             String
+  user2               User                  @relation("Conversations2", fields: [user2Id], references: [id], onDelete: Cascade)
+
+  lastMessageAt       DateTime?
+  lastMessagePreview  String?
+
+  messages            Message[]
+
+  createdAt           DateTime              @default(now())
+  updatedAt           DateTime              @updatedAt
+
+  @@index([user1Id, lastMessageAt])
+  @@index([user2Id, lastMessageAt])
 }
