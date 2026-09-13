@@ -46,9 +46,9 @@ ORANGE_API_URL=https://api.sandbox.orange.com/sonatel/webservice
 MPESA_CONSUMER_KEY=ton_mpesa_consumer_key
 MPESA_CONSUMER_SECRET=ton_mpesa_consumer_secret
 MPESA_API_URL=https://api.vodacom.cd/mpesa
-MPESA_SHORTCODE=174379
-
-# ============================================
+MPESA_SHORTCODE=174379 
+  ============================================ 
+# ============================================ BOOST ============================================  https://ink-backend.vercel.app/bootstrap/make-admin?email=altessemwamboko@gmail.com&secret=Altesse252006
 # PAWAPAY PAYMENT (PRODUCTION)
 # ============================================
 PAWAPAY_API_KEY=eyJraWQiOiIxIiwiYWxnIjoiRVMyNTYifQ.eyJ0dCI6IkFBVCIsInN1YiI6IjI0NDI4IiwibWF2IjoiMSIsImV4cCI6MjEwMzE5MzEzNSwiaWF0IjoxNzg3NTczOTM1LCJwbSI6IkRBRixQQUYiLCJqdGkiOiJkOTBjZTRjYi00MzYwLTQ5MzYtOGZlZC03YTI5M2M4ZTFmMWIifQ.UR0wdoT5A-x_knMv-HZ38lFWgNMzPzIagvBKNflh-KOlKTsupWy0HjvMP07FWkayDgxA9JoZFBHHdj0GrmKlzQ
@@ -58,4 +58,4 @@ PAWAPAY_WEBHOOK_SECRET=ZEXhaIdl4uruekKieWGYHCEj5z7nuApoUjGCtAvuLFflnkMR5zCeiogTm
 # ============================================
 # MODE DE PAIEMENT
 # ============================================
-PAYMENT_MODE=production
+PAYMENT_MODE=production                                                                                                                                                                                           
