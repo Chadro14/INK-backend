@@ -38,7 +38,7 @@ model User {
   premiumPlan        PremiumPlan?
   lastUsernameChange DateTime?
 
-  isPlatformAccount  Boolean   @default(false)   // ✅ AJOUTÉ — compte plateforme (reçoit les frais)
+  isPlatformAccount  Boolean   @default(false)
 
   appState           Json?
 
@@ -114,7 +114,6 @@ model User {
   featuredInReels    Reel[]  @relation("FeaturedInReels")
   reelMentions       ReelMention[]
 
-  // ✅ COLLABORATION
   sentCollabRequests      CollaborationRequest[] @relation("SentCollabRequests")
   receivedCollabRequests  CollaborationRequest[] @relation("ReceivedCollabRequests")
   conversationsAsUser1    Conversation[]         @relation("Conversations1")
@@ -128,7 +127,7 @@ model User {
   @@index([role])
   @@index([isLocked])
   @@index([warningsCount])
-  @@index([isPlatformAccount])   // ✅ AJOUTÉ — pour findFirst({ isPlatformAccount: true })
+  @@index([isPlatformAccount])
 }
 
 // ============================================
@@ -778,18 +777,21 @@ model TicketUse {
   id          String   @id @default(uuid())
   userId      String
   user        User     @relation(fields: [userId], references: [id], onDelete: Cascade)
-  ticketId    String
-  ticket      Ticket   @relation(fields: [ticketId], references: [id], onDelete: Cascade)
+  ticketId    String?
+  ticket      Ticket?  @relation(fields: [ticketId], references: [id], onDelete: Cascade)
   chapterId   String
   chapter     Chapter  @relation(fields: [chapterId], references: [id], onDelete: Cascade)
   mangaId     String
   manga       Manga    @relation(fields: [mangaId], references: [id], onDelete: Cascade)
+  
+  expiresAt   DateTime?  // ✅ AJOUTÉ — null = permanent, sinon date d'expiration
   createdAt   DateTime @default(now())
 
   @@unique([userId, chapterId])
   @@index([userId])
   @@index([chapterId])
   @@index([mangaId])
+  @@index([expiresAt])  // ✅ AJOUTÉ — pour le cron / clean
 }
 
 model TicketEvent {
