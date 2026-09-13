@@ -2,6 +2,7 @@ import { Injectable, NotFoundException, BadRequestException } from '@nestjs/comm
 import { PrismaService } from '../../prisma/prisma.service';
 import { NotificationsService } from '../notifications/notifications.service';
 import { ManasTransactionType, NotificationType } from '@prisma/client';
+import { MANAS_CONFIG } from '../../common/constants/manas.config';
 
 @Injectable()
 export class ManasService {
@@ -46,19 +47,23 @@ export class ManasService {
       };
     }
 
-    if (user.manas < 1) {
-      throw new BadRequestException('MANAS insuffisants pour regarder cet épisode (1 MANAS requis)');
+    const cost = MANAS_CONFIG.ANIME_EPISODE_COST;
+
+    if (user.manas < cost) {
+      throw new BadRequestException(
+        `MANAS insuffisants pour regarder cet épisode (${cost} MANAS requis)`,
+      );
     }
 
     const updatedUser = await this.prisma.user.update({
       where: { id: userId },
-      data: { manas: { decrement: 1 } },
+      data: { manas: { decrement: cost } },
     });
 
     await this.prisma.manasTransaction.create({
       data: {
         userId,
-        amount: -1,
+        amount: -cost,
         type: ManasTransactionType.READING,
         description: `Visionnage de l'épisode ${episodeNumber}`,
         metadata: { animeId, episodeNumber },
@@ -67,7 +72,7 @@ export class ManasService {
 
     return {
       success: true,
-      message: '1 MANAS consommé',
+      message: `${cost} MANAS consommé`,
       remainingManas: updatedUser.manas,
     };
   }
@@ -159,17 +164,21 @@ export class ManasService {
     };
   }
 
-  async sendManas(
-    senderId: string,
-    receiverId: string,
-    amount: number,
-  ) {
+  async sendManas(senderId: string, receiverId: string, amount: number) {
     if (senderId === receiverId) {
-      throw new BadRequestException('Vous ne pouvez pas vous envoyer des MANAS à vous-même');
+      throw new BadRequestException(
+        'Vous ne pouvez pas vous envoyer des MANAS à vous-même',
+      );
     }
 
     if (amount <= 0) {
       throw new BadRequestException('Le montant doit être positif');
+    }
+
+    if (amount > MANAS_CONFIG.SEND_MAX_AMOUNT) {
+      throw new BadRequestException(
+        `Le montant maximum par envoi est de ${MANAS_CONFIG.SEND_MAX_AMOUNT} MANAS`,
+      );
     }
 
     const receiver = await this.prisma.user.findUnique({
@@ -235,7 +244,7 @@ export class ManasService {
     userId: string,
     mangaId: string,
     chapterNumber: number,
-    priceInManas: number = 50,
+    priceInManas: number = MANAS_CONFIG.CHAPTER_COST_DEFAULT,
   ) {
     const chapter = await this.prisma.chapter.findUnique({
       where: {
@@ -269,10 +278,12 @@ export class ManasService {
   async collaborateWithCreator(
     userId: string,
     creatorId: string,
-    amountInManas: number = 250,
+    amountInManas: number = MANAS_CONFIG.COLLABORATION_COST,
   ) {
     if (userId === creatorId) {
-      throw new BadRequestException('Vous ne pouvez pas collaborer avec vous-même');
+      throw new BadRequestException(
+        'Vous ne pouvez pas collaborer avec vous-même',
+      );
     }
 
     const creator = await this.prisma.user.findUnique({
@@ -285,7 +296,7 @@ export class ManasService {
     }
 
     if (creator.role !== 'CREATOR' && creator.role !== 'ADMIN') {
-      throw new BadRequestException('Cet utilisateur n\'est pas un créateur');
+      throw new BadRequestException("Cet utilisateur n'est pas un créateur");
     }
 
     const result = await this.spendManas(
@@ -298,7 +309,7 @@ export class ManasService {
 
     await this.addManas(
       creatorId,
-      amountInManas * 0.7,
+      amountInManas * MANAS_CONFIG.CREATOR_SHARE,
       `Collaboration de ${userId}`,
       ManasTransactionType.COLLABORATION,
       { userId },
@@ -364,7 +375,7 @@ export class ManasService {
   async earnDailyManas(
     userId: string,
     actionType: string,
-    amount: number = 1,
+    amount: number = MANAS_CONFIG.DAILY_ACTION_REWARD,
   ) {
     const today = new Date();
     today.setHours(0, 0, 0, 0);
@@ -379,12 +390,13 @@ export class ManasService {
       },
     });
 
-    const maxDaily = 10;
-
-    if (todayActions && todayActions.count >= maxDaily) {
+    if (
+      todayActions &&
+      todayActions.count >= MANAS_CONFIG.DAILY_MAX_ACTIONS
+    ) {
       return {
         success: false,
-        message: `Limite quotidienne atteinte pour ${actionType} (${maxDaily}/jour)`,
+        message: `Limite quotidienne atteinte pour ${actionType} (${MANAS_CONFIG.DAILY_MAX_ACTIONS}/jour)`,
         earned: 0,
         total: todayActions.count,
       };
