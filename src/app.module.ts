@@ -1,7 +1,7 @@
 // src/app.module.ts
 import { Module } from '@nestjs/common';
 import { ConfigModule } from '@nestjs/config';
-import { ScheduleModule } from '@nestjs/schedule'; // ✅ AJOUT
+import { ScheduleModule } from '@nestjs/schedule';
 import { CommonModule } from './common/common.module';
 import { AuthModule } from './modules/auth/auth.module';
 import { UsersModule } from './modules/users/users.module';
@@ -12,7 +12,6 @@ import { InkstreamModule } from './modules/inkstream/inkstream.module';
 import { FollowModule } from './modules/follow/follow.module';
 import { CertificationModule } from './modules/certification/certification.module';
 import { DashboardModule } from './modules/dashboard/dashboard.module';
-import { ChatModule } from './modules/chat/chat.module';
 import { NotificationsModule } from './modules/notifications/notifications.module';
 import { SteamModule } from './modules/steam/steam.module';
 import { EventsModule } from './modules/events/events.module';
@@ -31,6 +30,7 @@ import { QrModule } from './modules/qr/qr.module';
 import { TicketsModule } from './modules/tickets/tickets.module';
 import { BadgesModule } from './modules/badges/badges.module';
 import { ReelsModule } from './modules/reels/reels.module';
+import { CollaborationModule } from './modules/collaboration/collaboration.module';
 
 @Module({
   imports: [
@@ -38,7 +38,7 @@ import { ReelsModule } from './modules/reels/reels.module';
       isGlobal: true,
       envFilePath: '.env',
     }),
-    ScheduleModule.forRoot(), // ✅ AJOUT — Active les crons
+    ScheduleModule.forRoot(),
     CommonModule,
     PrismaModule,
     AuthModule,
@@ -50,7 +50,6 @@ import { ReelsModule } from './modules/reels/reels.module';
     FollowModule,
     CertificationModule,
     DashboardModule,
-    ChatModule,
     NotificationsModule,
     SteamModule,
     EventsModule,
@@ -68,6 +67,7 @@ import { ReelsModule } from './modules/reels/reels.module';
     TicketsModule,
     BadgesModule,
     ReelsModule,
+    CollaborationModule,   // ← NOUVEAU (remplace ChatModule)
   ],
 })
 export class AppModule {}
