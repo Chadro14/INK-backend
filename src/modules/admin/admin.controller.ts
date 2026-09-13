@@ -10,6 +10,7 @@ import {
   Req,
 } from '@nestjs/common';
 import { AdminService } from './admin.service';
+import { BalanceService } from '../manas/balance.service';
 import { JwtAuthGuard } from '../../common/guards/jwt-auth.guard';
 import { CertifyUserDto } from './dto/certify-user.dto';
 import { ModerateContentDto } from './dto/moderate-content.dto';
@@ -18,8 +19,14 @@ import { UserFilterDto } from './dto/user-filter.dto';
 @Controller('admin')
 @UseGuards(JwtAuthGuard)
 export class AdminController {
-  constructor(private readonly adminService: AdminService) {}
+  constructor(
+    private readonly adminService: AdminService,
+    private readonly balanceService: BalanceService,
+  ) {}
 
+  // ============================================
+  // UTILISATEURS
+  // ============================================
   @Get('users')
   async getUsers(@Req() req: any, @Query() filter: UserFilterDto) {
     await this.adminService.checkAdmin(req.user.id);
@@ -50,13 +57,14 @@ export class AdminController {
     return this.adminService.getStats(req.user.id);
   }
 
-  // ✅ NOUVEAU : Promouvoir en créateur
+  // ============================================
+  // CRÉATEURS
+  // ============================================
   @Post('promote/:userId')
   async promoteToCreator(@Req() req: any, @Param('userId') userId: string) {
     return this.adminService.promoteToCreator(req.user.id, userId);
   }
 
-  // ✅ NOUVEAU : Révoquer le statut de créateur
   @Post('revoke/:userId')
   async revokeCreatorStatus(
     @Req() req: any,
@@ -66,7 +74,9 @@ export class AdminController {
     return this.adminService.revokeCreatorStatus(req.user.id, userId, reason);
   }
 
-  // ✅ NOUVEAU : Accorder Premium
+  // ============================================
+  // PREMIUM
+  // ============================================
   @Post('grant-premium/:userId')
   async grantPremium(
     @Req() req: any,
@@ -82,7 +92,9 @@ export class AdminController {
     );
   }
 
-  // ✅ NOUVEAU : Demandes de créateur
+  // ============================================
+  // DEMANDES DE CRÉATEUR
+  // ============================================
   @Get('creator-requests')
   async getCreatorRequests(
     @Req() req: any,
@@ -104,7 +116,11 @@ export class AdminController {
     @Param('requestId') requestId: string,
     @Body('reviewNotes') reviewNotes?: string,
   ) {
-    return this.adminService.approveCreatorRequest(req.user.id, requestId, reviewNotes);
+    return this.adminService.approveCreatorRequest(
+      req.user.id,
+      requestId,
+      reviewNotes,
+    );
   }
 
   @Post('creator-requests/:requestId/reject')
@@ -113,6 +129,73 @@ export class AdminController {
     @Param('requestId') requestId: string,
     @Body('reason') reason: string,
   ) {
-    return this.adminService.rejectCreatorRequest(req.user.id, requestId, reason);
+    return this.adminService.rejectCreatorRequest(
+      req.user.id,
+      requestId,
+      reason,
+    );
+  }
+
+  // ============================================
+  // ✅ RETRAITS (PAYOUTS)
+  // ============================================
+
+  /**
+   * Liste tous les retraits — filtrable par statut.
+   * GET /admin/payouts?status=PENDING&page=1&limit=20
+   */
+  @Get('payouts')
+  async getAllPayouts(
+    @Req() req: any,
+    @Query('status') status?: string,
+    @Query('page') page?: string,
+    @Query('limit') limit?: string,
+  ) {
+    return this.balanceService.getAllPayouts(req.user.id, {
+      status,
+      page: page ? parseInt(page) : 1,
+      limit: limit ? parseInt(limit) : 20,
+    });
+  }
+
+  /**
+   * Détail d'un retrait.
+   * GET /admin/payouts/:id
+   */
+  @Get('payouts/:id')
+  async getPayoutDetail(@Req() req: any, @Param('id') id: string) {
+    return this.balanceService.getPayoutById(req.user.id, id);
+  }
+
+  /**
+   * Approuver un retrait : PENDING → PROCESSING.
+   * POST /admin/payouts/:id/approve
+   */
+  @Post('payouts/:id/approve')
+  async approveWithdrawal(@Req() req: any, @Param('id') id: string) {
+    return this.balanceService.approveWithdrawal(req.user.id, id);
+  }
+
+  /**
+   * Compléter un retrait : PROCESSING → COMPLETED.
+   * POST /admin/payouts/:id/complete
+   */
+  @Post('payouts/:id/complete')
+  async completeWithdrawal(@Req() req: any, @Param('id') id: string) {
+    return this.balanceService.completeWithdrawal(req.user.id, id);
+  }
+
+  /**
+   * Refuser un retrait : PENDING/PROCESSING → FAILED + rembourser.
+   * POST /admin/payouts/:id/reject
+   * Body: { reason: string }
+   */
+  @Post('payouts/:id/reject')
+  async rejectWithdrawal(
+    @Req() req: any,
+    @Param('id') id: string,
+    @Body('reason') reason: string,
+  ) {
+    return this.balanceService.rejectWithdrawal(req.user.id, id, reason);
   }
 }
