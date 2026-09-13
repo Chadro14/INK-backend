@@ -108,21 +108,9 @@ export class ChaptersService {
   }
 
   // ============================================
-  // 2. FINALISATION DU CHAPITRE - CORRIGÉ ✅
+  // 2. FINALISATION DU CHAPITRE
   // ============================================
   async finalizeChapter(mangaId: string, userId: string, dto: FinalizeChapterDto) {
-    console.log('🔍 === FINALIZE CHAPTER DEBUG ===');
-    console.log('📌 mangaId:', mangaId);
-    console.log('📌 userId:', userId);
-    console.log('📌 dto.number:', dto.number);
-    console.log('📌 dto.mode:', dto.mode);
-    console.log('📌 dto.keys:', dto.keys);
-    console.log('📌 dto.keys length:', dto.keys?.length);
-    console.log('📌 dto.isDraft:', dto.isDraft);
-    console.log('📌 dto.keys[0] (pour PDF):', dto.keys?.[0]);
-    console.log('📌 dto.coverUrl:', dto.coverUrl); // ✅ AJOUTÉ
-    console.log('🔍 === FIN DEBUG ===');
-
     const manga = await this.findMangaByIdOrSlug(mangaId);
     const realMangaId = manga.id;
 
@@ -169,12 +157,10 @@ export class ChaptersService {
     if (isPdfMode) {
       if (!dto.keys || dto.keys.length === 0 || !dto.keys[0]) {
         throw new BadRequestException(
-          'Aucune clé PDF fournie. Vérifie que upload-urls renvoie bien une clé.'
+          'Aucune clé PDF fournie. Vérifie que upload-urls renvoie bien une clé.',
         );
       }
 
-      console.log('📄 PDF Key reçu:', dto.keys[0]);
-      
       return this.prisma.chapter.create({
         data: {
           mangaId: realMangaId,
@@ -182,7 +168,7 @@ export class ChaptersService {
           title: dto.title?.trim() || null,
           contentType: ChapterContentType.PDF,
           pdfKey: dto.keys[0],
-          coverUrl: dto.coverUrl?.trim() || null, // ✅ AJOUTÉ
+          coverUrl: dto.coverUrl?.trim() || null,
           isFree: calculatedPrice === 0,
           price: calculatedPrice,
           isDraft,
@@ -195,7 +181,7 @@ export class ChaptersService {
     // ===== MODE IMAGES =====
     if (!dto.keys || dto.keys.length === 0) {
       throw new BadRequestException(
-        'Aucune image fournie. Vérifie que upload-urls renvoie bien des clés.'
+        'Aucune image fournie. Vérifie que upload-urls renvoie bien des clés.',
       );
     }
 
@@ -212,7 +198,7 @@ export class ChaptersService {
         title: dto.title?.trim() || null,
         contentType: ChapterContentType.IMAGES,
         pages: pages as any,
-        coverUrl: dto.coverUrl?.trim() || null, // ✅ AJOUTÉ
+        coverUrl: dto.coverUrl?.trim() || null,
         pageCount: pages.length,
         isFree: calculatedPrice === 0,
         price: calculatedPrice,
@@ -237,7 +223,9 @@ export class ChaptersService {
           .createSignedUploadUrl(key);
 
         if (error || !data) {
-          throw new BadRequestException(`Erreur lors de la génération de l'URL pour ${filename}`);
+          throw new BadRequestException(
+            `Erreur lors de la génération de l'URL pour ${filename}`,
+          );
         }
 
         const publicUrl = `${process.env.SUPABASE_URL}/storage/v1/object/public/chapters/${key}`;
@@ -278,7 +266,9 @@ export class ChaptersService {
     });
 
     if (existing) {
-      throw new BadRequestException(`Le chapitre N°${chapterNumber} existe déjà pour ce manga.`);
+      throw new BadRequestException(
+        `Le chapitre N°${chapterNumber} existe déjà pour ce manga.`,
+      );
     }
 
     const isDraft = dto.isDraft ?? false;
@@ -293,7 +283,7 @@ export class ChaptersService {
           pdfKey: dto.pdfUrl,
           isFree: dto.isFree ?? true,
           isDraft,
-          price: dto.isFree ? 0 : (dto.price || 0),
+          price: dto.isFree ? 0 : dto.price || 0,
           coverUrl: dto.coverUrl || null,
           publishedAt: !isDraft ? new Date() : null,
           pageCount: 1,
@@ -326,7 +316,7 @@ export class ChaptersService {
         pageCount: pages.length,
         isFree: dto.isFree ?? true,
         isDraft,
-        price: dto.isFree ? 0 : (dto.price || 0),
+        price: dto.isFree ? 0 : dto.price || 0,
         coverUrl: dto.coverUrl || null,
         publishedAt: !isDraft ? new Date() : null,
       },
@@ -430,29 +420,20 @@ export class ChaptersService {
   // 8. ATTACHER LES URLS SIGNÉES
   // ============================================
   private async attachSignedUrls(chapter: any) {
-    console.log('📦 AttachSignedUrls - Chapitre:', {
-      id: chapter.id,
-      contentType: chapter.contentType,
-      pdfKey: chapter.pdfKey,
-      pages: chapter.pages,
-      pagesType: typeof chapter.pages,
-      isArray: Array.isArray(chapter.pages),
-    });
-
     // ===== MODE PDF =====
     if (chapter.contentType === ChapterContentType.PDF) {
       if (!chapter.pdfKey) {
-        console.warn('⚠️ pdfKey est null pour le chapitre', chapter.id);
         return { ...chapter, pdfUrl: null };
       }
 
       try {
-        const isFullUrl = chapter.pdfKey.startsWith('http://') || chapter.pdfKey.startsWith('https://');
-        const pdfUrl = isFullUrl 
-          ? chapter.pdfKey 
+        const isFullUrl =
+          chapter.pdfKey.startsWith('http://') ||
+          chapter.pdfKey.startsWith('https://');
+        const pdfUrl = isFullUrl
+          ? chapter.pdfKey
           : await this.storage.getSignedUrl(chapter.pdfKey);
-        
-        console.log('✅ PDF URL générée:', pdfUrl);
+
         return { ...chapter, pdfUrl };
       } catch (error) {
         console.error('❌ Erreur génération PDF URL:', error.message);
@@ -462,8 +443,11 @@ export class ChaptersService {
 
     // ===== MODE IMAGES =====
     if (chapter.contentType === ChapterContentType.IMAGES) {
-      if (!chapter.pages || !Array.isArray(chapter.pages) || chapter.pages.length === 0) {
-        console.warn('⚠️ pages est vide ou invalide pour le chapitre', chapter.id);
+      if (
+        !chapter.pages ||
+        !Array.isArray(chapter.pages) ||
+        chapter.pages.length === 0
+      ) {
         return { ...chapter, pages: [] };
       }
 
@@ -471,30 +455,33 @@ export class ChaptersService {
         const pagesWithUrls = await Promise.all(
           (chapter.pages as unknown as ChapterPage[]).map(async (page, index) => {
             if (!page.key) {
-              console.warn(`⚠️ page.key manquant pour la page ${index + 1}`, page);
               return { order: page.order, isFree: page.isFree, url: null };
             }
 
-            const isFullUrl = page.key.startsWith('http://') || page.key.startsWith('https://');
-            
+            const isFullUrl =
+              page.key.startsWith('http://') ||
+              page.key.startsWith('https://');
+
             try {
-              const url = isFullUrl 
-                ? page.key 
+              const url = isFullUrl
+                ? page.key
                 : await this.storage.getSignedUrl(page.key);
-              
+
               return {
                 order: page.order,
                 isFree: page.isFree,
                 url: url || null,
               };
             } catch (error) {
-              console.error(`❌ Erreur pour la page ${index + 1}:`, error.message);
+              console.error(
+                `❌ Erreur pour la page ${index + 1}:`,
+                error.message,
+              );
               return { order: page.order, isFree: page.isFree, url: null };
             }
-          })
+          }),
         );
-        
-        console.log(`✅ ${pagesWithUrls.length} images URLs générées`);
+
         return { ...chapter, pages: pagesWithUrls };
       } catch (error) {
         console.error('❌ Erreur génération images URLs:', error.message);
@@ -597,7 +584,7 @@ export class ChaptersService {
       };
     }
 
-    // 3. Déjà acheté avec MANAS
+    // 3. Déjà acheté avec MANAS (accès permanent)
     const manasPurchase = await this.prisma.manasTransaction.findFirst({
       where: {
         userId,
@@ -627,17 +614,24 @@ export class ChaptersService {
       };
     }
 
-    // 4. Déjà débloqué avec un Ticket
-    const ticketUse = await this.prisma.ticketUse.findUnique({
-      where: {
-        userId_chapterId: { userId, chapterId },
-      },
+    // 4. Déjà débloqué avec un Ticket (temporaire ou permanent)
+    const now = new Date();
+    const ticketUses = await this.prisma.ticketUse.findMany({
+      where: { userId, chapterId },
     });
 
-    if (ticketUse) {
+    // Chercher une utilisation valide (expiresAt null = permanent, ou > now)
+    const validTicketUse = ticketUses.find((tu: any) => {
+      const exp = tu.expiresAt;
+      if (!exp) return true; // pas d'expiration → permanent
+      return new Date(exp) > now;
+    });
+
+    if (validTicketUse) {
       return {
         hasAccess: true,
         method: 'ticket',
+        expiresAt: (validTicketUse as any).expiresAt || null,
         chapter: {
           id: chapter.id,
           number: chapter.number,
@@ -652,7 +646,7 @@ export class ChaptersService {
       };
     }
 
-    // 5. Récupérer les MANAS et Tickets de l'utilisateur
+    // 5. Récupérer les soldes utilisateur
     const ticketBalance = await this.prisma.ticket.findUnique({
       where: { userId },
       select: { amount: true },
@@ -684,7 +678,6 @@ export class ChaptersService {
   // ✅ 11. RÉCUPÉRER LES STATISTIQUES DES CHAPITRES D'UN CRÉATEUR
   // ============================================
   async getCreatorChaptersStats(userId: string) {
-    // Vérifier si l'utilisateur existe
     const user = await this.prisma.user.findUnique({
       where: { id: userId },
       select: { id: true },
@@ -694,13 +687,12 @@ export class ChaptersService {
       throw new NotFoundException('Utilisateur non trouvé');
     }
 
-    // Récupérer tous les mangas du créateur
     const mangas = await this.prisma.manga.findMany({
       where: { authorId: userId },
       select: { id: true },
     });
 
-    const mangaIds = mangas.map(m => m.id);
+    const mangaIds = mangas.map((m) => m.id);
 
     if (mangaIds.length === 0) {
       return {
@@ -711,7 +703,6 @@ export class ChaptersService {
       };
     }
 
-    // Récupérer tous les chapitres des mangas du créateur
     const chapters = await this.prisma.chapter.findMany({
       where: {
         mangaId: { in: mangaIds },
@@ -740,11 +731,13 @@ export class ChaptersService {
       orderBy: { publishedAt: 'desc' },
     });
 
-    // Calcul des totaux
     const totalChapters = chapters.length;
     const totalViews = chapters.reduce((acc, c) => acc + c.viewsCount, 0);
-    const totalLikes = 0; // Les likes sont au niveau du manga
-    const totalComments = chapters.reduce((acc, c) => acc + c._count.comments, 0);
+    const totalLikes = 0;
+    const totalComments = chapters.reduce(
+      (acc, c) => acc + c._count.comments,
+      0,
+    );
 
     return {
       totalChapters,
