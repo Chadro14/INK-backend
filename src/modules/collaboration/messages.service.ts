@@ -86,7 +86,7 @@ export class MessagesService {
 
     const trimmedContent = content?.trim() || '';
     const preview = mangaId
-      ? `📚 ${trimmedContent || 'Manga partagé'}`.slice(0, 100)
+      ? `${trimmedContent || 'Manga partagé'}`.slice(0, 100)
       : trimmedContent.slice(0, 100);
 
     const [message] = await this.prisma.$transaction([
