@@ -16,18 +16,30 @@ import { MessagesService } from './messages.service';
 export class MessagesController {
   constructor(private readonly service: MessagesService) {}
 
+  // ============================================
+  // ENVOYER UN MESSAGE (avec manga optionnel)
+  // ============================================
   @Post('conversations/:id')
   @UseGuards(JwtAuthGuard)
   async send(
     @Req() req: any,
     @Param('id') conversationId: string,
     @Body('content') content: string,
+    @Body('mangaId') mangaId?: string,
   ) {
     const senderId = req.user?.id || req.user?.sub;
-    const data = await this.service.sendMessage(conversationId, senderId, content);
+    const data = await this.service.sendMessage(
+      conversationId,
+      senderId,
+      content,
+      mangaId,
+    );
     return { success: true, data };
   }
 
+  // ============================================
+  // RÉCUPÉRER LES MESSAGES
+  // ============================================
   @Get('conversations/:id')
   @UseGuards(JwtAuthGuard)
   async getMessages(
@@ -45,6 +57,9 @@ export class MessagesController {
     );
   }
 
+  // ============================================
+  // MARQUER COMME LU
+  // ============================================
   @Patch('conversations/:id/read')
   @UseGuards(JwtAuthGuard)
   async markAsRead(@Req() req: any, @Param('id') conversationId: string) {
@@ -52,6 +67,9 @@ export class MessagesController {
     return this.service.markAsRead(conversationId, userId);
   }
 
+  // ============================================
+  // COMPTER LES NON LUS
+  // ============================================
   @Get('unread')
   @UseGuards(JwtAuthGuard)
   async countUnread(@Req() req: any) {
