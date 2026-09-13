@@ -61,7 +61,7 @@ export class MangasService {
   // ============================================
   private async generateUniqueSlug(baseTitle: string, excludeId?: string): Promise<string> {
     let slug = this.generateSlug(baseTitle);
-    
+
     let existing = await this.prisma.manga.findFirst({
       where: {
         slug,
@@ -91,7 +91,28 @@ export class MangasService {
   }
 
   // ============================================
-  // HELPER : VÉRIFIER LA POSITION DU MANGA (1 SUR 2) - PUBLIC
+  // HELPER : Recherche de manga par ID OU SLUG
+  // ============================================
+  private async findMangaByIdOrSlug(identifier: string) {
+    let manga = await this.prisma.manga.findUnique({
+      where: { id: identifier },
+    });
+
+    if (!manga) {
+      manga = await this.prisma.manga.findUnique({
+        where: { slug: identifier },
+      });
+    }
+
+    if (!manga) {
+      throw new NotFoundException('Manga introuvable.');
+    }
+
+    return manga;
+  }
+
+  // ============================================
+  // HELPER : VÉRIFIER LA POSITION DU MANGA (1 SUR 2)
   // ============================================
   async getMangaPosition(userId: string, mangaId?: string): Promise<{ position: number; isPaidPosition: boolean }> {
     const mangas = await this.prisma.manga.findMany({
@@ -187,7 +208,7 @@ export class MangasService {
     const isPremium = dto.isPremium ?? false;
     if (isPremium && !isPaidPosition) {
       throw new BadRequestException(
-        `Ce manga (n°${position}) doit être gratuit car il est en position paire.`
+        `Ce manga (n°${position}) doit être gratuit car il est en position paire.`,
       );
     }
 
@@ -210,7 +231,7 @@ export class MangasService {
   }
 
   // ============================================
-  // 2. LISTE AVEC FILTRES ET PAGINATION - AJOUT DU FILTRE AUTHORID
+  // 2. LISTE AVEC FILTRES ET PAGINATION
   // ============================================
   async findAll(
     page = 1,
@@ -448,22 +469,22 @@ export class MangasService {
 
     if (dto.isPremium !== undefined) {
       const { position, isPaidPosition } = await this.getMangaPosition(userId, id);
-      
+
       if (dto.isPremium && !isPaidPosition) {
         throw new BadRequestException(
-          `Ce manga (position n°${position}) doit rester gratuit car il est en position paire.`
+          `Ce manga (position n°${position}) doit rester gratuit car il est en position paire.`,
         );
       }
     }
 
     const updateData: any = {};
-    
+
     if (dto.title !== undefined) {
       updateData.title = dto.title;
       const newSlug = await this.generateUniqueSlug(dto.title, manga.id);
       updateData.slug = newSlug;
     }
-    
+
     if (dto.description !== undefined) updateData.description = dto.description;
     if (dto.coverUrl !== undefined) updateData.coverUrl = dto.coverUrl;
     if (dto.status !== undefined && Object.values(Status).includes(dto.status)) {
@@ -471,7 +492,7 @@ export class MangasService {
     }
     if (dto.genre !== undefined) updateData.genre = dto.genre;
     if (dto.tags !== undefined) updateData.tags = dto.tags;
-    
+
     if (dto.isPremium !== undefined) {
       const { isPaidPosition } = await this.getMangaPosition(userId, id);
       updateData.isPremium = dto.isPremium && isPaidPosition;
@@ -596,7 +617,7 @@ export class MangasService {
     for (const manga of mangas) {
       try {
         const slug = await this.generateUniqueSlug(manga.title, manga.id);
-        
+
         await this.prisma.manga.update({
           where: { id: manga.id },
           data: { slug },
@@ -626,7 +647,7 @@ export class MangasService {
   // ============================================
   async incrementView(identifier: string, userId?: string) {
     const manga = await this.findByIdOrSlug(identifier);
-    
+
     if (userId && manga.authorId === userId) {
       return { viewsCount: manga.viewsCount };
     }
@@ -641,7 +662,7 @@ export class MangasService {
   }
 
   // ============================================
-  // 12. RÉCUPÉRER LES MANGAS D'UN CRÉATEUR AVEC STATS - CORRIGÉ ✅
+  // 12. RÉCUPÉRER LES MANGAS D'UN CRÉATEUR AVEC STATS
   // ============================================
   async getCreatorMangasWithStats(userId: string) {
     const user = await this.prisma.user.findUnique({
@@ -684,26 +705,22 @@ export class MangasService {
       orderBy: { createdAt: 'desc' },
     });
 
-    // ✅ SIGNER LES URLS DES COUVERTURES - CORRIGÉ
     const signedMangas = await Promise.all(
       mangas.map(async (manga) => {
         let signedCoverUrl = null;
         if (manga.coverUrl) {
           try {
-            // Si c'est déjà une URL complète, la garder
             if (manga.coverUrl.startsWith('http://') || manga.coverUrl.startsWith('https://')) {
               signedCoverUrl = manga.coverUrl;
             } else {
-              // Sinon, signer l'URL avec une durée explicite de 1 an
               signedCoverUrl = await this.storage.getSignedUrl(
                 manga.coverUrl,
-                3600 * 24 * 365, // 1 an
-                'chapters'
+                3600 * 24 * 365,
+                'chapters',
               );
             }
           } catch (error) {
             console.error(`❌ Erreur signature URL pour ${manga.title}:`, error.message);
-            // 🔥 FALLBACK : utiliser l'URL publique si la signature échoue
             try {
               signedCoverUrl = this.storage.getPublicUrl(manga.coverUrl, 'chapters');
             } catch {
@@ -741,22 +758,150 @@ export class MangasService {
   // ============================================
   async testUpload(userId: string) {
     try {
-      // Vérifier que le storage fonctionne
       const testKey = `test-${Date.now()}.txt`;
       const testBuffer = Buffer.from('Test upload');
-      
-      // Tester l'upload
+
       await this.storage.upload(testKey, testBuffer, 'text/plain', 'chapters');
       console.log('✅ Upload test réussi');
-      
-      // Tester la récupération de l'URL
+
       const url = await this.storage.getSignedUrl(testKey);
       console.log('✅ URL test générée:', url);
-      
+
       return { success: true, url };
     } catch (error: any) {
       console.error('❌ Erreur test upload:', error.message);
       return { success: false, error: error.message };
     }
+  }
+
+  // ============================================
+  // 14. ✅ RÉCUPÉRER LES CHAPITRES AVEC STATUT D'ACCÈS
+  // ============================================
+  async getChaptersWithAccess(mangaIdOrSlug: string, userId?: string) {
+    const manga = await this.findMangaByIdOrSlug(mangaIdOrSlug);
+
+    const chapters = await this.prisma.chapter.findMany({
+      where: {
+        mangaId: manga.id,
+        isDraft: false,
+      },
+      select: {
+        id: true,
+        number: true,
+        title: true,
+        contentType: true,
+        isFree: true,
+        price: true,
+        viewsCount: true,
+        pageCount: true,
+        coverUrl: true,
+        publishedAt: true,
+        createdAt: true,
+      },
+      orderBy: { number: 'asc' },
+    });
+
+    // Pas d'utilisateur → juste gratuit/payant
+    if (!userId) {
+      return chapters.map((ch) => ({
+        ...ch,
+        hasAccess: ch.isFree,
+        accessMethod: ch.isFree ? 'free' : null,
+        expiresAt: null,
+      }));
+    }
+
+    // Récupérer user
+    const user = await this.prisma.user.findUnique({
+      where: { id: userId },
+      select: {
+        id: true,
+        role: true,
+        premiumActive: true,
+      },
+    });
+
+    if (!user) {
+      return chapters.map((ch) => ({
+        ...ch,
+        hasAccess: ch.isFree,
+        accessMethod: ch.isFree ? 'free' : null,
+        expiresAt: null,
+      }));
+    }
+
+    // Achats MANAS
+    const purchases = await this.prisma.manasTransaction.findMany({
+      where: {
+        userId,
+        type: 'CHAPTER_PURCHASE',
+        metadata: {
+          path: ['mangaId'],
+          equals: manga.id,
+        },
+      },
+      select: { metadata: true },
+    });
+
+    const purchasedChapterIds = new Set<string>();
+    for (const p of purchases) {
+      const meta = (p.metadata as any) || {};
+      if (meta.chapterId) {
+        purchasedChapterIds.add(meta.chapterId);
+      }
+    }
+
+    // Tickets
+    const now = new Date();
+    const ticketUses = await this.prisma.ticketUse.findMany({
+      where: {
+        userId,
+        mangaId: manga.id,
+      },
+    });
+
+    const ticketMap = new Map<string, { expiresAt: Date | null }>();
+    for (const tu of ticketUses) {
+      const exp = (tu as any).expiresAt;
+      if (!exp) {
+        ticketMap.set(tu.chapterId, { expiresAt: null });
+      } else if (new Date(exp) > now) {
+        ticketMap.set(tu.chapterId, { expiresAt: new Date(exp) });
+      }
+    }
+
+    const isAuthor = manga.authorId === userId;
+    const isPremium = !!user.premiumActive;
+    const isAdmin = user.role === 'ADMIN';
+
+    return chapters.map((ch) => {
+      if (ch.isFree) {
+        return { ...ch, hasAccess: true, accessMethod: 'free', expiresAt: null };
+      }
+
+      if (isAuthor || isAdmin) {
+        return { ...ch, hasAccess: true, accessMethod: 'author', expiresAt: null };
+      }
+
+      if (isPremium) {
+        return { ...ch, hasAccess: true, accessMethod: 'premium', expiresAt: null };
+      }
+
+      if (purchasedChapterIds.has(ch.id)) {
+        return { ...ch, hasAccess: true, accessMethod: 'manas', expiresAt: null };
+      }
+
+      const ticketInfo = ticketMap.get(ch.id);
+      if (ticketInfo) {
+        return {
+          ...ch,
+          hasAccess: true,
+          accessMethod: 'ticket',
+          expiresAt: ticketInfo.expiresAt,
+        };
+      }
+
+      return { ...ch, hasAccess: false, accessMethod: null, expiresAt: null };
+    });
   }
 }
