@@ -86,6 +86,18 @@ export class CollaborationController {
   }
 
   // ============================================
+  // BADGE COUNT — demandes PENDING + messages non lus
+  // (AVANT les routes :id pour ne pas être capturé comme un id)
+  // ============================================
+  @Get('badge-count')
+  @UseGuards(JwtAuthGuard)
+  async getBadgeCount(@Req() req: any) {
+    const userId = req.user?.id || req.user?.sub;
+    const data = await this.service.getBadgeCount(userId);
+    return { success: true, data };
+  }
+
+  // ============================================
   // MES CONVERSATIONS
   // ============================================
   @Get('conversations')
