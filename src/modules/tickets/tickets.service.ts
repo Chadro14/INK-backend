@@ -29,7 +29,10 @@ export class TicketsService {
       });
     }
 
-    const hasUnlimitedTickets = user.premiumActive && user.premiumExpires && user.premiumExpires > new Date();
+    const hasUnlimitedTickets =
+      user.premiumActive &&
+      user.premiumExpires &&
+      user.premiumExpires > new Date();
 
     return {
       username: user.username,
@@ -41,7 +44,7 @@ export class TicketsService {
   }
 
   // ============================================
-  // AJOUTER DES TICKETS - SIGNATURE CORRIGÉE
+  // AJOUTER DES TICKETS
   // ============================================
   async addTickets(
     userId: string,
@@ -89,7 +92,7 @@ export class TicketsService {
   }
 
   // ============================================
-  // UTILISER UN TICKET (AVEC VÉRIFICATION PREMIUM)
+  // UTILISER UN TICKET (ACCÈS 2H)
   // ============================================
   async useTicket(userId: string, chapterId: string) {
     const chapter = await this.prisma.chapter.findUnique({
@@ -101,18 +104,37 @@ export class TicketsService {
       throw new NotFoundException('Chapitre non trouvé');
     }
 
-    // Vérifier si déjà débloqué
-    const existingUse = await this.prisma.ticketUse.findUnique({
+    // Anti-auto-achat : l'auteur a toujours accès
+    if (chapter.manga.authorId === userId) {
+      throw new BadRequestException(
+        "Vous êtes l'auteur de ce manga. Vous y avez déjà accès.",
+      );
+    }
+
+    // Anti-double-achat : si déjà acheté avec MANAS → refuser
+    const alreadyBoughtWithManas = await this.prisma.manasTransaction.findFirst({
       where: {
-        userId_chapterId: { userId, chapterId },
+        userId,
+        type: 'CHAPTER_PURCHASE',
+        metadata: {
+          path: ['chapterId'],
+          equals: chapterId,
+        },
       },
     });
 
-    if (existingUse) {
-      throw new BadRequestException('Chapitre déjà débloqué avec un ticket');
+    if (alreadyBoughtWithManas) {
+      throw new BadRequestException(
+        'Vous avez déjà acheté ce chapitre avec des MANAS. Accès permanent.',
+      );
     }
 
-    // VÉRIFIER SI L'UTILISATEUR EST PREMIUM (TICKETS ILLIMITÉS)
+    // Vérifier les utilisations existantes
+    const existingUses = await this.prisma.ticketUse.findMany({
+      where: { userId, chapterId },
+    });
+
+    // Vérifier si Premium
     const user = await this.prisma.user.findUnique({
       where: { id: userId },
       select: { premiumActive: true, premiumExpires: true },
@@ -122,21 +144,30 @@ export class TicketsService {
       throw new NotFoundException('Utilisateur non trouvé');
     }
 
-    // SI PREMIUM ACTIF → TICKETS ILLIMITÉS
-    const isPremiumActive = user.premiumActive && user.premiumExpires && user.premiumExpires > new Date();
+    const isPremiumActive =
+      user.premiumActive &&
+      user.premiumExpires &&
+      user.premiumExpires > new Date();
 
+    // PREMIUM → accès permanent (expiresAt = null)
     if (isPremiumActive) {
-      // Enregistrer l'utilisation (sans consommer de ticket)
-      await this.prisma.ticketUse.create({
-        data: {
-          userId,
-          ticketId: null, // Pas de ticket consommé
-          chapterId: chapter.id,
-          mangaId: chapter.mangaId,
-        },
-      });
+      if (existingUses.length > 0) {
+        await this.prisma.ticketUse.update({
+          where: { id: existingUses[0].id },
+          data: { expiresAt: null } as any,
+        });
+      } else {
+        await this.prisma.ticketUse.create({
+          data: {
+            userId,
+            ticketId: null,
+            chapterId: chapter.id,
+            mangaId: chapter.mangaId,
+            expiresAt: null,
+          } as any,
+        });
+      }
 
-      // Enregistrer une transaction pour le suivi
       await this.prisma.ticketTransaction.create({
         data: {
           userId,
@@ -144,7 +175,11 @@ export class TicketsService {
           amount: 0,
           type: 'GIFT',
           description: `Déblocage Premium du chapitre ${chapter.number} (tickets illimités)`,
-          metadata: { chapterId, mangaId: chapter.mangaId, method: 'premium_unlimited' },
+          metadata: {
+            chapterId,
+            mangaId: chapter.mangaId,
+            method: 'premium_unlimited',
+          },
         },
       });
 
@@ -153,6 +188,7 @@ export class TicketsService {
         message: `Chapitre ${chapter.number} débloqué (Premium - tickets illimités)`,
         remainingTickets: 'illimité',
         isPremium: true,
+        expiresAt: null,
         chapter: {
           id: chapter.id,
           number: chapter.number,
@@ -162,17 +198,19 @@ export class TicketsService {
       };
     }
 
-    // SI PAS PREMIUM → VÉRIFIER LE SOLDE DE TICKETS
+    // NON PREMIUM → consommer 1 ticket
     const ticket = await this.prisma.ticket.findUnique({
       where: { userId },
     });
 
     if (!ticket || ticket.amount < 1) {
-      throw new BadRequestException('Vous n\'avez pas assez de tickets');
+      throw new BadRequestException("Vous n'avez pas assez de tickets");
     }
 
-    // Consommer 1 ticket
-    const [updatedTicket, transaction, use] = await this.prisma.$transaction([
+    // Expiration : maintenant + 2h
+    const expiresAt = new Date(Date.now() + 2 * 60 * 60 * 1000);
+
+    const [updatedTicket] = await this.prisma.$transaction([
       this.prisma.ticket.update({
         where: { id: ticket.id },
         data: { amount: { decrement: 1 } },
@@ -183,25 +221,43 @@ export class TicketsService {
           ticketId: ticket.id,
           amount: -1,
           type: TicketType.USED,
-          description: `Déblocage du chapitre ${chapter.number}`,
-          metadata: { chapterId, mangaId: chapter.mangaId },
+          description: `Déblocage du chapitre ${chapter.number} (2h)`,
+          metadata: {
+            chapterId,
+            mangaId: chapter.mangaId,
+            expiresAt: expiresAt.toISOString(),
+          },
         },
       }),
-      this.prisma.ticketUse.create({
+    ]);
+
+    // Upsert TicketUse
+    if (existingUses.length > 0) {
+      await this.prisma.ticketUse.update({
+        where: { id: existingUses[0].id },
+        data: {
+          expiresAt,
+          ticketId: ticket.id,
+        } as any,
+      });
+    } else {
+      await this.prisma.ticketUse.create({
         data: {
           userId,
           ticketId: ticket.id,
           chapterId: chapter.id,
           mangaId: chapter.mangaId,
-        },
-      }),
-    ]);
+          expiresAt,
+        } as any,
+      });
+    }
 
     return {
       success: true,
-      message: `Chapitre ${chapter.number} débloqué avec succès`,
+      message: `Chapitre ${chapter.number} débloqué pendant 2 heures`,
       remainingTickets: updatedTicket.amount,
       isPremium: false,
+      expiresAt: expiresAt.toISOString(),
       chapter: {
         id: chapter.id,
         number: chapter.number,
@@ -224,7 +280,6 @@ export class TicketsService {
       throw new NotFoundException('Utilisateur non trouvé');
     }
 
-    // Vérifier si l'utilisateur a déjà réclamé dans les 48h
     const twoDaysAgo = new Date();
     twoDaysAgo.setHours(twoDaysAgo.getHours() - 48);
 
@@ -237,11 +292,16 @@ export class TicketsService {
     });
 
     if (existingClaim) {
-      const timeLeft = 48 - Math.floor((Date.now() - existingClaim.createdAt.getTime()) / (1000 * 60 * 60));
-      throw new BadRequestException(`Ticket déjà réclamé. Prochain dans ${timeLeft}h`);
+      const timeLeft =
+        48 -
+        Math.floor(
+          (Date.now() - existingClaim.createdAt.getTime()) / (1000 * 60 * 60),
+        );
+      throw new BadRequestException(
+        `Ticket déjà réclamé. Prochain dans ${timeLeft}h`,
+      );
     }
 
-    // Ajouter 1 ticket
     return this.addTickets(
       userId,
       1,
@@ -264,9 +324,12 @@ export class TicketsService {
       throw new NotFoundException('Utilisateur non trouvé');
     }
 
-    const hoursSinceCreation = (Date.now() - newUser.createdAt.getTime()) / (1000 * 60 * 60);
+    const hoursSinceCreation =
+      (Date.now() - newUser.createdAt.getTime()) / (1000 * 60 * 60);
     if (hoursSinceCreation > 24) {
-      throw new BadRequestException('Le parrainage doit être effectué dans les 24h suivant l\'inscription');
+      throw new BadRequestException(
+        "Le parrainage doit être effectué dans les 24h suivant l'inscription",
+      );
     }
 
     const existing = await this.prisma.ticketTransaction.findFirst({
@@ -278,7 +341,9 @@ export class TicketsService {
     });
 
     if (existing) {
-      throw new BadRequestException('Vous avez déjà été récompensé pour ce parrainage');
+      throw new BadRequestException(
+        'Vous avez déjà été récompensé pour ce parrainage',
+      );
     }
 
     return this.addTickets(
@@ -304,7 +369,7 @@ export class TicketsService {
 
     const now = new Date();
     if (now < event.startDate || now > event.endDate) {
-      throw new BadRequestException('Cet événement n\'est pas en cours');
+      throw new BadRequestException("Cet événement n'est pas en cours");
     }
 
     const existing = await this.prisma.ticketParticipation.findUnique({
@@ -314,7 +379,9 @@ export class TicketsService {
     });
 
     if (existing) {
-      throw new BadRequestException('Vous avez déjà participé à cet événement');
+      throw new BadRequestException(
+        'Vous avez déjà participé à cet événement',
+      );
     }
 
     const result = await this.addTickets(
@@ -370,13 +437,4 @@ export class TicketsService {
   // ============================================
   async getActiveEvents() {
     const now = new Date();
-    return this.prisma.ticketEvent.findMany({
-      where: {
-        isActive: true,
-        startDate: { lte: now },
-        endDate: { gte: now },
-      },
-      orderBy: { startDate: 'asc' },
-    });
-  }
-}
+    return
