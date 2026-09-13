@@ -313,6 +313,7 @@ model Manga {
 
   eventSubmissions EventSubmission[]
   reels            Reel[]
+  messages         Message[]   // ✅ AJOUTÉ — mangas partagés dans le chat
 
   createdAt        DateTime @default(now())
   updatedAt        DateTime @updatedAt
@@ -701,6 +702,10 @@ model Message {
   
   conversationId  String?
   conversation    Conversation? @relation(fields: [conversationId], references: [id], onDelete: Cascade)
+  
+  // ✅ Manga partagé (optionnel)
+  mangaId         String?
+  manga           Manga?   @relation(fields: [mangaId], references: [id], onDelete: SetNull)
   
   content    String   @db.Text
   isRead     Boolean  @default(false)
