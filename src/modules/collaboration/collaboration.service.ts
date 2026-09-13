@@ -31,9 +31,6 @@ export class CollaborationService {
 
   // ============================================
   // 1. CRÉER UNE DEMANDE DE COLLABORATION
-  //    - Bloque les 250 MANAS du sender
-  //    - Crée la demande avec status PENDING
-  //    - Envoie une notif au receiver
   // ============================================
   async createRequest(
     senderId: string,
@@ -74,7 +71,6 @@ export class CollaborationService {
       );
     }
 
-    // Vérifier s'il n'y a pas déjà une demande PENDING
     const existingPending = await this.prisma.collaborationRequest.findFirst({
       where: {
         senderId,
@@ -89,7 +85,6 @@ export class CollaborationService {
       );
     }
 
-    // Vérifier s'il n'y a pas déjà une conversation active
     const existingConversation = await this.prisma.conversation.findFirst({
       where: {
         OR: [
@@ -106,12 +101,11 @@ export class CollaborationService {
     }
 
     const expiresAt = new Date(
-      Date.now() + MANAS_CONFIG.COLLABORATION_REQUEST_TTL_DAYS * 24 * 60 * 60 * 1000,
+      Date.now() +
+        MANAS_CONFIG.COLLABORATION_REQUEST_TTL_DAYS * 24 * 60 * 60 * 1000,
     );
 
-    // Transaction : débiter + créer la demande
     const result = await this.prisma.$transaction(async (tx) => {
-      // Débiter le sender (les MANAS sont "bloqués")
       await tx.user.update({
         where: { id: senderId },
         data: { manas: { decrement: amount } },
@@ -127,7 +121,6 @@ export class CollaborationService {
         },
       });
 
-      // Créer la demande
       const request = await tx.collaborationRequest.create({
         data: {
           senderId,
@@ -146,7 +139,6 @@ export class CollaborationService {
       return request;
     });
 
-    // Notifier le receiver
     await this.notificationsService.create({
       userId: receiverId,
       fromUserId: senderId,
@@ -162,10 +154,6 @@ export class CollaborationService {
 
   // ============================================
   // 2. ACCEPTER UNE DEMANDE
-  //    - 175 au créateur (70%)
-  //    - 75 à la plateforme (30%)
-  //    - Crée la Conversation
-  //    - Notifie le sender
   // ============================================
   async acceptRequest(userId: string, requestId: string) {
     const request = await this.prisma.collaborationRequest.findUnique({
@@ -198,15 +186,12 @@ export class CollaborationService {
     const creatorShare = Math.floor(amount * MANAS_CONFIG.CREATOR_SHARE);
     const platformShare = amount - creatorShare;
 
-    // Trouver le compte plateforme (premier admin)
     const platformAccount = await this.prisma.user.findFirst({
       where: { role: 'ADMIN' },
       select: { id: true, username: true },
     });
 
-    // Transaction
     const result = await this.prisma.$transaction(async (tx) => {
-      // Créditer le créateur
       await tx.user.update({
         where: { id: request.receiverId },
         data: { manas: { increment: creatorShare } },
@@ -222,7 +207,6 @@ export class CollaborationService {
         },
       });
 
-      // Créditer la plateforme (si admin existe)
       if (platformAccount) {
         await tx.user.update({
           where: { id: platformAccount.id },
@@ -235,12 +219,15 @@ export class CollaborationService {
             amount: platformShare,
             type: ManasTransactionType.COLLABORATION,
             description: `Commission plateforme (30% de ${amount} MANAS)`,
-            metadata: { requestId: request.id, senderId: request.senderId, receiverId: request.receiverId },
+            metadata: {
+              requestId: request.id,
+              senderId: request.senderId,
+              receiverId: request.receiverId,
+            },
           },
         });
       }
 
-      // Mettre à jour la demande
       const updated = await tx.collaborationRequest.update({
         where: { id: requestId },
         data: {
@@ -249,7 +236,6 @@ export class CollaborationService {
         },
       });
 
-      // Créer la conversation (user1 = plus petit ID pour éviter les doublons)
       const [user1Id, user2Id] =
         request.senderId < request.receiverId
           ? [request.senderId, request.receiverId]
@@ -266,7 +252,6 @@ export class CollaborationService {
       return { request: updated, conversation };
     });
 
-    // Notifier le sender
     await this.notificationsService.create({
       userId: request.senderId,
       fromUserId: userId,
@@ -274,7 +259,10 @@ export class CollaborationService {
       title: 'Collaboration acceptée',
       body: `@${request.receiver.username} a accepté votre demande de collaboration`,
       link: `/chat/${result.conversation.id}`,
-      metadata: { requestId: request.id, conversationId: result.conversation.id },
+      metadata: {
+        requestId: request.id,
+        conversationId: result.conversation.id,
+      },
     });
 
     return result;
@@ -282,7 +270,6 @@ export class CollaborationService {
 
   // ============================================
   // 3. REFUSER UNE DEMANDE
-  //    - Rembourse 250 MANAS au sender
   // ============================================
   async rejectRequest(userId: string, requestId: string) {
     const request = await this.prisma.collaborationRequest.findUnique({
@@ -310,7 +297,6 @@ export class CollaborationService {
     const amount = request.amountManas;
 
     await this.prisma.$transaction(async (tx) => {
-      // Rembourser le sender
       await tx.user.update({
         where: { id: request.senderId },
         data: { manas: { increment: amount } },
@@ -326,7 +312,6 @@ export class CollaborationService {
         },
       });
 
-      // Mettre à jour la demande
       await tx.collaborationRequest.update({
         where: { id: requestId },
         data: {
@@ -337,7 +322,6 @@ export class CollaborationService {
       });
     });
 
-    // Notifier le sender
     await this.notificationsService.create({
       userId: request.senderId,
       fromUserId: userId,
@@ -376,7 +360,6 @@ export class CollaborationService {
     const amount = request.amountManas;
 
     await this.prisma.$transaction(async (tx) => {
-      // Rembourser le sender
       await tx.user.update({
         where: { id: request.senderId },
         data: { manas: { increment: amount } },
@@ -445,7 +428,6 @@ export class CollaborationService {
       orderBy: [{ lastMessageAt: 'desc' }, { createdAt: 'desc' }],
     });
 
-    // Renvoyer l'autre utilisateur de chaque conversation
     return conversations.map((c) => ({
       id: c.id,
       otherUser: c.user1Id === userId ? c.user2 : c.user1,
@@ -500,7 +482,6 @@ export class CollaborationService {
 
     for (const request of expiredRequests) {
       await this.prisma.$transaction(async (tx) => {
-        // Rembourser
         await tx.user.update({
           where: { id: request.senderId },
           data: { manas: { increment: request.amountManas } },
@@ -526,7 +507,6 @@ export class CollaborationService {
         });
       });
 
-      // Notifier le sender
       await this.notificationsService.create({
         userId: request.senderId,
         type: NotificationType.SYSTEM,
@@ -538,5 +518,33 @@ export class CollaborationService {
     }
 
     return { expired: expiredRequests.length };
+  }
+
+  // ============================================
+  // 10. COMPTE POUR LE BADGE DU PROFIL
+  //     = demandes PENDING reçues + messages non lus
+  // ============================================
+  async getBadgeCount(userId: string) {
+    const [pendingRequests, unreadMessages] = await Promise.all([
+      this.prisma.collaborationRequest.count({
+        where: {
+          receiverId: userId,
+          status: CollaborationStatus.PENDING,
+        },
+      }),
+      this.prisma.message.count({
+        where: {
+          receiverId: userId,
+          isRead: false,
+          conversationId: { not: null },
+        },
+      }),
+    ]);
+
+    return {
+      pendingRequests,
+      unreadMessages,
+      total: pendingRequests + unreadMessages,
+    };
   }
 }
