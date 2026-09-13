@@ -6,7 +6,8 @@ import {
 } from '@nestjs/common';
 import { PrismaService } from '../../prisma/prisma.service';
 import { StorageService } from '../../common/services/storage.service';
-import { ReelStatus, ReelType } from '@prisma/client';
+import { NotificationsService } from '../notifications/notifications.service';
+import { ReelStatus, ReelType, NotificationType } from '@prisma/client';
 import { CreateReelDto } from './dto/create-reel.dto';
 import { UpdateReelDto } from './dto/update-reel.dto';
 
@@ -19,7 +20,6 @@ const AUTHOR_SELECT = {
   badgeColor: true,
 };
 
-// ✅ Relations à inclure pour le feed/détail
 const REEL_RELATIONS = {
   author: { select: AUTHOR_SELECT },
   manga: {
@@ -54,14 +54,13 @@ export class ReelsService {
   constructor(
     private prisma: PrismaService,
     private storage: StorageService,
+    private notificationsService: NotificationsService,
   ) {}
 
   // ============================================
   // 1. CRÉER UN REEL
-  // ✅ Gère : trim virtuel, programmation, mentions + notifications
   // ============================================
   async create(userId: string, dto: CreateReelDto) {
-    // ✅ Vérifications des liens si fournis
     if (dto.mangaId) {
       const manga = await this.prisma.manga.findUnique({
         where: { id: dto.mangaId },
@@ -94,7 +93,6 @@ export class ReelsService {
       if (!creator) throw new BadRequestException('Créateur non trouvé');
     }
 
-    // ✅ Déterminer le statut (programmé ou publié immédiatement)
     let status: ReelStatus = ReelStatus.PUBLISHED;
     let publishedAt: Date | null = new Date();
 
@@ -106,7 +104,6 @@ export class ReelsService {
       }
     }
 
-    // ✅ Créer le Reel
     const reel = await this.prisma.reel.create({
       data: {
         title: dto.title,
@@ -115,7 +112,6 @@ export class ReelsService {
         thumbnailUrl: dto.thumbnailUrl || null,
         duration: dto.duration || null,
 
-        // ✅ Trim virtuel
         trimStart: dto.trimStart ?? 0,
         trimEnd: dto.trimEnd ?? null,
 
@@ -125,12 +121,10 @@ export class ReelsService {
         isPrivate: dto.isPrivate || false,
         authorId: userId,
 
-        // ✅ Statut & programmation
         status,
         scheduledAt: dto.scheduledAt ? new Date(dto.scheduledAt) : null,
         publishedAt,
 
-        // ✅ Type + CTA + liens
         type: dto.type || ReelType.OTHER,
         ctaLabel: dto.ctaLabel || null,
         mangaId: dto.mangaId || null,
@@ -141,15 +135,12 @@ export class ReelsService {
       include: REEL_RELATIONS,
     });
 
-    // ✅ Créer les mentions + notifications
     if (dto.mentionIds && dto.mentionIds.length > 0) {
-      // Filtrer : ne pas se mentionner soi-même + éviter les doublons
       const uniqueMentionIds = Array.from(new Set(dto.mentionIds)).filter(
         (id) => id !== userId,
       );
 
       if (uniqueMentionIds.length > 0) {
-        // Vérifier que tous les utilisateurs mentionnés existent
         const existingUsers = await this.prisma.user.findMany({
           where: { id: { in: uniqueMentionIds } },
           select: { id: true },
@@ -157,7 +148,6 @@ export class ReelsService {
         const validMentionIds = existingUsers.map((u) => u.id);
 
         if (validMentionIds.length > 0) {
-          // Créer les mentions
           await this.prisma.reelMention.createMany({
             data: validMentionIds.map((mentionId) => ({
               reelId: reel.id,
@@ -166,18 +156,16 @@ export class ReelsService {
             skipDuplicates: true,
           });
 
-          // Envoyer une notification à chaque mentionné
           await Promise.all(
             validMentionIds.map((mentionId) =>
-              this.prisma.notification.create({
-                data: {
-                  userId: mentionId,
-                  type: 'REEL_MENTION',
-                  title: 'Vous avez été mentionné',
-                  body: `@${reel.author.username} vous a mentionné dans un Reel`,
-                  link: `/reels/${reel.id}`,
-                  metadata: { reelId: reel.id, fromUserId: userId },
-                },
+              this.notificationsService.create({
+                userId: mentionId,
+                fromUserId: userId,
+                type: NotificationType.REEL_MENTION,
+                title: 'Vous avez été mentionné',
+                body: `@${reel.author.username} vous a mentionné dans un Reel`,
+                link: `/reels/${reel.id}`,
+                metadata: { reelId: reel.id },
               }),
             ),
           );
@@ -189,7 +177,7 @@ export class ReelsService {
   }
 
   // ============================================
-  // 2. RÉCUPÉRER LE FEED (TikTok style)
+  // 2. RÉCUPÉRER LE FEED
   // ============================================
   async getFeed(
     userId?: string,
@@ -208,7 +196,6 @@ export class ReelsService {
       isPrivate: false,
     };
 
-    // ✅ Filtres
     if (filters?.type) {
       where.type = filters.type;
     }
@@ -238,7 +225,6 @@ export class ReelsService {
       this.prisma.reel.count({ where }),
     ]);
 
-    // Signer les URLs vidéo
     const signedReels = await Promise.all(
       reels.map(async (reel) => {
         let signedVideoUrl = reel.videoUrl;
@@ -427,7 +413,6 @@ export class ReelsService {
     if (dto.thumbnailUrl !== undefined) updateData.thumbnailUrl = dto.thumbnailUrl;
     if (dto.duration !== undefined) updateData.duration = dto.duration;
 
-    // ✅ Trim virtuel
     if (dto.trimStart !== undefined) updateData.trimStart = dto.trimStart;
     if (dto.trimEnd !== undefined) updateData.trimEnd = dto.trimEnd;
 
@@ -437,14 +422,12 @@ export class ReelsService {
     if (dto.isPrivate !== undefined) updateData.isPrivate = dto.isPrivate;
     if (dto.status !== undefined) updateData.status = dto.status;
 
-    // ✅ Programmation
     if (dto.scheduledAt !== undefined) {
       updateData.scheduledAt = dto.scheduledAt
         ? new Date(dto.scheduledAt)
         : null;
     }
 
-    // ✅ Nouveaux champs
     if (dto.type !== undefined) updateData.type = dto.type;
     if (dto.ctaLabel !== undefined) updateData.ctaLabel = dto.ctaLabel;
     if (dto.mangaId !== undefined) updateData.mangaId = dto.mangaId;
@@ -459,14 +442,11 @@ export class ReelsService {
       include: REEL_RELATIONS,
     });
 
-    // ✅ Mettre à jour les mentions si fournies
     if (dto.mentionIds !== undefined) {
-      // Supprimer les anciennes mentions
       await this.prisma.reelMention.deleteMany({
         where: { reelId: id },
       });
 
-      // Créer les nouvelles mentions
       const uniqueMentionIds = Array.from(new Set(dto.mentionIds)).filter(
         (mentionId) => mentionId !== userId,
       );
@@ -528,11 +508,17 @@ export class ReelsService {
 
   // ============================================
   // 6. LIKER UN REEL
+  // ✅ Notifie l'auteur avec anti-spam
   // ============================================
   async like(reelId: string, userId: string) {
     const reel = await this.prisma.reel.findUnique({
       where: { id: reelId },
-      select: { id: true, likesCount: true },
+      select: {
+        id: true,
+        likesCount: true,
+        authorId: true,
+        title: true,
+      },
     });
 
     if (!reel) {
@@ -572,7 +558,48 @@ export class ReelsService {
       select: { likesCount: true },
     });
 
+    await this.notifyAuthorOnLike(userId, reel);
+
     return { liked: true, likesCount: updated.likesCount };
+  }
+
+  private async notifyAuthorOnLike(
+    likerId: string,
+    reel: { id: string; authorId: string; title: string },
+  ) {
+    if (likerId === reel.authorId) return;
+
+    const existingUnread = await this.prisma.notification.findFirst({
+      where: {
+        userId: reel.authorId,
+        fromUserId: likerId,
+        type: NotificationType.NEW_LIKE,
+        isRead: false,
+        metadata: {
+          path: ['reelId'],
+          equals: reel.id,
+        },
+      },
+    });
+
+    if (existingUnread) return;
+
+    const liker = await this.prisma.user.findUnique({
+      where: { id: likerId },
+      select: { username: true },
+    });
+
+    if (!liker) return;
+
+    await this.notificationsService.create({
+      userId: reel.authorId,
+      fromUserId: likerId,
+      type: NotificationType.NEW_LIKE,
+      title: 'Nouveau like',
+      body: `@${liker.username} a aimé votre Reel "${reel.title}"`,
+      link: `/reels/${reel.id}`,
+      metadata: { reelId: reel.id },
+    });
   }
 
   // ============================================
@@ -657,7 +684,6 @@ export class ReelsService {
 
   // ============================================
   // 9. RÉCUPÉRER LES REELS D'UN UTILISATEUR
-  // ✅ CORRIGÉ : signature URLs + isLiked/isBookmarked
   // ============================================
   async getUserReels(userId: string, viewerId?: string) {
     const where = {
@@ -681,7 +707,6 @@ export class ReelsService {
       orderBy: { createdAt: 'desc' },
     });
 
-    // ✅ Signer les URLs + calculer isLiked/isBookmarked (comme getFeed)
     const signedReels = await Promise.all(
       reels.map(async (reel) => {
         let signedVideoUrl = reel.videoUrl;
@@ -766,6 +791,7 @@ export class ReelsService {
 
   // ============================================
   // 11. AJOUTER UN COMMENTAIRE
+  // ✅ Notifie l'auteur du reel (racine) ou l'auteur du parent (réponse)
   // ============================================
   async addComment(
     reelId: string,
@@ -775,16 +801,19 @@ export class ReelsService {
   ) {
     const reel = await this.prisma.reel.findUnique({
       where: { id: reelId },
-      select: { id: true },
+      select: { id: true, authorId: true, title: true },
     });
 
     if (!reel) {
       throw new NotFoundException('Reel non trouvé');
     }
 
+    let parentComment: { id: string; userId: string } | null = null;
+
     if (parentId) {
       const parent = await this.prisma.reelComment.findUnique({
         where: { id: parentId },
+        select: { id: true, userId: true, reelId: true },
       });
       if (!parent) {
         throw new NotFoundException('Commentaire parent non trouvé');
@@ -794,6 +823,7 @@ export class ReelsService {
           'Le commentaire parent ne correspond pas à ce reel',
         );
       }
+      parentComment = parent;
     }
 
     const comment = await this.prisma.reelComment.create({
@@ -815,6 +845,30 @@ export class ReelsService {
       where: { id: reelId },
       data: { commentsCount: { increment: 1 } },
     });
+
+    const targetUserId = parentComment ? parentComment.userId : reel.authorId;
+
+    if (targetUserId !== userId) {
+      const commenter = comment.user;
+      const title = parentComment ? 'Nouvelle réponse' : 'Nouveau commentaire';
+      const body = parentComment
+        ? `@${commenter.username} a répondu à votre commentaire`
+        : `@${commenter.username} a commenté votre Reel "${reel.title}"`;
+
+      await this.notificationsService.create({
+        userId: targetUserId,
+        fromUserId: userId,
+        type: NotificationType.NEW_COMMENT,
+        title,
+        body,
+        link: `/reels/${reelId}`,
+        metadata: {
+          reelId,
+          commentId: comment.id,
+          parentId: parentId || null,
+        },
+      });
+    }
 
     return {
       ...comment,
