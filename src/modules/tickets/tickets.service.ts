@@ -154,7 +154,7 @@ export class TicketsService {
       if (existingUses.length > 0) {
         await this.prisma.ticketUse.update({
           where: { id: existingUses[0].id },
-          data: { expiresAt: null } as any,
+          data: { expiresAt: null },
         });
       } else {
         await this.prisma.ticketUse.create({
@@ -164,7 +164,7 @@ export class TicketsService {
             chapterId: chapter.id,
             mangaId: chapter.mangaId,
             expiresAt: null,
-          } as any,
+          },
         });
       }
 
@@ -238,7 +238,7 @@ export class TicketsService {
         data: {
           expiresAt,
           ticketId: ticket.id,
-        } as any,
+        },
       });
     } else {
       await this.prisma.ticketUse.create({
@@ -248,7 +248,7 @@ export class TicketsService {
           chapterId: chapter.id,
           mangaId: chapter.mangaId,
           expiresAt,
-        } as any,
+        },
       });
     }
 
@@ -437,4 +437,13 @@ export class TicketsService {
   // ============================================
   async getActiveEvents() {
     const now = new Date();
-    return
+    return this.prisma.ticketEvent.findMany({
+      where: {
+        isActive: true,
+        startDate: { lte: now },
+        endDate: { gte: now },
+      },
+      orderBy: { startDate: 'asc' },
+    });
+  }
+}
