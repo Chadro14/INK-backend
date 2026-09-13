@@ -14,6 +14,7 @@ import {
 import { MangasService } from './mangas.service';
 import { ViewsService } from '../views/views.service';
 import { JwtAuthGuard } from '../../common/guards/jwt-auth.guard';
+import { OptionalJwtAuthGuard } from '../../common/guards/optional-jwt-auth.guard';
 import { CreateMangaDto } from './dto/create-manga.dto';
 import { UpdateMangaDto } from './dto/update-manga.dto';
 import { Status } from '@prisma/client';
@@ -66,7 +67,7 @@ export class MangasController {
   }
 
   // ============================================
-  // 4. MIGRER LES SLUGS (ADMIN) — ⚠️ DOIT ÊTRE AVANT :identifier
+  // 4. MIGRER LES SLUGS (ADMIN)
   // ============================================
   @Post('migrate-slugs')
   @UseGuards(JwtAuthGuard)
@@ -85,7 +86,7 @@ export class MangasController {
   }
 
   // ============================================
-  // 5. RÉCUPÉRER LES MANGAS D'UN CRÉATEUR — ✅ DÉPLACÉ AVANT :identifier
+  // 5. RÉCUPÉRER LES MANGAS D'UN CRÉATEUR
   // ============================================
   @Get('creator/:userId')
   @UseGuards(JwtAuthGuard)
@@ -99,7 +100,25 @@ export class MangasController {
   }
 
   // ============================================
-  // 6. RECHERCHER UN MANGA PAR ID OU SLUG — ⚠️ DOIT ÊTRE APRÈS les routes spécifiques
+  // 5.b ✅ RÉCUPÉRER LES CHAPITRES AVEC STATUT D'ACCÈS
+  // ⚠️ DOIT ÊTRE AVANT :identifier
+  // ============================================
+  @Get(':mangaId/chapters-with-access')
+  @UseGuards(OptionalJwtAuthGuard)
+  async getChaptersWithAccess(
+    @Param('mangaId') mangaId: string,
+    @Req() req: any,
+  ) {
+    const userId = req.user?.id || null;
+    const chapters = await this.mangasService.getChaptersWithAccess(
+      mangaId,
+      userId,
+    );
+    return { success: true, data: chapters };
+  }
+
+  // ============================================
+  // 6. RECHERCHER UN MANGA PAR ID OU SLUG
   // ============================================
   @Get(':identifier')
   async findOne(@Param('identifier') identifier: string) {
