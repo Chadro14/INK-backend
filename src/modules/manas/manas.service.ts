@@ -1,4 +1,8 @@
-import { Injectable, NotFoundException, BadRequestException } from '@nestjs/common';
+import {
+  Injectable,
+  NotFoundException,
+  BadRequestException,
+} from '@nestjs/common';
 import { PrismaService } from '../../prisma/prisma.service';
 import { NotificationsService } from '../notifications/notifications.service';
 import { ManasTransactionType, NotificationType } from '@prisma/client';
@@ -243,12 +247,16 @@ export class ManasService {
   // ============================================
   // ACHETER UN CHAPITRE AVEC DES MANAS
   // ✅ 100% des MANAS vont au créateur
+  // ✅ Le prix est décidé par le SERVEUR (jamais par le client)
+  // ✅ Débit atomique conditionnel (pas de race condition)
   // ============================================
   async purchaseChapter(
     userId: string,
     mangaId: string,
     chapterNumber: number,
-    priceInManas: number = MANAS_CONFIG.CHAPTER_COST_DEFAULT,
+    // NOTE : paramètre conservé pour compatibilité ascendante,
+    // mais VOLONTAIREMENT IGNORÉ. Le prix vient de la DB.
+    _priceInManasIgnored?: number,
   ) {
     const chapter = await this.prisma.chapter.findUnique({
       where: {
@@ -261,6 +269,9 @@ export class ManasService {
         id: true,
         title: true,
         mangaId: true,
+        isFree: true,
+        isDraft: true,
+        price: true,
         manga: {
           select: { authorId: true, title: true },
         },
@@ -275,12 +286,30 @@ export class ManasService {
       throw new BadRequestException('Auteur du manga introuvable');
     }
 
+    // Un chapitre gratuit ne se paie pas
+    if (chapter.isFree) {
+      throw new BadRequestException(
+        'Ce chapitre est gratuit, aucun achat nécessaire',
+      );
+    }
+
+    // Un chapitre en brouillon ne peut pas être acheté
+    if (chapter.isDraft) {
+      throw new BadRequestException('Ce chapitre n’est pas encore publié');
+    }
+
     // Le créateur ne peut pas acheter son propre chapitre
     if (chapter.manga.authorId === userId) {
       throw new BadRequestException(
         'Vous ne pouvez pas acheter votre propre chapitre',
       );
     }
+
+    // ✅ Le prix est décidé par le serveur, à partir de la DB.
+    const priceInManas =
+      chapter.price != null && chapter.price > 0
+        ? chapter.price
+        : MANAS_CONFIG.CHAPTER_COST_DEFAULT;
 
     // Vérifier si le lecteur a déjà acheté ce chapitre
     const existingPurchase = await this.prisma.manasTransaction.findFirst({
@@ -292,6 +321,7 @@ export class ManasService {
           equals: chapter.id,
         },
       },
+      select: { id: true },
     });
 
     if (existingPurchase) {
@@ -300,93 +330,129 @@ export class ManasService {
 
     const creatorId = chapter.manga.authorId;
 
-    // Transaction atomique : débit lecteur + crédit créateur (100%)
-    const result = await this.prisma.$transaction(async (tx) => {
-      // Récupérer le solde du lecteur
-      const buyer = await tx.user.findUnique({
-        where: { id: userId },
-        select: { manas: true, premiumActive: true },
-      });
+    try {
+      // Transaction atomique : débit lecteur + crédit créateur (100%)
+      const result = await this.prisma.$transaction(async (tx) => {
+        // Récupérer le lecteur (pour Premium + solde initial)
+        const buyer = await tx.user.findUnique({
+          where: { id: userId },
+          select: { manas: true, premiumActive: true },
+        });
 
-      if (!buyer) {
-        throw new NotFoundException('Utilisateur non trouvé');
-      }
+        if (!buyer) {
+          throw new NotFoundException('Utilisateur non trouvé');
+        }
 
-      // Premium = accès gratuit
-      if (buyer.premiumActive) {
+        // Premium = accès gratuit (pas de débit, pas de crédit créateur)
+        if (buyer.premiumActive) {
+          return {
+            buyerBalance: buyer.manas,
+            creatorBalance: null as number | null,
+            isPremium: true,
+            debited: 0,
+          };
+        }
+
+        // ✅ Débit ATOMIQUE conditionnel :
+        //    - soit la ligne est mise à jour (solde suffisant),
+        //    - soit 0 ligne touchée (solde insuffisant).
+        //    Aucune race condition possible entre check et decrement.
+        const debitResult = await tx.user.updateMany({
+          where: {
+            id: userId,
+            manas: { gte: priceInManas },
+          },
+          data: { manas: { decrement: priceInManas } },
+        });
+
+        if (debitResult.count === 0) {
+          throw new BadRequestException('Solde de MANAS insuffisant');
+        }
+
+        // Relire le solde mis à jour
+        const updatedBuyer = await tx.user.findUnique({
+          where: { id: userId },
+          select: { manas: true },
+        });
+
+        if (!updatedBuyer) {
+          throw new NotFoundException('Utilisateur non trouvé');
+        }
+
+        // Créditer le créateur (100%)
+        const updatedCreator = await tx.user.update({
+          where: { id: creatorId },
+          data: { manas: { increment: priceInManas } },
+          select: { manas: true },
+        });
+
+        // Transaction du lecteur (débit)
+        await tx.manasTransaction.create({
+          data: {
+            userId,
+            amount: -priceInManas,
+            type: ManasTransactionType.CHAPTER_PURCHASE,
+            description: `Achat du chapitre ${chapterNumber} - "${chapter.manga.title}"`,
+            metadata: {
+              mangaId,
+              chapterId: chapter.id,
+              chapterNumber,
+              creatorId,
+              price: priceInManas,
+            },
+          },
+        });
+
+        // Transaction du créateur (crédit)
+        await tx.manasTransaction.create({
+          data: {
+            userId: creatorId,
+            amount: priceInManas,
+            type: ManasTransactionType.CHAPTER_PURCHASE,
+            description: `Vente du chapitre ${chapterNumber} - "${chapter.manga.title}"`,
+            metadata: {
+              mangaId,
+              chapterId: chapter.id,
+              chapterNumber,
+              buyerId: userId,
+              price: priceInManas,
+            },
+          },
+        });
+
         return {
-          buyerBalance: buyer.manas,
-          creatorBalance: null,
-          isPremium: true,
+          buyerBalance: updatedBuyer.manas,
+          creatorBalance: updatedCreator.manas,
+          isPremium: false,
+          debited: priceInManas,
         };
-      }
-
-      if (buyer.manas < priceInManas) {
-        throw new BadRequestException('Solde de MANAS insuffisant');
-      }
-
-      // 1. Débiter le lecteur
-      const updatedBuyer = await tx.user.update({
-        where: { id: userId },
-        data: { manas: { decrement: priceInManas } },
-        select: { manas: true },
-      });
-
-      // 2. Créditer le créateur (100%)
-      const updatedCreator = await tx.user.update({
-        where: { id: creatorId },
-        data: { manas: { increment: priceInManas } },
-        select: { manas: true },
-      });
-
-      // 3. Transaction du lecteur (débit)
-      await tx.manasTransaction.create({
-        data: {
-          userId,
-          amount: -priceInManas,
-          type: ManasTransactionType.CHAPTER_PURCHASE,
-          description: `Achat du chapitre ${chapterNumber} - "${chapter.manga.title}"`,
-          metadata: {
-            mangaId,
-            chapterId: chapter.id,
-            chapterNumber,
-            creatorId,
-            price: priceInManas,
-          },
-        },
-      });
-
-      // 4. Transaction du créateur (crédit)
-      await tx.manasTransaction.create({
-        data: {
-          userId: creatorId,
-          amount: priceInManas,
-          type: ManasTransactionType.CHAPTER_PURCHASE,
-          description: `Vente du chapitre ${chapterNumber} - "${chapter.manga.title}"`,
-          metadata: {
-            mangaId,
-            chapterId: chapter.id,
-            chapterNumber,
-            buyerId: userId,
-            price: priceInManas,
-          },
-        },
       });
 
       return {
-        buyerBalance: updatedBuyer.manas,
-        creatorBalance: updatedCreator.manas,
-        isPremium: false,
+        success: true,
+        message: result.isPremium
+          ? `Chapitre ${chapterNumber} débloqué (Premium)`
+          : `Chapitre ${chapterNumber} débloqué avec succès`,
+        balance: result.buyerBalance,
       };
-    });
+    } catch (err) {
+      // Erreurs métier déjà typées → on laisse remonter telles quelles
+      if (err instanceof BadRequestException) throw err;
+      if (err instanceof NotFoundException) throw err;
 
-    return {
-      success: true,
-      message: result.isPremium
-        ? `Chapitre ${chapterNumber} débloqué (Premium)`
-        : `Chapitre ${chapterNumber} débloqué avec succès`,
-      balance: result.buyerBalance,
-    };
+      // Erreurs Prisma → mapping propre
+      const anyErr = err as { code?: string; message?: string };
+      if (anyErr?.code === 'P2034') {
+        throw new BadRequestException(
+          'Transaction interrompue, veuillez réessayer',
+        );
+      }
+
+      // Fallback : on relance une erreur propre plutôt qu'un 500 brut
+      throw new BadRequestException(
+        'Impossible de finaliser l’achat, veuillez réessayer',
+      );
+    }
   }
 
   async collaborateWithCreator(
