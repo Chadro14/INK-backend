@@ -1,6 +1,10 @@
-import { Injectable, NotFoundException, BadRequestException } from '@nestjs/common';
+import {
+  Injectable,
+  NotFoundException,
+  BadRequestException,
+} from '@nestjs/common';
 import { PrismaService } from '../../prisma/prisma.service';
-import { TicketType } from '@prisma/client';
+import { ManasTransactionType, TicketType } from '@prisma/client';
 
 @Injectable()
 export class TicketsService {
@@ -93,6 +97,8 @@ export class TicketsService {
 
   // ============================================
   // UTILISER UN TICKET (ACCÈS 2H)
+  // ✅ Refus si chapitre gratuit (pas de ticket gaspillé)
+  // ✅ Refus si chapitre brouillon (pas encore publié)
   // ============================================
   async useTicket(userId: string, chapterId: string) {
     const chapter = await this.prisma.chapter.findUnique({
@@ -102,6 +108,18 @@ export class TicketsService {
 
     if (!chapter) {
       throw new NotFoundException('Chapitre non trouvé');
+    }
+
+    // Un chapitre gratuit ne consomme pas de ticket
+    if (chapter.isFree) {
+      throw new BadRequestException(
+        'Ce chapitre est gratuit, aucun ticket nécessaire',
+      );
+    }
+
+    // Un chapitre en brouillon ne peut pas être débloqué
+    if (chapter.isDraft) {
+      throw new BadRequestException('Ce chapitre n’est pas encore publié');
     }
 
     // Anti-auto-achat : l'auteur a toujours accès
@@ -115,12 +133,13 @@ export class TicketsService {
     const alreadyBoughtWithManas = await this.prisma.manasTransaction.findFirst({
       where: {
         userId,
-        type: 'CHAPTER_PURCHASE',
+        type: ManasTransactionType.CHAPTER_PURCHASE,
         metadata: {
           path: ['chapterId'],
           equals: chapterId,
         },
       },
+      select: { id: true },
     });
 
     if (alreadyBoughtWithManas) {
@@ -146,7 +165,7 @@ export class TicketsService {
 
     const isPremiumActive =
       user.premiumActive &&
-      user.premiumExpires &&
+      user.premiumExpires != null &&
       user.premiumExpires > new Date();
 
     // PREMIUM → accès permanent (expiresAt = null)
@@ -173,7 +192,7 @@ export class TicketsService {
           userId,
           ticketId: null,
           amount: 0,
-          type: 'GIFT',
+          type: TicketType.GIFT,
           description: `Déblocage Premium du chapitre ${chapter.number} (tickets illimités)`,
           metadata: {
             chapterId,
