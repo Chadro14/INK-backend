@@ -62,19 +62,27 @@ export class ManasController {
 
   // ============================================
   // ACHETER UN CHAPITRE
+  // ✅ Le prix est décidé côté SERVEUR (lecture de chapter.price en DB).
+  //    Le champ `priceInManas` du body est accepté pour compatibilité
+  //    ascendante mais VOLONTAIREMENT IGNORÉ.
   // ============================================
   @Post('purchase-chapter')
   @UseGuards(JwtAuthGuard)
   async purchaseChapter(
     @Req() req: any,
-    @Body() body: { mangaId: string; chapterNumber: number; priceInManas?: number },
+    @Body()
+    body: {
+      mangaId: string;
+      chapterNumber: number;
+      priceInManas?: number; // ignoré, conservé pour compat
+    },
   ) {
     const userId = req.user?.id || req.user?.sub;
     return this.manasService.purchaseChapter(
       userId,
       body.mangaId,
       body.chapterNumber,
-      body.priceInManas || 50,
+      // priceInManas volontairement non transmis
     );
   }
 
