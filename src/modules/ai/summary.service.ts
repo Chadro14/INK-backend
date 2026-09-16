@@ -1,20 +1,16 @@
 // src/modules/ai/summary.service.ts
-import { Injectable, NotFoundException } from '@nestjs/common';
+import { Injectable, NotFoundException, Logger } from '@nestjs/common';
 import { PrismaService } from '../../prisma/prisma.service';
+import { AiRouterService } from './ai-router.service';
 
 @Injectable()
 export class SummaryService {
-  private readonly groqKeys: string[] = [
-    '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',
-    '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',
-    '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',
-    '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',
-  ];
+  private readonly logger = new Logger(SummaryService.name);
 
-  private currentKeyIndex = 0;
-  private readonly apiUrl = 'https://api.groq.com/openai/v1/chat/completions';
-
-  constructor(private prisma: PrismaService) {}
+  constructor(
+    private prisma: PrismaService,
+    private aiRouter: AiRouterService,
+  ) {}
 
   // ============================================
   // GÉNÉRER UN RÉSUMÉ
@@ -27,8 +23,18 @@ Contenu : ${content.slice(0, 2000)}${content.length > 2000 ? '...' : ''}
 
 Résumé (3-4 phrases) :`;
 
-    const reply = await this.callGroq(prompt);
-    return reply || 'Aucun résumé disponible.';
+    try {
+      const result = await this.aiRouter.ask(
+        prompt,
+        "Tu es OZYRA, l'assistante d'INKDROP. Tu génères des résumés courts et accrocheurs de chapitres de mangas.",
+        { temperature: 0.5, maxTokens: 300 },
+      );
+
+      return result.content || 'Aucun résumé disponible.';
+    } catch (error) {
+      this.logger.error(`Erreur génération résumé : ${error.message}`);
+      return 'Aucun résumé disponible.';
+    }
   }
 
   // ============================================
@@ -73,46 +79,5 @@ Résumé (3-4 phrases) :`;
       where: { id: chapterId },
       data: { summary: null },
     });
-  }
-
-  // ============================================
-  // APPEL GROQ
-  // ============================================
-  private async callGroq(prompt: string): Promise<string> {
-    for (let attempt = 0; attempt < this.groqKeys.length; attempt++) {
-      const key = this.groqKeys[this.currentKeyIndex];
-      this.currentKeyIndex = (this.currentKeyIndex + 1) % this.groqKeys.length;
-
-      try {
-        const response = await fetch(this.apiUrl, {
-          method: 'POST',
-          headers: {
-            'Content-Type': 'application/json',
-            'Authorization': `Bearer ${key}`,
-          },
-          body: JSON.stringify({
-            model: 'llama-3.3-70b-versatile',
-            messages: [{ role: 'user', content: prompt }],
-            temperature: 0.5,
-            max_tokens: 300,
-          }),
-        });
-
-        const data = await response.json();
-
-        if (!response.ok) {
-          continue;
-        }
-
-        const reply = data.choices?.[0]?.message?.content;
-        if (reply) {
-          return reply;
-        }
-      } catch (error) {
-        continue;
-      }
-    }
-
-    return '';
   }
 }
