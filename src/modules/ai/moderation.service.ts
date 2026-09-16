@@ -1,14 +1,23 @@
 // src/modules/ai/moderation.service.ts
-import { Injectable, BadRequestException } from '@nestjs/common';
+import { Injectable, BadRequestException, Logger } from '@nestjs/common';
 import { PrismaService } from '../../prisma/prisma.service';
 import { ToolsService } from './tools.service';
-import { CommentToModerate, ModerationResult, ModerationAction, ModerationSeverity } from './interfaces/ai-tools.interface';
+import { AiRouterService } from './ai-router.service';
+import {
+  CommentToModerate,
+  ModerationResult,
+  ModerationAction,
+  ModerationSeverity,
+} from './interfaces/ai-tools.interface';
 
 @Injectable()
 export class ModerationService {
+  private readonly logger = new Logger(ModerationService.name);
+
   constructor(
     private prisma: PrismaService,
     private toolsService: ToolsService,
+    private aiRouter: AiRouterService,
   ) {}
 
   // ============================================
@@ -26,7 +35,6 @@ export class ModerationService {
       throw new BadRequestException('Commentaire non trouvé');
     }
 
-    // Récupérer l'historique de l'utilisateur
     const userWarnings = comment.user.warningsCount || 0;
     const userComments = await this.prisma.comment.count({
       where: { userId: comment.userId },
@@ -43,16 +51,17 @@ export class ModerationService {
       userRole: comment.user.role,
       userIsCertified: comment.user.isCertified,
       userPreviousWarnings: userWarnings,
-      userPreviousBans: 0, // À implémenter si besoin
+      userPreviousBans: 0,
     };
 
-    // 1. Vérification simple (mots interdits)
+    // 1. Vérification rapide (mots interdits) — pas d'IA, très rapide
     const fastCheck = this.fastCheck(comment.content);
     if (fastCheck) {
+      await this.applyAction(commentId, comment.userId, fastCheck);
       return fastCheck;
     }
 
-    // 2. Analyse approfondie avec Groq
+    // 2. Analyse approfondie avec l'IA (via le routeur)
     const result = await this.deepAnalysis(context);
 
     // 3. Appliquer l'action
@@ -66,13 +75,25 @@ export class ModerationService {
   // ============================================
   private fastCheck(content: string): ModerationResult | null {
     const forbiddenWords = [
-      // Insultes
-      'conard', 'connard', 'pute', 'salope', 'enculé', 'batard', 'bâtard',
-      'fdp', 'pd', 'ntm', 'tg', 'va te faire', 'trou du cul',
-      // Harcèlement
-      'suicide', 'tue toi', 'kill yourself',
-      // Spam
-      'cliquez ici', 'gagnez de l\'argent', 'regardez mon profil',
+      'conard',
+      'connard',
+      'pute',
+      'salope',
+      'enculé',
+      'batard',
+      'bâtard',
+      'fdp',
+      'pd',
+      'ntm',
+      'tg',
+      'va te faire',
+      'trou du cul',
+      'suicide',
+      'tue toi',
+      'kill yourself',
+      'cliquez ici',
+      "gagnez de l'argent",
+      'regardez mon profil',
     ];
 
     const lowerContent = content.toLowerCase();
@@ -93,9 +114,13 @@ export class ModerationService {
   }
 
   // ============================================
-  // 3. ANALYSE APPROFONDIE AVEC GROQ
+  // 3. ANALYSE APPROFONDIE AVEC L'IA
   // ============================================
-  private async deepAnalysis(context: CommentToModerate): Promise<ModerationResult> {
+  private async deepAnalysis(
+    context: CommentToModerate,
+  ): Promise<ModerationResult> {
+    const systemInstruction = `Tu es un modérateur IA pour INKDROP. Tu analyses des commentaires et réponds UNIQUEMENT en JSON valide, sans texte autour.`;
+
     const prompt = `
 Analyse ce commentaire pour détecter des comportements inappropriés.
 
@@ -114,29 +139,38 @@ Analyse ce commentaire pour détecter des comportements inappropriés.
 3. HARCÈLEMENT : Ciblage d'un utilisateur
 4. CONTENU INAPPROPRIÉ : Violence, propos discriminatoires
 
-📋 RÉPONDRE EN JSON UNIQUEMENT :
+📋 RÉPONDS EN JSON UNIQUEMENT :
 {
   "action": "approve | warn | delete | ban",
   "severity": "low | medium | high | critical",
   "reason": "Courte explication",
   "confidence": 0.0-1.0,
-  "requiresHumanReview": true/false,
-  "suggestedWarningMessage": "Message d'avertissement (si warn)"
+  "requiresHumanReview": true/false
 }`;
 
     try {
-      const response = await this.callGroq(prompt);
-      const result = JSON.parse(response);
+      const result = await this.aiRouter.ask(prompt, systemInstruction, {
+        temperature: 0.3,
+        maxTokens: 500,
+        responseFormat: { type: 'json_object' },
+      });
+
+      // Nettoyer la réponse (au cas où il y a du texte autour du JSON)
+      const cleanedResponse = this.extractJson(result.content);
+      const parsed = JSON.parse(cleanedResponse);
 
       return {
-        action: result.action as ModerationAction,
-        severity: result.severity as ModerationSeverity,
-        reason: result.reason,
-        confidence: result.confidence,
-        requiresHumanReview: result.requiresHumanReview || false,
+        action: parsed.action as ModerationAction,
+        severity: parsed.severity as ModerationSeverity,
+        reason: parsed.reason,
+        confidence: parsed.confidence,
+        requiresHumanReview: parsed.requiresHumanReview || false,
       };
     } catch (error) {
-      // En cas d'erreur, on approuve par défaut
+      this.logger.warn(
+        `Analyse IA échouée, approbation par défaut : ${error.message}`,
+      );
+
       return {
         action: ModerationAction.APPROVE,
         severity: ModerationSeverity.LOW,
@@ -148,9 +182,28 @@ Analyse ce commentaire pour détecter des comportements inappropriés.
   }
 
   // ============================================
+  // HELPER : EXTRAIRE LE JSON DE LA RÉPONSE
+  // ============================================
+  private extractJson(text: string): string {
+    // Cherche le premier { et le dernier }
+    const firstBrace = text.indexOf('{');
+    const lastBrace = text.lastIndexOf('}');
+
+    if (firstBrace === -1 || lastBrace === -1 || lastBrace < firstBrace) {
+      throw new Error('Pas de JSON valide dans la réponse');
+    }
+
+    return text.substring(firstBrace, lastBrace + 1);
+  }
+
+  // ============================================
   // 4. APPLIQUER L'ACTION
   // ============================================
-  private async applyAction(commentId: string, userId: string, result: ModerationResult) {
+  private async applyAction(
+    commentId: string,
+    userId: string,
+    result: ModerationResult,
+  ) {
     switch (result.action) {
       case ModerationAction.APPROVE:
         await this.approveComment(commentId);
@@ -187,6 +240,9 @@ Analyse ce commentaire pour détecter des comportements inappropriés.
       case ModerationAction.REPORT:
         await this.reportComment(commentId, result.reason);
         break;
+
+      default:
+        this.logger.warn(`Action inconnue : ${result.action}`);
     }
   }
 
@@ -209,7 +265,6 @@ Analyse ce commentaire pour détecter des comportements inappropriés.
       data: { isReported: true },
     });
 
-    // Notification aux admins (via l'IA)
     await this.prisma.auditLog.create({
       data: {
         action: 'COMMENT_REPORTED_BY_AI',
@@ -217,40 +272,5 @@ Analyse ce commentaire pour détecter des comportements inappropriés.
         details: { reason },
       },
     });
-  }
-
-  // ============================================
-  // 7. APPEL GROQ
-  // ============================================
-  private async callGroq(prompt: string): Promise<string> {
-    const apiUrl = 'https://api.groq.com/openai/v1/chat/completions';
-    const apiKey = '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';
-
-    const response = await fetch(apiUrl, {
-      method: 'POST',
-      headers: {
-        'Content-Type': 'application/json',
-        'Authorization': `Bearer ${apiKey}`,
-      },
-      body: JSON.stringify({
-        model: 'llama-3.3-70b-versatile',
-        messages: [
-          {
-            role: 'system',
-            content: 'Tu es un modérateur IA. Tu analyses des commentaires et réponds UNIQUEMENT en JSON valide.',
-          },
-          {
-            role: 'user',
-            content: prompt,
-          },
-        ],
-        temperature: 0.3,
-        max_tokens: 500,
-        response_format: { type: 'json_object' },
-      }),
-    });
-
-    const data = await response.json();
-    return data.choices?.[0]?.message?.content || '{"action":"approve","severity":"low","reason":"Erreur d\'analyse","confidence":0.5,"requiresHumanReview":true}';
   }
 }
