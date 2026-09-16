@@ -1,20 +1,16 @@
 // src/modules/ai/coach.service.ts
-import { Injectable } from '@nestjs/common';
+import { Injectable, NotFoundException, Logger } from '@nestjs/common';
 import { PrismaService } from '../../prisma/prisma.service';
+import { AiRouterService } from './ai-router.service';
 
 @Injectable()
 export class CoachService {
-  private readonly groqKeys: string[] = [
-    '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',
-    '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',
-    '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',
-    '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',
-  ];
+  private readonly logger = new Logger(CoachService.name);
 
-  private currentKeyIndex = 0;
-  private readonly apiUrl = 'https://api.groq.com/openai/v1/chat/completions';
-
-  constructor(private prisma: PrismaService) {}
+  constructor(
+    private prisma: PrismaService,
+    private aiRouter: AiRouterService,
+  ) {}
 
   // ============================================
   // ANALYSE D'UN MANGA
@@ -35,8 +31,10 @@ export class CoachService {
     });
 
     if (!manga) {
-      throw new Error('Manga non trouvé');
+      throw new NotFoundException('Manga non trouvé');
     }
+
+    const systemInstruction = `Tu es OZYRA, coach de création pour INKDROP. Tu analyses des mangas et donnes des conseils concrets et actionnables.`;
 
     const prompt = `Analyse ce manga et donne des conseils d'amélioration.
 
@@ -55,13 +53,28 @@ Donne 3 conseils concrets pour améliorer ce manga :
 
 Conseils :`;
 
-    const reply = await this.callGroq(prompt);
+    try {
+      const result = await this.aiRouter.ask(prompt, systemInstruction, {
+        temperature: 0.7,
+        maxTokens: 600,
+      });
 
-    return {
-      mangaId: manga.id,
-      title: manga.title,
-      advice: reply,
-    };
+      return {
+        mangaId: manga.id,
+        title: manga.title,
+        advice: result.content,
+      };
+    } catch (error) {
+      this.logger.error(
+        `Erreur analyse manga ${mangaId} : ${error.message}`,
+      );
+      return {
+        mangaId: manga.id,
+        title: manga.title,
+        advice:
+          "Je n'ai pas pu analyser ce manga pour le moment. Réessaie dans quelques minutes.",
+      };
+    }
   }
 
   // ============================================
@@ -72,9 +85,9 @@ Conseils :`;
     description: string,
     genres: string[],
   ): Promise<string> {
-    const prompt = `Tu es un coach de création pour INKDROP.
+    const systemInstruction = `Tu es OZYRA, coach de création pour INKDROP. Tu aides les créateurs à rendre leurs mangas plus attractifs.`;
 
-Titre du manga : ${title}
+    const prompt = `Titre du manga : ${title}
 Description actuelle : ${description || 'Aucune description'}
 Genres : ${genres.join(', ') || 'Aucun'}
 
@@ -85,7 +98,17 @@ Propose 3 améliorations pour rendre ce manga plus attractif :
 
 Améliorations :`;
 
-    return this.callGroq(prompt);
+    try {
+      const result = await this.aiRouter.ask(prompt, systemInstruction, {
+        temperature: 0.7,
+        maxTokens: 600,
+      });
+
+      return result.content;
+    } catch (error) {
+      this.logger.warn(`Suggestion d'amélioration échouée : ${error.message}`);
+      return "Je n'ai pas pu générer de conseils. Veuillez réessayer.";
+    }
   }
 
   // ============================================
@@ -106,12 +129,12 @@ Améliorations :`;
     });
 
     if (!manga) {
-      throw new Error('Manga non trouvé');
+      throw new NotFoundException('Manga non trouvé');
     }
 
-    const prompt = `Tu es un coach de croissance pour INKDROP.
+    const systemInstruction = `Tu es OZYRA, coach de croissance pour INKDROP. Tu aides les créateurs à augmenter la visibilité et l'engagement de leurs mangas.`;
 
-Statistiques du manga :
+    const prompt = `Statistiques du manga :
 - Titre : ${manga.title}
 - Chapitres : ${manga._count.chapters}
 - Likes : ${manga._count.likes}
@@ -125,47 +148,18 @@ Donne 3 conseils pour augmenter la visibilité et l'engagement de ce manga :
 
 Conseils :`;
 
-    return this.callGroq(prompt);
-  }
+    try {
+      const result = await this.aiRouter.ask(prompt, systemInstruction, {
+        temperature: 0.7,
+        maxTokens: 600,
+      });
 
-  // ============================================
-  // APPEL GROQ
-  // ============================================
-  private async callGroq(prompt: string): Promise<string> {
-    for (let attempt = 0; attempt < this.groqKeys.length; attempt++) {
-      const key = this.groqKeys[this.currentKeyIndex];
-      this.currentKeyIndex = (this.currentKeyIndex + 1) % this.groqKeys.length;
-
-      try {
-        const response = await fetch(this.apiUrl, {
-          method: 'POST',
-          headers: {
-            'Content-Type': 'application/json',
-            'Authorization': `Bearer ${key}`,
-          },
-          body: JSON.stringify({
-            model: 'llama-3.3-70b-versatile',
-            messages: [{ role: 'user', content: prompt }],
-            temperature: 0.7,
-            max_tokens: 500,
-          }),
-        });
-
-        const data = await response.json();
-
-        if (!response.ok) {
-          continue;
-        }
-
-        const reply = data.choices?.[0]?.message?.content;
-        if (reply) {
-          return reply;
-        }
-      } catch (error) {
-        continue;
-      }
+      return result.content;
+    } catch (error) {
+      this.logger.warn(
+        `Conseils de croissance échoués pour ${mangaId} : ${error.message}`,
+      );
+      return "Je n'ai pas pu générer de conseils. Veuillez réessayer.";
     }
-
-    return 'Je n\'ai pas pu générer de conseils. Veuillez réessayer.';
   }
 }
