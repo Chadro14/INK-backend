@@ -1,17 +1,12 @@
 // src/modules/ai/assistant.service.ts
-import { Injectable } from '@nestjs/common';
+import { Injectable, Logger } from '@nestjs/common';
+import { AiRouterService } from './ai-router.service';
 
 @Injectable()
 export class AssistantService {
-  private readonly groqKeys: string[] = [
-    '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',
-    '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',
-    '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',
-    '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',
-  ];
+  private readonly logger = new Logger(AssistantService.name);
 
-  private currentKeyIndex = 0;
-  private readonly apiUrl = 'https://api.groq.com/openai/v1/chat/completions';
+  constructor(private aiRouter: AiRouterService) {}
 
   // ============================================
   // SUGGÉRER DES IDÉES
@@ -21,17 +16,25 @@ export class AssistantService {
     characters: string[],
     genre: string,
   ): Promise<string> {
-    const prompt = `Tu es l'assistant d'écriture de INKDROP.
+    const systemInstruction = `Tu es OZYRA, l'assistante d'écriture d'INKDROP. Tu aides les créateurs de mangas avec des idées créatives.`;
 
-Contexte actuel : ${context}
+    const prompt = `Contexte actuel : ${context || 'Non spécifié'}
 Personnages : ${characters.join(', ') || 'Aucun'}
 Genre : ${genre || 'Non spécifié'}
 
-Propose 3 idées pour la suite de l'histoire. Chaque idée doit être courte (1-2 phrases) et accrocheuse.
+Propose 3 idées pour la suite de l'histoire. Chaque idée doit être courte (1-2 phrases) et accrocheuse.`;
 
-Idées proposées :`;
+    try {
+      const result = await this.aiRouter.ask(prompt, systemInstruction, {
+        temperature: 0.8,
+        maxTokens: 500,
+      });
 
-    return this.callGroq(prompt);
+      return result.content;
+    } catch (error) {
+      this.logger.warn(`Suggestion d'idées échouée : ${error.message}`);
+      return "Je n'ai pas pu générer de suggestions. Veuillez réessayer.";
+    }
   }
 
   // ============================================
@@ -42,17 +45,25 @@ Idées proposées :`;
     character2: string,
     situation: string,
   ): Promise<string> {
-    const prompt = `Tu es l'assistant d'écriture de INKDROP.
+    const systemInstruction = `Tu es OZYRA, l'assistante d'écriture d'INKDROP. Tu écris des dialogues naturels pour des mangas.`;
 
-Personnage 1 : ${character1}
+    const prompt = `Personnage 1 : ${character1}
 Personnage 2 : ${character2}
 Situation : ${situation}
 
-Propose un dialogue naturel entre ces deux personnages dans ce contexte. Le dialogue doit être court (4-6 répliques).
+Propose un dialogue naturel entre ces deux personnages dans ce contexte. Le dialogue doit être court (4-6 répliques).`;
 
-Dialogue :`;
+    try {
+      const result = await this.aiRouter.ask(prompt, systemInstruction, {
+        temperature: 0.8,
+        maxTokens: 500,
+      });
 
-    return this.callGroq(prompt);
+      return result.content;
+    } catch (error) {
+      this.logger.warn(`Suggestion de dialogue échouée : ${error.message}`);
+      return "Je n'ai pas pu générer de dialogue. Veuillez réessayer.";
+    }
   }
 
   // ============================================
@@ -63,17 +74,25 @@ Dialogue :`;
     mood: string,
     elements: string[],
   ): Promise<string> {
-    const prompt = `Tu es l'assistant d'écriture de INKDROP.
+    const systemInstruction = `Tu es OZYRA, l'assistante d'écriture d'INKDROP. Tu décris des scènes de mangas de manière immersive.`;
 
-Type de scène : ${sceneType}
+    const prompt = `Type de scène : ${sceneType}
 Ambiance : ${mood}
 Éléments présents : ${elements.join(', ') || 'Aucun'}
 
-Rédige une description courte et immersive de cette scène (2-3 phrases).
+Rédige une description courte et immersive de cette scène (2-3 phrases).`;
 
-Description :`;
+    try {
+      const result = await this.aiRouter.ask(prompt, systemInstruction, {
+        temperature: 0.8,
+        maxTokens: 400,
+      });
 
-    return this.callGroq(prompt);
+      return result.content;
+    } catch (error) {
+      this.logger.warn(`Description de scène échouée : ${error.message}`);
+      return "Je n'ai pas pu générer de description. Veuillez réessayer.";
+    }
   }
 
   // ============================================
@@ -83,55 +102,22 @@ Description :`;
     text: string,
     style: 'plus dynamique' | 'plus poétique' | 'plus simple' | 'plus sérieux',
   ): Promise<string> {
-    const prompt = `Tu es l'assistant d'écriture de INKDROP.
+    const systemInstruction = `Tu es OZYRA, l'assistante d'écriture d'INKDROP. Tu réécris des textes en changeant le style sans changer le sens.`;
 
-Texte original : "${text}"
+    const prompt = `Texte original : "${text}"
 
-Réécris ce texte dans un style ${style}. Garde le même sens mais change la forme.
+Réécris ce texte dans un style ${style}. Garde le même sens mais change la forme.`;
 
-Réécriture :`;
+    try {
+      const result = await this.aiRouter.ask(prompt, systemInstruction, {
+        temperature: 0.7,
+        maxTokens: 500,
+      });
 
-    return this.callGroq(prompt);
-  }
-
-  // ============================================
-  // APPEL GROQ
-  // ============================================
-  private async callGroq(prompt: string): Promise<string> {
-    for (let attempt = 0; attempt < this.groqKeys.length; attempt++) {
-      const key = this.groqKeys[this.currentKeyIndex];
-      this.currentKeyIndex = (this.currentKeyIndex + 1) % this.groqKeys.length;
-
-      try {
-        const response = await fetch(this.apiUrl, {
-          method: 'POST',
-          headers: {
-            'Content-Type': 'application/json',
-            'Authorization': `Bearer ${key}`,
-          },
-          body: JSON.stringify({
-            model: 'llama-3.3-70b-versatile',
-            messages: [{ role: 'user', content: prompt }],
-            temperature: 0.7,
-            max_tokens: 500,
-          }),
-        });
-
-        const data = await response.json();
-
-        if (!response.ok) {
-          continue;
-        }
-
-        const reply = data.choices?.[0]?.message?.content;
-        if (reply) {
-          return reply;
-        }
-      } catch (error) {
-        continue;
-      }
+      return result.content;
+    } catch (error) {
+      this.logger.warn(`Réécriture échouée : ${error.message}`);
+      return "Je n'ai pas pu réécrire ce texte. Veuillez réessayer.";
     }
-
-    return 'Je n\'ai pas pu générer de suggestions. Veuillez réessayer.';
   }
 }
