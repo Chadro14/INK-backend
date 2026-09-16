@@ -1,5 +1,6 @@
 // src/modules/ai/ai.service.ts
 import { Injectable, BadRequestException } from '@nestjs/common';
+import { ConfigService } from '@nestjs/config';
 import { PrismaService } from '../../prisma/prisma.service';
 import { ModerationService } from './moderation.service';
 import { ToolsService } from './tools.service';
@@ -13,17 +14,13 @@ import { CoachService } from './coach.service';
 
 @Injectable()
 export class AiService {
-  private readonly groqKeys: string[] = [
-    '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',
-    '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',
-    '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',
-    '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',
-  ];
-
+  // ✅ Clés lues depuis les variables d'environnement Vercel (jamais en dur)
+  private readonly groqKeys: string[];
   private currentKeyIndex = 0;
   private readonly apiUrl = 'https://api.groq.com/openai/v1/chat/completions';
 
   constructor(
+    private configService: ConfigService,
     private prisma: PrismaService,
     private moderationService: ModerationService,
     private toolsService: ToolsService,
@@ -34,7 +31,23 @@ export class AiService {
     private searchService: SearchService,
     private assistantService: AssistantService,
     private coachService: CoachService,
-  ) {}
+  ) {
+    // Charge les clés GROQ_API_KEY_1 à GROQ_API_KEY_2 depuis les env vars
+    this.groqKeys = [
+      this.configService.get<string>('GROQ_API_KEY_1') || '',
+      this.configService.get<string>('GROQ_API_KEY_2') || '',
+    ].filter((k) => k.length > 0);
+
+    if (this.groqKeys.length === 0) {
+      console.warn(
+        '⚠️ Aucune clé Groq configurée (GROQ_API_KEY_1..4). XELIRA ne fonctionnera pas.',
+      );
+    } else {
+      console.log(
+        `✅ ${this.groqKeys.length} clé(s) Groq chargée(s) depuis les variables d'environnement.`,
+      );
+    }
+  }
 
   // ============================================
   // CHAT PRINCIPAL
@@ -85,7 +98,9 @@ export class AiService {
       intent = 'ban';
       const userMatch = message.match(/[a-f0-9-]{36}/i);
       extractedData.userId = userMatch ? userMatch[0] : null;
-      extractedData.reason = message.replace(/bannir|ban|supprimer ce compte/gi, '').trim();
+      extractedData.reason = message
+        .replace(/bannir|ban|supprimer ce compte/gi, '')
+        .trim();
     } else if (
       lowerMessage.includes('supprimer ce commentaire') ||
       lowerMessage.includes('effacer ce commentaire')
@@ -116,7 +131,7 @@ export class AiService {
     ) {
       intent = 'projectStructure';
     } else if (
-      lowerMessage.includes('je n\'arrive pas') ||
+      lowerMessage.includes("je n'arrive pas") ||
       lowerMessage.includes('ça ne marche pas') ||
       lowerMessage.includes('problème') ||
       lowerMessage.includes('erreur') ||
@@ -127,21 +142,45 @@ export class AiService {
     }
 
     // === ANCIENNES INTENTIONS ===
-    else if (lowerMessage.includes('résumé') || lowerMessage.includes('synopsis') || lowerMessage.includes('résume')) {
+    else if (
+      lowerMessage.includes('résumé') ||
+      lowerMessage.includes('synopsis') ||
+      lowerMessage.includes('résume')
+    ) {
       intent = 'summarize';
-      extractedData.topic = message.replace(/résumé|synopsis|résume/gi, '').trim() || 'ton manga';
-    } else if (lowerMessage.includes('tag') || lowerMessage.includes('étiquette') || lowerMessage.includes('catégorie')) {
+      extractedData.topic =
+        message.replace(/résumé|synopsis|résume/gi, '').trim() || 'ton manga';
+    } else if (
+      lowerMessage.includes('tag') ||
+      lowerMessage.includes('étiquette') ||
+      lowerMessage.includes('catégorie')
+    ) {
       intent = 'tags';
       extractedData.context = message;
-    } else if (lowerMessage.includes('idée') || lowerMessage.includes('dialogue') || lowerMessage.includes('écrire') || lowerMessage.includes('améliorer')) {
+    } else if (
+      lowerMessage.includes('idée') ||
+      lowerMessage.includes('dialogue') ||
+      lowerMessage.includes('écrire') ||
+      lowerMessage.includes('améliorer')
+    ) {
       intent = 'assistant';
       extractedData.context = message;
-    } else if (lowerMessage.includes('analyse') || lowerMessage.includes('conseil') || lowerMessage.includes('croissance') || lowerMessage.includes('stratégie')) {
+    } else if (
+      lowerMessage.includes('analyse') ||
+      lowerMessage.includes('conseil') ||
+      lowerMessage.includes('croissance') ||
+      lowerMessage.includes('stratégie')
+    ) {
       intent = 'coach';
       extractedData.context = message;
-    } else if (lowerMessage.includes('cherche') || lowerMessage.includes('trouve') || lowerMessage.includes('recherche')) {
+    } else if (
+      lowerMessage.includes('cherche') ||
+      lowerMessage.includes('trouve') ||
+      lowerMessage.includes('recherche')
+    ) {
       intent = 'search';
-      extractedData.query = message.replace(/cherche|trouve|recherche/gi, '').trim() || message;
+      extractedData.query =
+        message.replace(/cherche|trouve|recherche/gi, '').trim() || message;
     }
 
     let reply: string;
@@ -191,12 +230,12 @@ export class AiService {
       console.error('❌ ERREUR DANS AI SERVICE :', error);
       console.error('📋 MESSAGE :', error.message);
       console.error('📋 STACK :', error.stack);
-      
+
       await this.emailAlertService.sendTechnicalAlert(
         `Erreur dans l'intention "${intent}"`,
         `Utilisateur : ${userName}\nMessage : ${message}\nErreur : ${error.message}`,
         [],
-        'Vérifiez les logs du backend pour plus de détails.'
+        'Vérifiez les logs du backend pour plus de détails.',
       );
       reply = `Désolé ${userName} 🙈, je n'ai pas pu traiter votre demande. Un email a été envoyé à l'équipe technique. Veuillez réessayer dans quelques minutes. 😊\n\n— XELIRA ✦`;
     }
@@ -207,7 +246,11 @@ export class AiService {
   // ============================================
   // CHAT GÉNÉRAL (PROMPT SIMPLIFIÉ)
   // ============================================
-  private async handleChat(userName: string, message: string, history: any[]): Promise<string> {
+  private async handleChat(
+    userName: string,
+    message: string,
+    history: any[],
+  ): Promise<string> {
     const systemPrompt = `Tu es XELIRA 🤖, l'assistant officiel de INKDROP, si quelqu'un demande ce quel entreprise qui a créé INKdrop c'est Xelira studio un entreprise basé en informatique et programmation  pour innover et construire un avenir meilleur des développeurs base en Afrique république de mocratique du Congo à Kinshasa .
 
 📌 RÈGLES :
@@ -230,7 +273,7 @@ Termine toujours par une question. 😊`;
 
     const messages = [
       { role: 'system', content: systemPrompt },
-      ...history.slice(-10).map(m => ({
+      ...history.slice(-10).map((m) => ({
         role: m.role === 'user' ? 'user' : 'assistant',
         content: m.content,
       })),
@@ -301,7 +344,10 @@ Termine toujours par une question. 😊`;
   // ============================================
   // HANDLER : SUPPRIMER UN COMMENTAIRE
   // ============================================
-  private async handleDeleteComment(userName: string, data: any): Promise<string> {
+  private async handleDeleteComment(
+    userName: string,
+    data: any,
+  ): Promise<string> {
     if (!data.commentId) {
       return `${userName} 🤔, pour supprimer un commentaire, j'ai besoin de son ID. Tu peux me le donner ?\n\n— XELIRA ✦`;
     }
@@ -348,7 +394,10 @@ Termine toujours par une question. 😊`;
   // ============================================
   // HANDLER : ANALYSER UN FICHIER
   // ============================================
-  private async handleAnalyzeFile(userName: string, data: any): Promise<string> {
+  private async handleAnalyzeFile(
+    userName: string,
+    data: any,
+  ): Promise<string> {
     if (!data.filePath) {
       return `${userName} 🤔, pour analyser un fichier, j'ai besoin de son chemin (ex: src/modules/ai/ai.service.ts). Tu peux me le donner ?\n\n— XELIRA ✦`;
     }
@@ -356,7 +405,7 @@ Termine toujours par une question. 😊`;
     try {
       const analysis = await this.fileReaderService.analyzeCode(
         data.filePath,
-        data.error || undefined
+        data.error || undefined,
       );
 
       let reply = `${userName} 📁, **voici l'analyse du fichier** :\n\n`;
@@ -365,7 +414,12 @@ Termine toujours par une question. 😊`;
       if (analysis.issues.length > 0) {
         reply += '🔍 **Problèmes détectés :**\n';
         for (const issue of analysis.issues) {
-          const emoji = issue.type === 'error' ? '❌' : issue.type === 'warning' ? '⚠️' : 'ℹ️';
+          const emoji =
+            issue.type === 'error'
+              ? '❌'
+              : issue.type === 'warning'
+                ? '⚠️'
+                : 'ℹ️';
           reply += `  ${emoji} Ligne ${issue.line} : ${issue.message}\n`;
           if (issue.suggestion) {
             reply += `     → Suggestion : ${issue.suggestion}\n`;
@@ -392,7 +446,10 @@ Termine toujours par une question. 😊`;
       let reply = `${userName} 📁, **voici la structure du projet** :\n\n`;
       reply += `📊 Total : ${structure.totalFiles} fichiers\n\n`;
 
-      const formatStructure = (obj: Record<string, any>, indent: string = ''): string => {
+      const formatStructure = (
+        obj: Record<string, any>,
+        indent: string = '',
+      ): string => {
         let result = '';
         for (const [key, value] of Object.entries(obj)) {
           if (key === 'files') continue;
@@ -417,7 +474,10 @@ Termine toujours par une question. 😊`;
   // ============================================
   // HANDLER : AIDE
   // ============================================
-  private async handleHelp(userName: string, context: string): Promise<string> {
+  private async handleHelp(
+    userName: string,
+    context: string,
+  ): Promise<string> {
     const prompt = `L'utilisateur ${userName} a un problème : "${context || 'problème technique'}".
 
 Donne des conseils pour résoudre ce problème.
@@ -431,7 +491,10 @@ Utilise des émojis pour rendre la réponse agréable.`;
   // ============================================
   // HANDLER : RÉSUMÉ
   // ============================================
-  private async handleSummarize(userName: string, topic: string): Promise<string> {
+  private async handleSummarize(
+    userName: string,
+    topic: string,
+  ): Promise<string> {
     const prompt = `L'utilisateur ${userName} a demandé un résumé pour : "${topic}".
 
 Génère un résumé court (3-4 phrases), accrocheur, sans révéler la fin.
@@ -446,7 +509,10 @@ Résumé :`;
   // ============================================
   // HANDLER : TAGS
   // ============================================
-  private async handleTags(userName: string, context: string): Promise<string> {
+  private async handleTags(
+    userName: string,
+    context: string,
+  ): Promise<string> {
     const prompt = `L'utilisateur ${userName} a demandé des tags pour : "${context}".
 
 Propose 5 tags courts (1-2 mots), séparés par des virgules.
@@ -454,20 +520,30 @@ Utilise le prénom ${userName} dans ta réponse.
 
 Tags :`;
 
-    const reply = await this.callGroq([{ role: 'user', content: prompt }], userName);
-    const tags = reply.split(',').map((t: string) => t.trim()).filter((t: string) => t.length > 0).slice(0, 5);
+    const reply = await this.callGroq(
+      [{ role: 'user', content: prompt }],
+      userName,
+    );
+    const tags = reply
+      .split(',')
+      .map((t: string) => t.trim())
+      .filter((t: string) => t.length > 0)
+      .slice(0, 5);
     return `🏷️ ${userName}, voici 5 tags pertinents :\n\n${tags.map((t: string, i: number) => `• ${t}`).join('\n')}\n\nCes tags correspondent-ils à ce que tu cherchais ? 😊\n\n— XELIRA ✦`;
   }
 
   // ============================================
   // HANDLER : ASSISTANT
   // ============================================
-  private async handleAssistant(userName: string, context: string): Promise<string> {
+  private async handleAssistant(
+    userName: string,
+    context: string,
+  ): Promise<string> {
     try {
       const result = await this.assistantService.suggestIdeas(
         context,
         [],
-        'Non spécifié'
+        'Non spécifié',
       );
       return `${result}\n\nEst-ce que ces idées t'inspirent ? 😊\n\n— XELIRA ✦`;
     } catch (error) {
@@ -479,12 +555,15 @@ Tags :`;
   // ============================================
   // HANDLER : COACH
   // ============================================
-  private async handleCoach(userName: string, context: string): Promise<string> {
+  private async handleCoach(
+    userName: string,
+    context: string,
+  ): Promise<string> {
     try {
       const result = await this.coachService.suggestImprovements(
         'Manga sans titre',
         context || 'Aucune description',
-        []
+        [],
       );
       return `${result}\n\nEst-ce que ces conseils t'aident ? 😊\n\n— XELIRA ✦`;
     } catch (error) {
@@ -496,7 +575,10 @@ Tags :`;
   // ============================================
   // HANDLER : RECHERCHE
   // ============================================
-  private async handleSearch(userName: string, query: string): Promise<string> {
+  private async handleSearch(
+    userName: string,
+    query: string,
+  ): Promise<string> {
     try {
       const results = await this.searchService.intelligentSearch(query, 5);
       if (results.length === 0) {
@@ -520,22 +602,32 @@ Tags :`;
   // ============================================
   // APPEL GROQ
   // ============================================
-  private async callGroq(messages: any[], userName: string = 'Utilisateur'): Promise<string> {
-    console.log(`📤 Appel Groq - ${messages.length} messages, ${this.groqKeys.length} clés disponibles`);
-    console.log(`📤 URL : ${this.apiUrl}`);
+  private async callGroq(
+    messages: any[],
+    userName: string = 'Utilisateur',
+  ): Promise<string> {
+    if (this.groqKeys.length === 0) {
+      console.error('❌ Aucune clé Groq configurée.');
+      return `Bonjour ${userName} ! 😊✨\n\nJe suis XELIRA, ton assistant sur INKDROP. L'assistant est temporairement indisponible. Réessaie dans quelques minutes. 🚀\n\n— XELIRA ✦`;
+    }
+
+    console.log(
+      `📤 Appel Groq - ${messages.length} messages, ${this.groqKeys.length} clé(s) disponible(s)`,
+    );
 
     for (let attempt = 0; attempt < this.groqKeys.length; attempt++) {
       const key = this.groqKeys[this.currentKeyIndex];
       this.currentKeyIndex = (this.currentKeyIndex + 1) % this.groqKeys.length;
 
       try {
-        console.log(`🔑 Tentative ${attempt + 1}/${this.groqKeys.length} - Clé : ${key.substring(0, 15)}...`);
+        // ✅ On ne log jamais la clé elle-même
+        console.log(`🔑 Tentative ${attempt + 1}/${this.groqKeys.length}`);
 
         const response = await fetch(this.apiUrl, {
           method: 'POST',
           headers: {
             'Content-Type': 'application/json',
-            'Authorization': `Bearer ${key}`,
+            Authorization: `Bearer ${key}`,
           },
           body: JSON.stringify({
             model: 'openai/gpt-oss-120b',
@@ -548,7 +640,10 @@ Tags :`;
         const data = await response.json();
 
         if (!response.ok) {
-          console.error(`❌ Erreur Groq (${response.status}) :`, JSON.stringify(data, null, 2));
+          console.error(
+            `❌ Erreur Groq (${response.status}) :`,
+            JSON.stringify(data, null, 2),
+          );
           continue;
         }
 
