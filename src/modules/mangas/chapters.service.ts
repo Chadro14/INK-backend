@@ -109,8 +109,15 @@ export class ChaptersService {
 
   // ============================================
   // 2. FINALISATION DU CHAPITRE
+  // ✅ Le prix est choisi par le CRÉATEUR (dto.price).
+  //    Plus de calcul automatique "pages × 0.55".
+  //    Le prix est arrondi à l'entier (MANAS = Int).
   // ============================================
-  async finalizeChapter(mangaId: string, userId: string, dto: FinalizeChapterDto) {
+  async finalizeChapter(
+    mangaId: string,
+    userId: string,
+    dto: FinalizeChapterDto,
+  ) {
     const manga = await this.findMangaByIdOrSlug(mangaId);
     const realMangaId = manga.id;
 
@@ -130,7 +137,9 @@ export class ChaptersService {
     });
 
     if (existing) {
-      throw new BadRequestException(`Le chapitre N°${chapterNumber} existe déjà.`);
+      throw new BadRequestException(
+        `Le chapitre N°${chapterNumber} existe déjà.`,
+      );
     }
 
     let freeIndexes: number[] = [];
@@ -142,16 +151,19 @@ export class ChaptersService {
       }
     }
 
-    let calculatedPrice = dto.price ?? 0;
-    const isPdfMode = dto.mode === ChapterMode.PDF;
-
-    if (!isPdfMode) {
-      const totalPages = dto.keys.length;
-      const paidPagesCount = totalPages - freeIndexes.length;
-      calculatedPrice = paidPagesCount > 0 ? paidPagesCount * 0.55 : 0;
+    // ✅ OPTION A : le prix est fixé par le créateur.
+    //    Si dto.price est fourni (>= 0) → on l'utilise tel quel (arrondi entier).
+    //    Sinon → 0 (chapitre gratuit par défaut).
+    //    Le calcul "pages payantes × 0.55" est SUPPRIMÉ.
+    let calculatedPrice: number;
+    if (dto.price != null && dto.price >= 0) {
+      calculatedPrice = Math.max(0, Math.round(dto.price));
+    } else {
+      calculatedPrice = 0;
     }
 
     const isDraft = dto.isDraft ?? false;
+    const isPdfMode = dto.mode === ChapterMode.PDF;
 
     // ===== MODE PDF =====
     if (isPdfMode) {
@@ -249,7 +261,9 @@ export class ChaptersService {
   // ============================================
   async create(mangaId: string, userId: string, dto: CreateChapterDto) {
     if (!dto.pdfUrl && (!dto.imagesUrls || dto.imagesUrls.length === 0)) {
-      throw new BadRequestException('Fournissez un fichier PDF ou au moins une image.');
+      throw new BadRequestException(
+        'Fournissez un fichier PDF ou au moins une image.',
+      );
     }
 
     const manga = await this.findMangaByIdOrSlug(mangaId);
@@ -262,7 +276,9 @@ export class ChaptersService {
 
     const chapterNumber = Number(dto.number);
     const existing = await this.prisma.chapter.findUnique({
-      where: { mangaId_number: { mangaId: realMangaId, number: chapterNumber } },
+      where: {
+        mangaId_number: { mangaId: realMangaId, number: chapterNumber },
+      },
     });
 
     if (existing) {
@@ -453,33 +469,35 @@ export class ChaptersService {
 
       try {
         const pagesWithUrls = await Promise.all(
-          (chapter.pages as unknown as ChapterPage[]).map(async (page, index) => {
-            if (!page.key) {
-              return { order: page.order, isFree: page.isFree, url: null };
-            }
+          (chapter.pages as unknown as ChapterPage[]).map(
+            async (page, index) => {
+              if (!page.key) {
+                return { order: page.order, isFree: page.isFree, url: null };
+              }
 
-            const isFullUrl =
-              page.key.startsWith('http://') ||
-              page.key.startsWith('https://');
+              const isFullUrl =
+                page.key.startsWith('http://') ||
+                page.key.startsWith('https://');
 
-            try {
-              const url = isFullUrl
-                ? page.key
-                : await this.storage.getSignedUrl(page.key);
+              try {
+                const url = isFullUrl
+                  ? page.key
+                  : await this.storage.getSignedUrl(page.key);
 
-              return {
-                order: page.order,
-                isFree: page.isFree,
-                url: url || null,
-              };
-            } catch (error) {
-              console.error(
-                `❌ Erreur pour la page ${index + 1}:`,
-                error.message,
-              );
-              return { order: page.order, isFree: page.isFree, url: null };
-            }
-          }),
+                return {
+                  order: page.order,
+                  isFree: page.isFree,
+                  url: url || null,
+                };
+              } catch (error) {
+                console.error(
+                  `❌ Erreur pour la page ${index + 1}:`,
+                  error.message,
+                );
+                return { order: page.order, isFree: page.isFree, url: null };
+              }
+            },
+          ),
         );
 
         return { ...chapter, pages: pagesWithUrls };
@@ -620,10 +638,9 @@ export class ChaptersService {
       where: { userId, chapterId },
     });
 
-    // Chercher une utilisation valide (expiresAt null = permanent, ou > now)
     const validTicketUse = ticketUses.find((tu: any) => {
       const exp = tu.expiresAt;
-      if (!exp) return true; // pas d'expiration → permanent
+      if (!exp) return true;
       return new Date(exp) > now;
     });
 
