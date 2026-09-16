@@ -15,7 +15,7 @@ export interface GroqCallOptions {
   model?: string;
   temperature?: number;
   maxTokens?: number;
-  tools?: any[]; // Pour le function calling
+  tools?: any[];
   toolChoice?: 'auto' | 'none' | { type: 'function'; function: { name: string } };
   responseFormat?: { type: 'json_object' | 'text' };
 }
@@ -26,10 +26,18 @@ export class GroqService {
   private readonly groqKeys: string[];
   private currentKeyIndex = 0;
   private readonly apiUrl = 'https://api.groq.com/openai/v1/chat/completions';
-  private readonly defaultModel = 'llama-3.3-70b-versatile';
+
+  // ✅ Modèle actuel — llama-3.3-70b-versatile a été retiré le 16 août 2026
+  private readonly defaultModel = 'openai/gpt-oss-120b';
+
+  // ✅ Modèles de secours si le modèle par défaut échoue
+  private readonly fallbackModels = [
+    'openai/gpt-oss-120b',
+    'llama-3.1-8b-instant',
+    'openai/gpt-oss-20b',
+  ];
 
   constructor(private configService: ConfigService) {
-    // Charge les clés GROQ_API_KEY_1 à GROQ_API_KEY_N dynamiquement
     this.groqKeys = this.loadKeys();
 
     if (this.groqKeys.length === 0) {
@@ -43,7 +51,6 @@ export class GroqService {
 
   /**
    * Charge dynamiquement les clés GROQ_API_KEY_1, GROQ_API_KEY_2, ...
-   * jusqu'à ce qu'il n'y en ait plus.
    */
   private loadKeys(): string[] {
     const keys: string[] = [];
@@ -56,16 +63,14 @@ export class GroqService {
     return keys;
   }
 
-  /**
-   * Vérifie si le service est disponible (au moins une clé).
-   */
   isAvailable(): boolean {
     return this.groqKeys.length > 0;
   }
 
   /**
-   * Appel principal à Groq avec rotation automatique des clés.
-   * Essaie chaque clé jusqu'à en trouver une qui fonctionne.
+   * Appel principal à Groq avec :
+   * - rotation automatique des clés
+   * - fallback automatique des modèles si le modèle par défaut échoue
    */
   async call(options: GroqCallOptions): Promise<string> {
     if (!this.isAvailable()) {
@@ -74,7 +79,7 @@ export class GroqService {
 
     const {
       messages,
-      model = this.defaultModel,
+      model,
       temperature = 0.7,
       maxTokens = 800,
       tools,
@@ -82,73 +87,81 @@ export class GroqService {
       responseFormat,
     } = options;
 
-    const body: any = {
-      model,
-      messages,
-      temperature,
-      max_tokens: maxTokens,
-    };
-
-    if (tools && tools.length > 0) {
-      body.tools = tools;
-      body.tool_choice = toolChoice || 'auto';
-    }
-
-    if (responseFormat) {
-      body.response_format = responseFormat;
-    }
+    // Liste des modèles à essayer : celui passé en option, sinon le défaut, puis les fallbacks
+    const modelsToTry = model
+      ? [model, ...this.fallbackModels.filter((m) => m !== model)]
+      : [this.defaultModel, ...this.fallbackModels.filter((m) => m !== this.defaultModel)];
 
     let lastError: any = null;
 
-    // Rotation : on essaie chaque clé dans l'ordre
-    for (let attempt = 0; attempt < this.groqKeys.length; attempt++) {
-      const keyIndex = (this.currentKeyIndex + attempt) % this.groqKeys.length;
-      const key = this.groqKeys[keyIndex];
+    // On essaie chaque modèle
+    for (const tryModel of modelsToTry) {
+      const body: any = {
+        model: tryModel,
+        messages,
+        temperature,
+        max_tokens: maxTokens,
+      };
 
-      try {
-        const response = await fetch(this.apiUrl, {
-          method: 'POST',
-          headers: {
-            'Content-Type': 'application/json',
-            Authorization: `Bearer ${key}`,
-          },
-          body: JSON.stringify(body),
-        });
+      if (tools && tools.length > 0) {
+        body.tools = tools;
+        body.tool_choice = toolChoice || 'auto';
+      }
 
-        if (!response.ok) {
-          const errorData = await response.json().catch(() => ({}));
+      if (responseFormat) {
+        body.response_format = responseFormat;
+      }
+
+      // Pour chaque modèle, on essaie chaque clé
+      for (let attempt = 0; attempt < this.groqKeys.length; attempt++) {
+        const keyIndex = (this.currentKeyIndex + attempt) % this.groqKeys.length;
+        const key = this.groqKeys[keyIndex];
+
+        try {
+          const response = await fetch(this.apiUrl, {
+            method: 'POST',
+            headers: {
+              'Content-Type': 'application/json',
+              Authorization: `Bearer ${key}`,
+            },
+            body: JSON.stringify(body),
+          });
+
+          if (!response.ok) {
+            const errorData = await response.json().catch(() => ({}));
+            this.logger.warn(
+              `Groq [${tryModel}] clé #${keyIndex + 1} a échoué (status ${response.status}).`,
+            );
+            lastError = errorData;
+            continue;
+          }
+
+          const data = await response.json();
+
+          // Si tools sont utilisés, on renvoie le message complet
+          if (tools && tools.length > 0) {
+            this.currentKeyIndex = keyIndex;
+            return JSON.stringify(data.choices?.[0]?.message || {});
+          }
+
+          const content = data.choices?.[0]?.message?.content;
+          if (content) {
+            this.currentKeyIndex = keyIndex;
+            return content;
+          }
+
+          lastError = new Error('Réponse Groq vide');
+        } catch (error) {
           this.logger.warn(
-            `Groq clé #${keyIndex + 1} a échoué (status ${response.status}).`,
+            `Groq [${tryModel}] clé #${keyIndex + 1} a échoué (exception): ${error.message}`,
           );
-          lastError = errorData;
-          continue;
+          lastError = error;
         }
-
-        const data = await response.json();
-
-        // Si tools sont utilisés, on renvoie le message complet
-        if (tools && tools.length > 0) {
-          return JSON.stringify(data.choices?.[0]?.message || {});
-        }
-
-        const content = data.choices?.[0]?.message?.content;
-        if (content) {
-          // Succès : on mémorise cette clé comme la prochaine à utiliser
-          this.currentKeyIndex = keyIndex;
-          return content;
-        }
-
-        lastError = new Error('Réponse Groq vide');
-      } catch (error) {
-        this.logger.warn(
-          `Groq clé #${keyIndex + 1} a échoué (exception): ${error.message}`,
-        );
-        lastError = error;
       }
     }
 
     this.logger.error(
-      `❌ Toutes les clés Groq ont échoué. Dernière erreur : ${lastError?.message || 'inconnue'}`,
+      `❌ Toutes les clés et tous les modèles Groq ont échoué. Dernière erreur : ${lastError?.message || 'inconnue'}`,
     );
     throw new Error('GROQ_ALL_KEYS_FAILED');
   }
@@ -156,7 +169,10 @@ export class GroqService {
   /**
    * Appel simplifié : un seul message utilisateur.
    */
-  async ask(prompt: string, options: Partial<GroqCallOptions> = {}): Promise<string> {
+  async ask(
+    prompt: string,
+    options: Partial<GroqCallOptions> = {},
+  ): Promise<string> {
     return this.call({
       messages: [{ role: 'user', content: prompt }],
       ...options,
