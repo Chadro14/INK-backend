@@ -1,6 +1,5 @@
 // src/modules/ai/ai.service.ts
-import { Injectable, BadRequestException } from '@nestjs/common';
-import { ConfigService } from '@nestjs/config';
+import { Injectable, BadRequestException, Logger } from '@nestjs/common';
 import { PrismaService } from '../../prisma/prisma.service';
 import { ModerationService } from './moderation.service';
 import { ToolsService } from './tools.service';
@@ -11,16 +10,13 @@ import { TagService } from './tag.service';
 import { SearchService } from './search.service';
 import { AssistantService } from './assistant.service';
 import { CoachService } from './coach.service';
+import { AiRouterService } from './ai-router.service';
 
 @Injectable()
 export class AiService {
-  // ✅ Clés lues depuis les variables d'environnement Vercel (jamais en dur)
-  private readonly groqKeys: string[];
-  private currentKeyIndex = 0;
-  private readonly apiUrl = 'https://api.groq.com/openai/v1/chat/completions';
+  private readonly logger = new Logger(AiService.name);
 
   constructor(
-    private configService: ConfigService,
     private prisma: PrismaService,
     private moderationService: ModerationService,
     private toolsService: ToolsService,
@@ -31,23 +27,8 @@ export class AiService {
     private searchService: SearchService,
     private assistantService: AssistantService,
     private coachService: CoachService,
-  ) {
-    // Charge les clés GROQ_API_KEY_1 à GROQ_API_KEY_2 depuis les env vars
-    this.groqKeys = [
-      this.configService.get<string>('GROQ_API_KEY_1') || '',
-      this.configService.get<string>('GROQ_API_KEY_2') || '',
-    ].filter((k) => k.length > 0);
-
-    if (this.groqKeys.length === 0) {
-      console.warn(
-        '⚠️ Aucune clé Groq configurée (GROQ_API_KEY_1..4). XELIRA ne fonctionnera pas.',
-      );
-    } else {
-      console.log(
-        `✅ ${this.groqKeys.length} clé(s) Groq chargée(s) depuis les variables d'environnement.`,
-      );
-    }
-  }
+    private aiRouter: AiRouterService,
+  ) {}
 
   // ============================================
   // CHAT PRINCIPAL
@@ -227,60 +208,98 @@ export class AiService {
           reply = await this.handleChat(userName, message, history);
       }
     } catch (error) {
-      console.error('❌ ERREUR DANS AI SERVICE :', error);
-      console.error('📋 MESSAGE :', error.message);
-      console.error('📋 STACK :', error.stack);
-
-      await this.emailAlertService.sendTechnicalAlert(
-        `Erreur dans l'intention "${intent}"`,
-        `Utilisateur : ${userName}\nMessage : ${message}\nErreur : ${error.message}`,
-        [],
-        'Vérifiez les logs du backend pour plus de détails.',
+      this.logger.error(
+        `Erreur dans l'intention "${intent}" : ${error.message}`,
+        error.stack,
       );
-      reply = `Désolé ${userName} 🙈, je n'ai pas pu traiter votre demande. Un email a été envoyé à l'équipe technique. Veuillez réessayer dans quelques minutes. 😊\n\n— XELIRA ✦`;
+
+      await this.emailAlertService
+        .sendTechnicalAlert(
+          `Erreur dans l'intention "${intent}"`,
+          `Utilisateur : ${userName}\nMessage : ${message}\nErreur : ${error.message}`,
+          [],
+          'Vérifiez les logs du backend pour plus de détails.',
+        )
+        .catch(() => {
+          /* silencieux si l'email échoue */
+        });
+
+      reply = `Désolée ${userName} 🙈, je n'ai pas pu traiter ta demande. Un email a été envoyé à l'équipe technique. Réessaie dans quelques minutes. 😊\n\n— OZYRA ✦`;
     }
 
     return { success: true, reply: this.cleanReply(reply) };
   }
 
   // ============================================
-  // CHAT GÉNÉRAL (PROMPT SIMPLIFIÉ)
+  // CHAT GÉNÉRAL (PROMPT PRINCIPAL)
   // ============================================
   private async handleChat(
     userName: string,
     message: string,
     history: any[],
   ): Promise<string> {
-    const systemPrompt = `Tu es XELIRA 🤖, l'assistant officiel de INKDROP, si quelqu'un demande ce quel entreprise qui a créé INKdrop c'est Xelira studio un entreprise basé en informatique et programmation  pour innover et construire un avenir meilleur des développeurs base en Afrique république de mocratique du Congo à Kinshasa .
-
-📌 RÈGLES :
-1. Tu réponds UNIQUEMENT en français.
-2. Tu ne parles que de INKDROP.
-3. Si une question est hors sujet, réponds : "Désolé, je suis uniquement dédié à INKDROP."
-4. Utilise le prénom ${userName}.
-
-📚 CE QUE TU DOIS CONNAÎTRE SUR INKDROP :
-- Publication : tout le monde peut publier, chapitres 1-9 gratuits, 10+ payant (0.55$).
-- Monétisation : 80% ventes chapitres, 70% publicité, 90% pourboires.
-- Abonnements Premium :
-  • Standard (3$/mois) : sans pub, accès illimité.
-  • Premium (5$/mois) : tout Standard + badge exclusif.
-  • Pro (7$/mois) : tout Premium + soutien prioritaire.
-- Certification : 1000 abonnés + 5000 vues.
-- Fonctionnalités : likes, commentaires, abonnements, profil, Découverte, InkStream.
-
-Termine toujours par une question. 😊`;
+    const systemPrompt = this.buildSystemPrompt(userName);
 
     const messages = [
-      { role: 'system', content: systemPrompt },
       ...history.slice(-10).map((m) => ({
-        role: m.role === 'user' ? 'user' : 'assistant',
+        role: m.role === 'user' ? ('user' as const) : ('assistant' as const),
         content: m.content,
       })),
-      { role: 'user', content: message },
+      { role: 'user' as const, content: message },
     ];
 
-    return this.callGroq(messages, userName);
+    const result = await this.aiRouter.call({
+      messages,
+      systemInstruction: systemPrompt,
+      temperature: 0.7,
+      maxTokens: 800,
+    });
+
+    return result.content;
+  }
+
+  // ============================================
+  // PROMPT SYSTÈME OZYRA
+  // ============================================
+  private buildSystemPrompt(userName: string): string {
+    return `Tu es OZYRA 🤖, l'assistante officielle d'INKDROP.
+Xelira Studio est l'entreprise basée à Kinshasa, RDC, qui a créé INKDROP.
+
+📌 RÈGLES FONDAMENTALES :
+1. Tu réponds UNIQUEMENT en français.
+2. Tu ne parles que d'INKDROP.
+3. Si la question est hors sujet → "Désolée, je suis uniquement dédiée à INKDROP."
+4. Tu utilises toujours le prénom de l'utilisateur : ${userName}.
+5. Tu termines toujours par une question ou une suggestion d'action.
+6. Tu ne donnes JAMAIS de fausses informations. Si tu ne sais pas → "Je vais transmettre à l'équipe INKDROP."
+
+🎯 TON RÔLE :
+- Tu es chaleureuse, précise, jamais robotique.
+- Tu adaptes ton ton : amical pour les lecteurs, technique pour les créateurs, concis pour les admins.
+- Tu n'inventes JAMAIS de données (chiffres, titres, noms).
+
+📚 CE QUE TU SAIS SUR INKDROP :
+
+MONNAIE : MANAS (1 MANAS ≈ 0.01 USD)
+- Chapitre payant : 50 MANAS (prix fixe, choisi par la plateforme)
+- Ticket : accès 2h à un chapitre payant
+- Premium : payable par mobile money (Orange Money, M-Pesa, Airtel)
+
+PREMIUM :
+- Standard (3 USD / 1 mois) : tickets illimités + accès chapitres payants + badge bleu
+- Pro (5 USD / 2 mois) : tout Standard + collab chat gratuite + badge violet + 4 mangas épinglés
+- Premium (7 USD / 3 mois) : tout Pro + badge or + 5 mangas épinglés + création d'événements + badge Meilleur Fan
+
+PUBLICATION :
+- Tout utilisateur peut publier un manga
+- Le créateur choisit : gratuit ou payant (50 MANAS)
+- Le créateur touche 100% des ventes de ses chapitres
+
+RÔLE DE XELIRA STUDIO :
+- Entreprise de développement informatique basée à Kinshasa, RDC
+- Mission : innover et construire un avenir meilleur pour les développeurs africains
+
+Termine toujours par une question. 😊`;
   }
 
   // ============================================
@@ -288,7 +307,7 @@ Termine toujours par une question. 😊`;
   // ============================================
   private async handleModerate(userName: string, data: any): Promise<string> {
     if (!data.commentId) {
-      return `${userName} 🤔, pour modérer un commentaire, j'ai besoin de son ID. Peux-tu me le donner stp ? 😊\n\n— XELIRA ✦`;
+      return `${userName} 🤔, pour modérer un commentaire, j'ai besoin de son ID. Peux-tu me le donner stp ? 😊\n\n— OZYRA ✦`;
     }
 
     const result = await this.moderationService.analyzeComment(data.commentId);
@@ -316,7 +335,7 @@ Termine toujours par une question. 😊`;
       critical: '🔴 Critique',
     };
 
-    return `${userName} 👋, ${actionEmojis[result.action] || '✅'} **${actionLabels[result.action] || 'Traité'}**\n\n📋 Raison : ${result.reason}\n⚠️ Sévérité : ${severityLabels[result.severity] || 'Basse'}\n🎯 Confiance : ${Math.round(result.confidence * 100)}%\n${result.requiresHumanReview ? '\n👨‍💼 Une révision humaine est recommandée.' : ''}\n\nEst-ce que tout est clair pour toi ? 😊\n\n— XELIRA ✦`;
+    return `${userName} 👋, ${actionEmojis[result.action] || '✅'} **${actionLabels[result.action] || 'Traité'}**\n\n📋 Raison : ${result.reason}\n⚠️ Sévérité : ${severityLabels[result.severity] || 'Basse'}\n🎯 Confiance : ${Math.round(result.confidence * 100)}%\n${result.requiresHumanReview ? '\n👨‍💼 Une révision humaine est recommandée.' : ''}\n\nEst-ce que tout est clair pour toi ? 😊\n\n— OZYRA ✦`;
   }
 
   // ============================================
@@ -324,21 +343,21 @@ Termine toujours par une question. 😊`;
   // ============================================
   private async handleBan(userName: string, data: any): Promise<string> {
     if (!data.userId) {
-      return `${userName} 🙈, pour bannir un utilisateur, j'ai besoin de son ID. Peux-tu me le donner ?\n\n— XELIRA ✦`;
+      return `${userName} 🙈, pour bannir un utilisateur, j'ai besoin de son ID. Peux-tu me le donner ?\n\n— OZYRA ✦`;
     }
 
     const result = await this.toolsService.banUser({
       userId: data.userId,
-      reason: data.reason || 'Comportement inapproprié (décision Xelira)',
+      reason: data.reason || 'Comportement inapproprié (décision Ozyra)',
       permanent: false,
       duration: '30d',
     });
 
     if (!result.success) {
-      return `${userName} 😕, je n'ai pas pu bannir cet utilisateur. ${result.message}\n\nTu veux que je t'aide à autre chose ? 😊\n\n— XELIRA ✦`;
+      return `${userName} 😕, je n'ai pas pu bannir cet utilisateur. ${result.message}\n\nTu veux que je t'aide à autre chose ? 😊\n\n— OZYRA ✦`;
     }
 
-    return `${userName} ✅, **l'utilisateur a été banni avec succès** ! 🚫\n\n📋 Détails :\n• Utilisateur : ${result.data.username}\n• Raison : ${result.data.reason}\n• Date : ${new Date(result.data.bannedAt).toLocaleString('fr-FR')}\n\nTu as d'autres questions ? 😊\n\n— XELIRA ✦`;
+    return `${userName} ✅, **l'utilisateur a été banni avec succès** ! 🚫\n\n📋 Détails :\n• Utilisateur : ${result.data.username}\n• Raison : ${result.data.reason}\n• Date : ${new Date(result.data.bannedAt).toLocaleString('fr-FR')}\n\nTu as d'autres questions ? 😊\n\n— OZYRA ✦`;
   }
 
   // ============================================
@@ -349,19 +368,19 @@ Termine toujours par une question. 😊`;
     data: any,
   ): Promise<string> {
     if (!data.commentId) {
-      return `${userName} 🤔, pour supprimer un commentaire, j'ai besoin de son ID. Tu peux me le donner ?\n\n— XELIRA ✦`;
+      return `${userName} 🤔, pour supprimer un commentaire, j'ai besoin de son ID. Tu peux me le donner ?\n\n— OZYRA ✦`;
     }
 
     const result = await this.toolsService.deleteComment({
       commentId: data.commentId,
-      reason: 'Supprimé par Xelira (IA)',
+      reason: 'Supprimé par Ozyra (IA)',
     });
 
     if (!result.success) {
-      return `${userName} 😕, je n'ai pas pu supprimer ce commentaire. ${result.message}\n\nTu veux que je t'aide sur autre chose ? 😊\n\n— XELIRA ✦`;
+      return `${userName} 😕, je n'ai pas pu supprimer ce commentaire. ${result.message}\n\nTu veux que je t'aide sur autre chose ? 😊\n\n— OZYRA ✦`;
     }
 
-    return `${userName} 🗑️, le **commentaire a été supprimé avec succès** !\n\n📋 Détails :\n• Utilisateur : ${result.data.username}\n• Commentaire ID : ${result.data.commentId}\n\nBesoin d'autre chose ? 😊\n\n— XELIRA ✦`;
+    return `${userName} 🗑️, le **commentaire a été supprimé avec succès** !\n\n📋 Détails :\n• Utilisateur : ${result.data.username}\n• Commentaire ID : ${result.data.commentId}\n\nBesoin d'autre chose ? 😊\n\n— OZYRA ✦`;
   }
 
   // ============================================
@@ -369,16 +388,16 @@ Termine toujours par une question. 😊`;
   // ============================================
   private async handleWarn(userName: string, data: any): Promise<string> {
     if (!data.userId) {
-      return `${userName} 🤔, pour avertir un utilisateur, j'ai besoin de son ID. Tu peux me le donner ?\n\n— XELIRA ✦`;
+      return `${userName} 🤔, pour avertir un utilisateur, j'ai besoin de son ID. Tu peux me le donner ?\n\n— OZYRA ✦`;
     }
 
     const result = await this.toolsService.warnUser({
       userId: data.userId,
-      message: data.message || 'Avertissement de Xelira (IA)',
+      message: data.message || 'Avertissement de Ozyra (IA)',
     });
 
     if (!result.success) {
-      return `${userName} 😕, je n'ai pas pu avertir cet utilisateur. ${result.message}\n\nTu veux que je t'aide autrement ? 😊\n\n— XELIRA ✦`;
+      return `${userName} 😕, je n'ai pas pu avertir cet utilisateur. ${result.message}\n\nTu veux que je t'aide autrement ? 😊\n\n— OZYRA ✦`;
     }
 
     let message = `${userName} ⚠️, **l'avertissement a été envoyé** !\n\n📋 Détails :\n• Utilisateur : ${result.data.username}\n• Avertissement #${result.data.warnings}\n`;
@@ -387,7 +406,7 @@ Termine toujours par une question. 😊`;
       message += `\n🚫 **L'utilisateur a été banni automatiquement** (3 avertissements).`;
     }
 
-    message += `\n\nTu as d'autres questions ? 😊\n\n— XELIRA ✦`;
+    message += `\n\nTu as d'autres questions ? 😊\n\n— OZYRA ✦`;
     return message;
   }
 
@@ -399,7 +418,7 @@ Termine toujours par une question. 😊`;
     data: any,
   ): Promise<string> {
     if (!data.filePath) {
-      return `${userName} 🤔, pour analyser un fichier, j'ai besoin de son chemin (ex: src/modules/ai/ai.service.ts). Tu peux me le donner ?\n\n— XELIRA ✦`;
+      return `${userName} 🤔, pour analyser un fichier, j'ai besoin de son chemin (ex: src/modules/ai/ai.service.ts). Tu peux me le donner ?\n\n— OZYRA ✦`;
     }
 
     try {
@@ -429,10 +448,10 @@ Termine toujours par une question. 😊`;
         reply += '✅ Aucun problème détecté dans ce fichier !\n';
       }
 
-      reply += `\nEst-ce que ça t'aide ? 😊\n\n— XELIRA ✦`;
+      reply += `\nEst-ce que ça t'aide ? 😊\n\n— OZYRA ✦`;
       return reply;
     } catch (error) {
-      return `${userName} 😕, je n'ai pas pu analyser ce fichier. Erreur : ${error.message}\n\nTu veux que j'essaie autre chose ? 😊\n\n— XELIRA ✦`;
+      return `${userName} 😕, je n'ai pas pu analyser ce fichier. Erreur : ${error.message}\n\nTu veux que j'essaie autre chose ? 😊\n\n— OZYRA ✦`;
     }
   }
 
@@ -464,10 +483,10 @@ Termine toujours par une question. 😊`;
       reply += formatStructure(structure.structure);
       reply += `\n📝 ${structure.files.length} fichiers affichés (sur ${structure.totalFiles})`;
 
-      reply += `\n\nEst-ce que ça répond à ta question ? 😊\n\n— XELIRA ✦`;
+      reply += `\n\nEst-ce que ça répond à ta question ? 😊\n\n— OZYRA ✦`;
       return reply;
     } catch (error) {
-      return `${userName} 😕, je n'ai pas pu analyser la structure du projet. Erreur : ${error.message}\n\nTu veux que je fasse autre chose ? 😊\n\n— XELIRA ✦`;
+      return `${userName} 😕, je n'ai pas pu analyser la structure du projet. Erreur : ${error.message}\n\nTu veux que je fasse autre chose ? 😊\n\n— OZYRA ✦`;
     }
   }
 
@@ -478,14 +497,14 @@ Termine toujours par une question. 😊`;
     userName: string,
     context: string,
   ): Promise<string> {
+    const systemInstruction = `Tu es OZYRA, l'assistante d'INKDROP. Tu aides les utilisateurs à résoudre leurs problèmes techniques ou d'utilisation. Sois précise, utile, et termine par une question.`;
+
     const prompt = `L'utilisateur ${userName} a un problème : "${context || 'problème technique'}".
 
-Donne des conseils pour résoudre ce problème.
-Sois précis et utile.
-Termine par une question pour en savoir plus.
-Utilise des émojis pour rendre la réponse agréable.`;
+Donne des conseils pour résoudre ce problème. Sois précis et utile.`;
 
-    return this.callGroq([{ role: 'user', content: prompt }], userName);
+    const result = await this.aiRouter.ask(prompt, systemInstruction);
+    return result.content;
   }
 
   // ============================================
@@ -495,15 +514,14 @@ Utilise des émojis pour rendre la réponse agréable.`;
     userName: string,
     topic: string,
   ): Promise<string> {
+    const systemInstruction = `Tu es OZYRA, l'assistante d'INKDROP. Tu génères des résumés courts et accrocheurs de mangas.`;
+
     const prompt = `L'utilisateur ${userName} a demandé un résumé pour : "${topic}".
 
-Génère un résumé court (3-4 phrases), accrocheur, sans révéler la fin.
-Utilise le prénom ${userName} dans ta réponse.
-Termine par une question pour savoir si c'est utile.
+Génère un résumé court (3-4 phrases), accrocheur, sans révéler la fin. Utilise le prénom ${userName}.`;
 
-Résumé :`;
-
-    return this.callGroq([{ role: 'user', content: prompt }], userName);
+    const result = await this.aiRouter.ask(prompt, systemInstruction);
+    return result.content;
   }
 
   // ============================================
@@ -515,21 +533,20 @@ Résumé :`;
   ): Promise<string> {
     const prompt = `L'utilisateur ${userName} a demandé des tags pour : "${context}".
 
-Propose 5 tags courts (1-2 mots), séparés par des virgules.
-Utilise le prénom ${userName} dans ta réponse.
+Propose 5 tags courts (1-2 mots), séparés par des virgules. Utilise le prénom ${userName} dans ta réponse.
 
 Tags :`;
 
-    const reply = await this.callGroq(
-      [{ role: 'user', content: prompt }],
-      userName,
-    );
+    const result = await this.aiRouter.ask(prompt);
+    const reply = result.content;
+
     const tags = reply
       .split(',')
       .map((t: string) => t.trim())
       .filter((t: string) => t.length > 0)
       .slice(0, 5);
-    return `🏷️ ${userName}, voici 5 tags pertinents :\n\n${tags.map((t: string, i: number) => `• ${t}`).join('\n')}\n\nCes tags correspondent-ils à ce que tu cherchais ? 😊\n\n— XELIRA ✦`;
+
+    return `🏷️ ${userName}, voici 5 tags pertinents :\n\n${tags.map((t: string) => `• ${t}`).join('\n')}\n\nCes tags correspondent-ils à ce que tu cherchais ? 😊\n\n— OZYRA ✦`;
   }
 
   // ============================================
@@ -545,10 +562,13 @@ Tags :`;
         [],
         'Non spécifié',
       );
-      return `${result}\n\nEst-ce que ces idées t'inspirent ? 😊\n\n— XELIRA ✦`;
+      return `${result}\n\nEst-ce que ces idées t'inspirent ? 😊\n\n— OZYRA ✦`;
     } catch (error) {
+      const systemInstruction = `Tu es OZYRA, l'assistante d'INKDROP. Tu aides les créateurs de mangas avec des idées créatives.`;
       const prompt = `L'utilisateur ${userName} a demandé : "${context}". Donne 3 suggestions concrètes (idées, dialogues, améliorations) courtes. Utilise le prénom ${userName}. Termine par une question.`;
-      return this.callGroq([{ role: 'user', content: prompt }], userName);
+
+      const result = await this.aiRouter.ask(prompt, systemInstruction);
+      return result.content;
     }
   }
 
@@ -565,10 +585,13 @@ Tags :`;
         context || 'Aucune description',
         [],
       );
-      return `${result}\n\nEst-ce que ces conseils t'aident ? 😊\n\n— XELIRA ✦`;
+      return `${result}\n\nEst-ce que ces conseils t'aident ? 😊\n\n— OZYRA ✦`;
     } catch (error) {
+      const systemInstruction = `Tu es OZYRA, l'assistante d'INKDROP. Tu joues le rôle de coach pour les créateurs de mangas.`;
       const prompt = `L'utilisateur ${userName} a demandé : "${context}". Donne 3 conseils concrets pour améliorer son travail. Utilise le prénom ${userName}. Termine par une question.`;
-      return this.callGroq([{ role: 'user', content: prompt }], userName);
+
+      const result = await this.aiRouter.ask(prompt, systemInstruction);
+      return result.content;
     }
   }
 
@@ -582,7 +605,7 @@ Tags :`;
     try {
       const results = await this.searchService.intelligentSearch(query, 5);
       if (results.length === 0) {
-        return `${userName} 🔍, je n'ai trouvé aucun manga correspondant à "${query}". Essaie d'autres mots-clés ! 😊\n\n— XELIRA ✦`;
+        return `${userName} 🔍, je n'ai trouvé aucun manga correspondant à "${query}". Essaie d'autres mots-clés ! 😊\n\n— OZYRA ✦`;
       }
       let reply = `${userName} 🔍, voici les résultats pour "${query}" :\n\n`;
       for (const manga of results.slice(0, 5)) {
@@ -591,76 +614,14 @@ Tags :`;
         reply += `   ❤️ ${manga._count?.likes || 0} likes\n`;
         reply += `   📚 ${manga._count?.chapters || 0} chapitres\n\n`;
       }
-      reply += `Tu veux plus de détails sur l'un d'eux ? 😊\n\n— XELIRA ✦`;
+      reply += `Tu veux plus de détails sur l'un d'eux ? 😊\n\n— OZYRA ✦`;
       return reply;
     } catch (error) {
       const prompt = `L'utilisateur ${userName} cherche : "${query}". Propose 3 mangas correspondant à sa recherche, avec titre et description courte. Utilise le prénom ${userName}. Termine par une question.`;
-      return this.callGroq([{ role: 'user', content: prompt }], userName);
+
+      const result = await this.aiRouter.ask(prompt);
+      return result.content;
     }
-  }
-
-  // ============================================
-  // APPEL GROQ
-  // ============================================
-  private async callGroq(
-    messages: any[],
-    userName: string = 'Utilisateur',
-  ): Promise<string> {
-    if (this.groqKeys.length === 0) {
-      console.error('❌ Aucune clé Groq configurée.');
-      return `Bonjour ${userName} ! 😊✨\n\nJe suis XELIRA, ton assistant sur INKDROP. L'assistant est temporairement indisponible. Réessaie dans quelques minutes. 🚀\n\n— XELIRA ✦`;
-    }
-
-    console.log(
-      `📤 Appel Groq - ${messages.length} messages, ${this.groqKeys.length} clé(s) disponible(s)`,
-    );
-
-    for (let attempt = 0; attempt < this.groqKeys.length; attempt++) {
-      const key = this.groqKeys[this.currentKeyIndex];
-      this.currentKeyIndex = (this.currentKeyIndex + 1) % this.groqKeys.length;
-
-      try {
-        // ✅ On ne log jamais la clé elle-même
-        console.log(`🔑 Tentative ${attempt + 1}/${this.groqKeys.length}`);
-
-        const response = await fetch(this.apiUrl, {
-          method: 'POST',
-          headers: {
-            'Content-Type': 'application/json',
-            Authorization: `Bearer ${key}`,
-          },
-          body: JSON.stringify({
-            model: 'openai/gpt-oss-120b',
-            messages,
-            temperature: 0.7,
-            max_tokens: 500,
-          }),
-        });
-
-        const data = await response.json();
-
-        if (!response.ok) {
-          console.error(
-            `❌ Erreur Groq (${response.status}) :`,
-            JSON.stringify(data, null, 2),
-          );
-          continue;
-        }
-
-        const reply = data.choices?.[0]?.message?.content;
-        if (reply) {
-          console.log(`✅ Réponse Groq reçue (${reply.length} caractères)`);
-          return reply;
-        } else {
-          console.error('❌ Pas de reply dans la réponse:', data);
-        }
-      } catch (error) {
-        console.error(`❌ Exception Groq :`, error.message);
-      }
-    }
-
-    console.error('❌ TOUTES LES TENTATIVES GROQ ONT ÉCHOUÉ');
-    return `Bonjour ${userName} ! 😊✨\n\nJe suis XELIRA, ton agent modérateur sur INKDROP. Comment puis-je t'aider aujourd'hui ? Dis-moi tout ! 🚀\n\n— XELIRA ✦`;
   }
 
   // ============================================
