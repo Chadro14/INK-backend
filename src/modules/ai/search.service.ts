@@ -1,20 +1,16 @@
 // src/modules/ai/search.service.ts
-import { Injectable } from '@nestjs/common';
+import { Injectable, Logger } from '@nestjs/common';
 import { PrismaService } from '../../prisma/prisma.service';
+import { AiRouterService } from './ai-router.service';
 
 @Injectable()
 export class SearchService {
-  private readonly groqKeys: string[] = [
-    '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',
-    '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',
-    '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',
-    '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',
-  ];
+  private readonly logger = new Logger(SearchService.name);
 
-  private currentKeyIndex = 0;
-  private readonly apiUrl = 'https://api.groq.com/openai/v1/chat/completions';
-
-  constructor(private prisma: PrismaService) {}
+  constructor(
+    private prisma: PrismaService,
+    private aiRouter: AiRouterService,
+  ) {}
 
   // ============================================
   // RECHERCHE INTELLIGENTE
@@ -69,17 +65,28 @@ export class SearchService {
 
 Recherche : "${query}"
 
-Mots-clés (séparés par des espaces) :`;
+Réponds UNIQUEMENT par les mots-clés séparés par des espaces. Aucune autre phrase.`;
 
-    const reply = await this.callGroq(prompt);
-    return reply.trim() || query;
+    try {
+      const result = await this.aiRouter.ask(prompt, undefined, {
+        temperature: 0.3,
+        maxTokens: 50,
+      });
+
+      return result.content.trim() || query;
+    } catch (error) {
+      this.logger.warn(
+        `Extraction de mots-clés échouée, fallback sur la query brute : ${error.message}`,
+      );
+      return query;
+    }
   }
 
   // ============================================
   // RECHERCHE DE FALLBACK
   // ============================================
   private async fallbackSearch(query: string, limit: number): Promise<any[]> {
-    const words = query.split(' ').filter(w => w.length > 2);
+    const words = query.split(' ').filter((w) => w.length > 2);
 
     if (words.length === 0) {
       return [];
@@ -87,7 +94,7 @@ Mots-clés (séparés par des espaces) :`;
 
     return this.prisma.manga.findMany({
       where: {
-        OR: words.map(word => ({
+        OR: words.map((word) => ({
           OR: [
             { title: { contains: word, mode: 'insensitive' } },
             { description: { contains: word, mode: 'insensitive' } },
@@ -123,54 +130,21 @@ Mots-clés (séparés par des espaces) :`;
 
 Recherche : "${query}"
 
-Tags suggérés (séparés par des virgules) :`;
+Réponds UNIQUEMENT par 5 tags séparés par des virgules. Aucune autre phrase.`;
 
-    const reply = await this.callGroq(prompt);
+    try {
+      const result = await this.aiRouter.ask(prompt, undefined, {
+        temperature: 0.5,
+        maxTokens: 100,
+      });
 
-    return reply
-      .split(',')
-      .map(tag => tag.trim().toLowerCase())
-      .filter(tag => tag.length > 0);
-  }
-
-  // ============================================
-  // APPEL GROQ
-  // ============================================
-  private async callGroq(prompt: string): Promise<string> {
-    for (let attempt = 0; attempt < this.groqKeys.length; attempt++) {
-      const key = this.groqKeys[this.currentKeyIndex];
-      this.currentKeyIndex = (this.currentKeyIndex + 1) % this.groqKeys.length;
-
-      try {
-        const response = await fetch(this.apiUrl, {
-          method: 'POST',
-          headers: {
-            'Content-Type': 'application/json',
-            'Authorization': `Bearer ${key}`,
-          },
-          body: JSON.stringify({
-            model: 'llama-3.3-70b-versatile',
-            messages: [{ role: 'user', content: prompt }],
-            temperature: 0.3,
-            max_tokens: 200,
-          }),
-        });
-
-        const data = await response.json();
-
-        if (!response.ok) {
-          continue;
-        }
-
-        const reply = data.choices?.[0]?.message?.content;
-        if (reply) {
-          return reply;
-        }
-      } catch (error) {
-        continue;
-      }
+      return result.content
+        .split(',')
+        .map((tag) => tag.trim().toLowerCase())
+        .filter((tag) => tag.length > 0);
+    } catch (error) {
+      this.logger.warn(`Suggestion de tags échouée : ${error.message}`);
+      return [];
     }
-
-    return '';
   }
 }
