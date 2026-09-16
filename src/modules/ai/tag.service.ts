@@ -1,20 +1,16 @@
 // src/modules/ai/tag.service.ts
-import { Injectable } from '@nestjs/common';
+import { Injectable, Logger } from '@nestjs/common';
 import { PrismaService } from '../../prisma/prisma.service';
+import { AiRouterService } from './ai-router.service';
 
 @Injectable()
 export class TagService {
-  private readonly groqKeys: string[] = [
-    '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',
-    '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',
-    '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',
-    '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',
-  ];
+  private readonly logger = new Logger(TagService.name);
 
-  private currentKeyIndex = 0;
-  private readonly apiUrl = 'https://api.groq.com/openai/v1/chat/completions';
-
-  constructor(private prisma: PrismaService) {}
+  constructor(
+    private prisma: PrismaService,
+    private aiRouter: AiRouterService,
+  ) {}
 
   // ============================================
   // GÉNÉRER DES TAGS POUR UN MANGA
@@ -38,15 +34,21 @@ Les tags doivent être :
 
 Tags proposés :`;
 
-    const reply = await this.callGroq(prompt);
+    try {
+      const result = await this.aiRouter.ask(prompt);
+      const reply = result.content;
 
-    const tags = reply
-      .split(',')
-      .map(tag => tag.trim().toLowerCase())
-      .filter(tag => tag.length > 0 && tag.length < 30)
-      .slice(0, 5);
+      const tags = reply
+        .split(',')
+        .map((tag) => tag.trim().toLowerCase())
+        .filter((tag) => tag.length > 0 && tag.length < 30)
+        .slice(0, 5);
 
-    return tags;
+      return tags;
+    } catch (error) {
+      this.logger.error(`Erreur génération tags : ${error.message}`);
+      return [];
+    }
   }
 
   // ============================================
@@ -79,46 +81,5 @@ Tags proposés :`;
       where: { id: mangaId },
       data: { aiTags: [] },
     });
-  }
-
-  // ============================================
-  // APPEL GROQ
-  // ============================================
-  private async callGroq(prompt: string): Promise<string> {
-    for (let attempt = 0; attempt < this.groqKeys.length; attempt++) {
-      const key = this.groqKeys[this.currentKeyIndex];
-      this.currentKeyIndex = (this.currentKeyIndex + 1) % this.groqKeys.length;
-
-      try {
-        const response = await fetch(this.apiUrl, {
-          method: 'POST',
-          headers: {
-            'Content-Type': 'application/json',
-            'Authorization': `Bearer ${key}`,
-          },
-          body: JSON.stringify({
-            model: 'llama-3.3-70b-versatile',
-            messages: [{ role: 'user', content: prompt }],
-            temperature: 0.7,
-            max_tokens: 200,
-          }),
-        });
-
-        const data = await response.json();
-
-        if (!response.ok) {
-          continue;
-        }
-
-        const reply = data.choices?.[0]?.message?.content;
-        if (reply) {
-          return reply;
-        }
-      } catch (error) {
-        continue;
-      }
-    }
-
-    return '';
   }
 }
