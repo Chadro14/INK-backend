@@ -6,22 +6,24 @@ import { OpenAIService, OpenAICallOptions } from './openai.service';
 
 export type AiProvider = 'groq' | 'gemini' | 'openai';
 
+// ✅ NOUVEAU — Support du rôle "tool" pour le function calling
+export interface AiRouterMessage {
+  role: 'system' | 'user' | 'assistant' | 'tool';
+  content: string;
+  tool_call_id?: string;
+  tool_calls?: any[];
+  name?: string;
+}
+
 export interface AiRouterOptions {
-  // Format unifié : messages au format OpenAI (user/assistant/system)
-  messages: Array<{
-    role: 'system' | 'user' | 'assistant';
-    content: string;
-  }>;
+  messages: AiRouterMessage[];
   systemInstruction?: string;
   temperature?: number;
   maxTokens?: number;
-  // Function calling (uniquement Groq + OpenAI pour l'instant)
   tools?: any[];
   toolChoice?: 'auto' | 'none' | { type: 'function'; function: { name: string } };
   responseFormat?: { type: 'json_object' | 'text' };
-  // Forcer un fournisseur (optionnel)
   forceProvider?: AiProvider;
-  // Préférer OpenAI (utile pour Premium)
   preferPremium?: boolean;
 }
 
@@ -42,11 +44,6 @@ export class AiRouterService {
     private openaiService: OpenAIService,
   ) {}
 
-  /**
-   * Point d'entrée principal.
-   * Essaie les fournisseurs dans l'ordre : Groq → Gemini → OpenAI.
-   * Retourne la première réponse qui marche.
-   */
   async call(options: AiRouterOptions): Promise<AiRouterResult> {
     const attempts: Array<{
       provider: AiProvider;
@@ -54,7 +51,6 @@ export class AiRouterService {
       error?: string;
     }> = [];
 
-    // Déterminer l'ordre des fournisseurs
     const order = this.getProviderOrder(options);
 
     for (const provider of order) {
@@ -83,37 +79,28 @@ export class AiRouterService {
       }
     }
 
-    // Tous les fournisseurs ont échoué
     this.logger.error(
       `❌ Tous les fournisseurs IA ont échoué. Tentatives : ${JSON.stringify(attempts)}`,
     );
     throw new Error('ALL_AI_PROVIDERS_FAILED');
   }
 
-  /**
-   * Détermine l'ordre des fournisseurs selon les options.
-   * Par défaut : Groq → Gemini → OpenAI.
-   */
   private getProviderOrder(options: AiRouterOptions): AiProvider[] {
-    // Si on force un fournisseur
     if (options.forceProvider) {
       return [options.forceProvider];
     }
 
-    // Si Premium : OpenAI en priorité
     if (options.preferPremium && this.openaiService.isAvailable()) {
-      return ['openai', 'groq', 'gemini'].filter((p) => this.isAvailable(p as AiProvider)) as AiProvider[];
+      return ['openai', 'groq', 'gemini'].filter((p) =>
+        this.isAvailable(p as AiProvider),
+      ) as AiProvider[];
     }
 
-    // Par défaut : Groq → Gemini → OpenAI
     return ['groq', 'gemini', 'openai'].filter((p) =>
       this.isAvailable(p as AiProvider),
     ) as AiProvider[];
   }
 
-  /**
-   * Vérifie si un fournisseur est disponible (clés configurées).
-   */
   private isAvailable(provider: AiProvider): boolean {
     switch (provider) {
       case 'groq':
@@ -127,10 +114,6 @@ export class AiRouterService {
     }
   }
 
-  /**
-   * Appelle un fournisseur spécifique.
-   * Le format des messages est unifié en OpenAI-style, puis converti pour Gemini si besoin.
-   */
   private async callProvider(
     provider: AiProvider,
     options: AiRouterOptions,
@@ -159,8 +142,7 @@ export class AiRouterService {
       }
 
       case 'gemini': {
-        // Gemini ne supporte pas le function calling dans notre implémentation,
-        // donc si tools sont demandés, on ignore Gemini dans le fallback.
+        // Gemini ne supporte pas le function calling ni le rôle "tool"
         if (tools && tools.length > 0) {
           throw new Error('GEMINI_TOOLS_NOT_SUPPORTED');
         }
@@ -171,7 +153,9 @@ export class AiRouterService {
           temperature,
           maxTokens,
           responseMimeType:
-            responseFormat?.type === 'json_object' ? 'application/json' : undefined,
+            responseFormat?.type === 'json_object'
+              ? 'application/json'
+              : undefined,
         };
         return this.geminiService.call(geminiOptions);
       }
@@ -194,10 +178,10 @@ export class AiRouterService {
   }
 
   /**
-   * Construit les messages au format Groq (OpenAI-compatible) avec system instruction.
+   * ✅ CORRIGÉ — préserve tool_call_id + tool_calls + name
    */
   private buildGroqMessages(
-    messages: AiRouterOptions['messages'],
+    messages: AiRouterMessage[],
     systemInstruction?: string,
   ): GroqCallOptions['messages'] {
     const result: GroqCallOptions['messages'] = [];
@@ -207,17 +191,21 @@ export class AiRouterService {
     }
 
     for (const msg of messages) {
-      result.push({ role: msg.role, content: msg.content });
+      const m: any = { role: msg.role, content: msg.content };
+      if (msg.tool_call_id) m.tool_call_id = msg.tool_call_id;
+      if (msg.tool_calls) m.tool_calls = msg.tool_calls;
+      if (msg.name) m.name = msg.name;
+      result.push(m);
     }
 
     return result;
   }
 
   /**
-   * Construit les messages au format OpenAI avec system instruction.
+   * ✅ CORRIGÉ — préserve tool_call_id + tool_calls + name
    */
   private buildOpenAIMessages(
-    messages: AiRouterOptions['messages'],
+    messages: AiRouterMessage[],
     systemInstruction?: string,
   ): OpenAICallOptions['messages'] {
     const result: OpenAICallOptions['messages'] = [];
@@ -227,23 +215,26 @@ export class AiRouterService {
     }
 
     for (const msg of messages) {
-      result.push({ role: msg.role, content: msg.content });
+      const m: any = { role: msg.role, content: msg.content };
+      if (msg.tool_call_id) m.tool_call_id = msg.tool_call_id;
+      if (msg.tool_calls) m.tool_calls = msg.tool_calls;
+      if (msg.name) m.name = msg.name;
+      result.push(m);
     }
 
     return result;
   }
 
   /**
-   * Convertit les messages OpenAI-style en Gemini-style (user/model).
-   * Gemini ne supporte pas le rôle "system" dans les messages ; il faut le passer à part.
+   * ✅ CORRIGÉ — ignore "system" ET "tool" (non supportés par Gemini)
    */
   private buildGeminiMessages(
-    messages: AiRouterOptions['messages'],
+    messages: AiRouterMessage[],
   ): GeminiCallOptions['messages'] {
     const result: GeminiCallOptions['messages'] = [];
 
     for (const msg of messages) {
-      if (msg.role === 'system') continue; // géré via systemInstruction
+      if (msg.role === 'system' || msg.role === 'tool') continue;
       result.push({
         role: msg.role === 'user' ? 'user' : 'model',
         parts: [{ text: msg.content }],
@@ -253,13 +244,10 @@ export class AiRouterService {
     return result;
   }
 
-  /**
-   * Renvoie le nom du modèle utilisé par fournisseur.
-   */
   private getModelName(provider: AiProvider): string {
     switch (provider) {
       case 'groq':
-        return 'llama-3.3-70b-versatile';
+        return 'openai/gpt-oss-120b';
       case 'gemini':
         return 'gemini-1.5-flash';
       case 'openai':
@@ -269,9 +257,6 @@ export class AiRouterService {
     }
   }
 
-  /**
-   * Méthode simplifiée : un seul prompt.
-   */
   async ask(
     prompt: string,
     systemInstruction?: string,
