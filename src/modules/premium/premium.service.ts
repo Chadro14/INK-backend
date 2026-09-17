@@ -1,6 +1,6 @@
 // src/modules/premium/premium.service.ts
 import { Injectable, BadRequestException } from '@nestjs/common';
-import { Cron, CronExpression } from '@nestjs/schedule'; // ✅ AJOUTÉ
+import { Cron, CronExpression } from '@nestjs/schedule';
 import { PrismaService } from '../../prisma/prisma.service';
 
 @Injectable()
@@ -9,6 +9,7 @@ export class PremiumService {
 
   // ============================================
   // ACTIVER LE PREMIUM
+  // ✅ Standard = 30 jours | Pro = 60 jours | Premium = 90 jours
   // ============================================
   async activatePremium(userId: string, plan: string) {
     const user = await this.prisma.user.findUnique({
@@ -19,21 +20,36 @@ export class PremiumService {
       throw new BadRequestException('Utilisateur non trouvé');
     }
 
-    const durations = {
-      standard: 30,
-      premium: 30,
-      pro: 30,
+    // ✅ Durées selon les nouveaux plans
+    const durations: Record<string, number> = {
+      standard: 30,   // 1 mois
+      pro: 60,        // 2 mois
+      premium: 90,    // 3 mois
+      monthly: 30,    // legacy
+      yearly: 365,    // legacy
     };
 
-    const days = durations[plan as keyof typeof durations] || 30;
-    const expiresAt = new Date();
+    const normalizedPlan = plan.toLowerCase();
+    const days = durations[normalizedPlan] || 30;
+
+    // ✅ Cumul : si le user a déjà un Premium actif, on étend
+    let baseDate = new Date();
+    if (
+      user.premiumActive &&
+      user.premiumExpires &&
+      new Date(user.premiumExpires) > new Date()
+    ) {
+      baseDate = new Date(user.premiumExpires);
+    }
+
+    const expiresAt = new Date(baseDate);
     expiresAt.setDate(expiresAt.getDate() + days);
 
     const updatedUser = await this.prisma.user.update({
       where: { id: userId },
       data: {
         premiumActive: true,
-        premiumPlan: this.mapPlanToEnum(plan),
+        premiumPlan: this.mapPlanToEnum(normalizedPlan),
         premiumExpires: expiresAt,
       },
     });
@@ -43,7 +59,7 @@ export class PremiumService {
         userId,
         type: 'PREMIUM_EXPIRY',
         title: `🎉 Abonnement ${plan} activé !`,
-        body: `Votre abonnement ${plan} est maintenant actif. Profitez de tous les avantages !`,
+        body: `Votre abonnement ${plan} est actif pour ${days} jours. Profitez de tous les avantages !`,
       },
     });
 
@@ -64,6 +80,7 @@ export class PremiumService {
 
     if (!user) return false;
     if (!user.premiumActive) return false;
+
     if (user.premiumExpires && new Date(user.premiumExpires) < new Date()) {
       await this.prisma.user.update({
         where: { id: userId },
@@ -108,9 +125,7 @@ export class PremiumService {
       for (const user of expiredUsers) {
         await this.prisma.user.update({
           where: { id: user.id },
-          data: {
-            premiumActive: false,
-          },
+          data: { premiumActive: false },
         });
 
         await this.prisma.notification.create({
@@ -134,76 +149,70 @@ export class PremiumService {
 
   // ============================================
   // RÉCUPÉRER LES AVANTAGES DU PLAN
+  // ✅ Mis à jour avec les nouvelles fonctionnalités
   // ============================================
   getPlanBenefits(plan: string) {
     const benefits = {
       standard: {
         name: 'Standard',
         price: 3,
+        currency: 'USD',
+        duration: '1 mois (30 jours)',
         features: [
-          'Notifications automatiques',
-          'Accès illimité à tous les chapitres',
-          'Sans publicité',
-          'Badge Premium basique',
-          'Commentaires prioritaires',
-          '1 appareil',
-        ],
-      },
-      premium: {
-        name: 'Premium',
-        price: 5,
-        features: [
-          'Notifications automatiques',
-          'Accès illimité à tous les chapitres',
-          'Sans publicité',
-          'Accès anticipé (2 jours)',
-          'Badge Premium personnalisable',
-          'Commentaires prioritaires',
-          '3 appareils',
-          'Épinglage de manga (1 semaine)',
-          'Statistiques avancées',
-          'Planification de publication',
-          'Upload en masse',
-          'Badges personnalisés pour fans',
-          'Concours et événements',
-          'Contenu exclusif',
-          'Support prioritaire',
-          '50 MANAS bonus / mois',
-          'Traduction XELIRA en temps réel',
+          'Tickets illimités pendant 1 mois',
+          'Accès illimité aux chapitres payants',
+          'Badge Standard (bleu)',
+          'QR Code avec couleurs Premium',
         ],
       },
       pro: {
         name: 'Pro',
-        price: 7,
+        price: 5,
+        currency: 'USD',
+        duration: '2 mois (60 jours)',
         features: [
-          'Notifications automatiques',
-          'Accès illimité à tous les chapitres',
-          'Sans publicité',
-          'Accès anticipé (1 jour)',
-          'Badge Pro personnalisable',
-          'Commentaires prioritaires',
-          '2 appareils',
-          'Épinglage de manga (1 semaine)',
-          'Statistiques avancées',
-          'Planification de publication',
-          'Upload en masse',
-          'Badge Certifié',
+          'Tout ce qui est dans Standard',
+          'Collaboration avec un dessinateur (chat gratuit)',
+          'Compte certifié',
+          '4 premiers mangas publiés épinglés (publicité)',
+          'Connecter 1 personne à votre abonnement',
+          'Badge Pro (violet)',
+        ],
+      },
+      premium: {
+        name: 'Premium',
+        price: 7,
+        currency: 'USD',
+        duration: '3 mois (90 jours)',
+        features: [
+          'Tout ce qui est dans Standard et Pro',
+          '5 mangas épinglés avec publicité',
+          '3 comptes ajoutés pour certification',
+          'Créer votre propre événement (10 participants)',
+          'Droit de participation : 50 MANAS',
+          'Accès XELIRA IA (compréhension + revenus)',
+          'Badge Premium (or)',
+          'Badge "Meilleur Fan" à donner aux lecteurs',
         ],
       },
     };
 
-    return benefits[plan as keyof typeof benefits] || null;
+    const normalizedPlan = plan.toLowerCase();
+    return benefits[normalizedPlan as keyof typeof benefits] || null;
   }
 
   // ============================================
   // HELPER : MAP PLAN TO ENUM
+  // ✅ Mis à jour pour les nouveaux plans
   // ============================================
   private mapPlanToEnum(plan: string) {
-    const map = {
-      standard: 'MONTHLY',
-      premium: 'MONTHLY',
-      pro: 'MONTHLY',
+    const map: Record<string, any> = {
+      standard: 'STANDARD',
+      pro: 'PRO',
+      premium: 'PREMIUM',
+      monthly: 'MONTHLY', // legacy
+      yearly: 'YEARLY', // legacy
     };
-    return map[plan as keyof typeof map] as any;
+    return map[plan] || 'STANDARD';
   }
 }
