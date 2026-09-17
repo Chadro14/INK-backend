@@ -13,6 +13,7 @@
     "reset-password": "ts-node scripts/reset-password.ts",
     "unlock": "ts-node scripts/unlock-account.ts",
     "force-reset-password": "ts-node scripts/force-reset-password.ts",
+    "migrate-plans": "ts-node scripts/migrate-plans.ts",
     "vercel-build": "npx prisma generate --schema=src/prisma/schema.prisma && npx prisma db push --schema=src/prisma/schema.prisma --accept-data-loss && npm run build"
   },
   "dependencies": {
