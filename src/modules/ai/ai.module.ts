@@ -6,13 +6,17 @@ import { PrismaModule } from '../../prisma/prisma.module';
 // Controllers
 import { AiController } from './ai.controller';
 
-// Services multi-fournisseurs (NOUVEAU)
+// ✅ Services multi-fournisseurs
 import { GroqService } from './groq.service';
 import { GeminiService } from './gemini.service';
 import { OpenAIService } from './openai.service';
 import { AiRouterService } from './ai-router.service';
 
-// Services IA
+// ✅ OZYRA — Function calling
+import { OzyraService } from './ozyra.service';
+import { OzyraToolsService } from './ozyra-tools.service';
+
+// Services IA existants
 import { AiService } from './ai.service';
 import { ModerationService } from './moderation.service';
 import { ToolsService } from './tools.service';
@@ -28,19 +32,20 @@ import { CoachService } from './coach.service';
 import { EmailService } from '../../common/services/email.service';
 
 @Module({
-  imports: [
-    ConfigModule,
-    PrismaModule,
-  ],
+  imports: [ConfigModule, PrismaModule],
   controllers: [AiController],
   providers: [
-    // ✅ Les 4 services multi-fournisseurs (INDISPENSABLES)
+    // ✅ Multi-fournisseurs
     GroqService,
     GeminiService,
     OpenAIService,
     AiRouterService,
 
-    // Services IA
+    // ✅ OZYRA — Function calling
+    OzyraService,
+    OzyraToolsService,
+
+    // Services IA existants
     AiService,
     ModerationService,
     ToolsService,
@@ -57,6 +62,8 @@ import { EmailService } from '../../common/services/email.service';
   ],
   exports: [
     AiService,
+    OzyraService,
+    OzyraToolsService,
     AiRouterService,
     GroqService,
     GeminiService,
