@@ -12,7 +12,6 @@ import * as crypto from 'crypto';
 export class PaymentsService {
   private readonly webhookSecret: string;
 
-  // ✅ MAP PAYS → PAYS PAWAPAY
   private readonly countryMap: Record<string, { code: string; providers: string[] }> = {
     'RDC': { code: 'CD', providers: ['ORANGE_CD', 'VODACOM_CD'] },
     'Kenya': { code: 'KE', providers: ['SAFARICOM_MPESA'] },
@@ -42,7 +41,7 @@ export class PaymentsService {
   }
 
   // ============================================
-  // ✅ 1. VALIDER LE NUMÉRO SELON L'OPÉRATEUR
+  // 1. VALIDER LE NUMÉRO SELON L'OPÉRATEUR
   // ============================================
   private validatePhoneNumber(operator: PaymentOperator, phoneNumber: string): boolean {
     const clean = phoneNumber.replace(/\D/g, '');
@@ -62,7 +61,7 @@ export class PaymentsService {
   }
 
   // ============================================
-  // ✅ 2. DÉTECTER OU RETOURNER LE PROVIDER PAWAPAY
+  // 2. DÉTECTER OU RETOURNER LE PROVIDER PAWAPAY
   // ============================================
   private getProvider(operator: PaymentOperator, country?: string): string {
     if (country && this.countryMap[country]) {
@@ -76,6 +75,29 @@ export class PaymentsService {
         return 'ORANGE_CD';
       default:
         return 'ORANGE_CD';
+    }
+  }
+
+  // ============================================
+  // ✅ NOUVEAU — MAP STRING → PREMIUM PLAN ENUM
+  // ============================================
+  private mapPlanStringToEnum(plan?: string): PremiumPlan | undefined {
+    if (!plan) return undefined;
+
+    const normalized = plan.toLowerCase();
+    switch (normalized) {
+      case 'standard':
+        return PremiumPlan.STANDARD;
+      case 'pro':
+        return PremiumPlan.PRO;
+      case 'premium':
+        return PremiumPlan.PREMIUM;
+      case 'monthly':
+        return PremiumPlan.MONTHLY; // legacy
+      case 'yearly':
+        return PremiumPlan.YEARLY; // legacy
+      default:
+        return undefined;
     }
   }
 
@@ -99,12 +121,8 @@ export class PaymentsService {
 
     const transactionId = `INK-${Date.now()}-${Math.random().toString(36).slice(2, 7)}`;
 
-    let planValue: PremiumPlan | undefined;
-    if (dto.plan === 'yearly' || dto.plan === 'YEARLY') {
-      planValue = PremiumPlan.YEARLY;
-    } else if (dto.plan === 'monthly' || dto.plan === 'MONTHLY' || dto.plan) {
-      planValue = PremiumPlan.MONTHLY;
-    }
+    // ✅ Utilise le nouveau mapping
+    const planValue = this.mapPlanStringToEnum(dto.plan);
 
     const payment = await this.prisma.payment.create({
       data: {
@@ -132,7 +150,10 @@ export class PaymentsService {
         where: { id: payment.id },
         data: { status: PaymentStatus.SUCCESS, completedAt: new Date() },
       });
-      await this.activatePremium(payment.userId, planValue || PremiumPlan.MONTHLY);
+      await this.activatePremium(
+        payment.userId,
+        planValue || PremiumPlan.STANDARD,
+      );
 
       return {
         success: true,
@@ -222,7 +243,11 @@ export class PaymentsService {
 
       switch (payment.type) {
         case PaymentType.PREMIUM:
-          await this.activatePremium(tx, payment.userId, payment.plan || PremiumPlan.MONTHLY);
+          await this.activatePremium(
+            tx,
+            payment.userId,
+            payment.plan || PremiumPlan.STANDARD,
+          );
           break;
         case PaymentType.CHAPTER:
           if (payment.mangaId && payment.chapterNumber) {
@@ -321,7 +346,7 @@ export class PaymentsService {
   }
 
   // ============================================
-  // 8. WEBHOOK ORANGE MONEY (AVEC SIGNATURE)
+  // 8. WEBHOOK ORANGE MONEY
   // ============================================
   async handleOrangeMoneyWebhook(payload: any, signature?: string) {
     console.log('📩 Webhook Orange Money reçu:', JSON.stringify(payload, null, 2));
@@ -365,7 +390,7 @@ export class PaymentsService {
   }
 
   // ============================================
-  // 9. WEBHOOK M-PESA (AVEC SIGNATURE)
+  // 9. WEBHOOK M-PESA
   // ============================================
   async handleMpesaWebhook(payload: any, signature?: string) {
     console.log('📩 Webhook M-Pesa reçu:', JSON.stringify(payload, null, 2));
@@ -477,21 +502,51 @@ export class PaymentsService {
   }
 
   // ============================================
-  // 13. ACTIVER L'ABONNEMENT PREMIUM (AVEC TICKETS ILLIMITÉS)
+  // 13. ACTIVER L'ABONNEMENT PREMIUM
+  // ✅ Standard = 30 jours | Pro = 60 jours | Premium = 90 jours
+  // ✅ Cumul : si déjà Premium, on étend
   // ============================================
-  private async activatePremium(tx: any, userId: string, plan: PremiumPlan = PremiumPlan.MONTHLY) {
-    const duration = plan === PremiumPlan.YEARLY ? 365 : 30;
+  private async activatePremium(
+    tx: any,
+    userId: string,
+    plan: PremiumPlan = PremiumPlan.STANDARD,
+  ) {
+    // ✅ Durées selon les nouveaux plans
+    let duration = 30; // défaut = 1 mois
+    if (plan === PremiumPlan.STANDARD) duration = 30;
+    else if (plan === PremiumPlan.PRO) duration = 60;
+    else if (plan === PremiumPlan.PREMIUM) duration = 90;
+    else if (plan === PremiumPlan.YEARLY) duration = 365; // legacy
+    else if (plan === PremiumPlan.MONTHLY) duration = 30; // legacy
+
+    // ✅ Cumul : si le user est déjà Premium actif, on étend
+    const user = await tx.user.findUnique({
+      where: { id: userId },
+      select: { premiumActive: true, premiumExpires: true },
+    });
+
+    let baseDate = new Date();
+    if (
+      user?.premiumActive &&
+      user?.premiumExpires &&
+      new Date(user.premiumExpires) > new Date()
+    ) {
+      baseDate = new Date(user.premiumExpires);
+    }
+
+    const expiresAt = new Date(baseDate);
+    expiresAt.setDate(expiresAt.getDate() + duration);
 
     await tx.user.update({
       where: { id: userId },
       data: {
         premiumActive: true,
-        premiumExpires: new Date(Date.now() + duration * 24 * 60 * 60 * 1000),
+        premiumExpires: expiresAt,
         premiumPlan: plan,
       },
     });
 
-    // ✅ CRÉER UN TICKET POUR LE SUIVI (quantité = 0 = illimité)
+    // ✅ Ticket de suivi (quantité = 0 = illimité)
     let ticket = await tx.ticket.findUnique({
       where: { userId },
     });
@@ -502,41 +557,48 @@ export class PaymentsService {
       });
     }
 
-    // Enregistrer une transaction pour le suivi
     await tx.ticketTransaction.create({
       data: {
         userId,
         ticketId: ticket.id,
         amount: 0,
         type: 'GIFT',
-        description: `Abonnement Premium ${plan} activé - Tickets illimités pendant ${duration} jours`,
+        description: `Abonnement ${plan} activé - Tickets illimités pendant ${duration} jours`,
         metadata: { plan, duration, method: 'premium_unlimited' },
       },
     });
 
-    // ✅ NOTIFICATION
     await tx.notification.create({
       data: {
         userId,
         type: 'SYSTEM',
-        title: '🎟️ Abonnement Premium activé',
+        title: `🎟️ Abonnement ${plan} activé`,
         body: `Vous avez maintenant accès aux tickets illimités pendant ${duration} jours !`,
         metadata: { plan },
       },
     });
 
-    console.log(`✅ Abonnement Premium activé pour l'utilisateur ${userId} - Tickets illimités`);
+    console.log(
+      `✅ Abonnement ${plan} activé pour l'utilisateur ${userId} - ${duration} jours`,
+    );
   }
 
   // ============================================
-  // 14. DÉBLOQUER UN CHAPITRE (AVEC TRANSACTION)
+  // 14. DÉBLOQUER UN CHAPITRE
   // ============================================
-  private async unlockChapter(tx: any, userId: string, mangaId: string, chapterNumber: number) {
-    console.log(`📚 Chapitre ${chapterNumber} du manga ${mangaId} débloqué pour ${userId}`);
+  private async unlockChapter(
+    tx: any,
+    userId: string,
+    mangaId: string,
+    chapterNumber: number,
+  ) {
+    console.log(
+      `📚 Chapitre ${chapterNumber} du manga ${mangaId} débloqué pour ${userId}`,
+    );
   }
 
   // ============================================
-  // 15. TRAITER UN POURBOIRE (AVEC TRANSACTION)
+  // 15. TRAITER UN POURBOIRE
   // ============================================
   private async processTip(tx: any, payment: any) {
     const manga = await tx.manga.findUnique({
@@ -555,27 +617,26 @@ export class PaymentsService {
           status: 'PENDING',
         },
       });
-      console.log(`💰 Pourboire de ${payment.amount} USD envoyé au créateur ${manga.authorId}`);
+      console.log(
+        `💰 Pourboire de ${payment.amount} USD envoyé au créateur ${manga.authorId}`,
+      );
     }
   }
 
   // ============================================
-  // ✅ 16. ACHETER DES MANAS
+  // 16. ACHETER DES MANAS
   // ============================================
   async purchaseManas(userId: string, amount: number, currency: string = 'USD') {
-    // 1. Vérifier le montant minimum
     if (amount < 0.30) {
       throw new BadRequestException('Le montant minimum est de 0.30 USD');
     }
 
-    // 2. Convertir le montant en MANAS (1 MANAS = 0.01 USD)
     const manasAmount = Math.floor(amount / 0.01);
-    
+
     if (manasAmount < 30) {
       throw new BadRequestException('Montant insuffisant pour acheter des MANAS');
     }
 
-    // 3. Créer la transaction de paiement
     const transactionId = `INK-MANAS-${Date.now()}-${Math.random().toString(36).slice(2, 7)}`;
 
     const payment = await this.prisma.payment.create({
@@ -594,13 +655,11 @@ export class PaymentsService {
       },
     });
 
-    // 4. Ajouter directement les MANAS (pour les tests)
     await this.prisma.user.update({
       where: { id: userId },
       data: { manas: { increment: manasAmount } },
     });
 
-    // 5. Enregistrer la transaction MANAS
     await this.prisma.manasTransaction.create({
       data: {
         userId,
@@ -611,7 +670,6 @@ export class PaymentsService {
       },
     });
 
-    // 6. Mettre à jour le statut du paiement
     await this.prisma.payment.update({
       where: { id: payment.id },
       data: { status: PaymentStatus.SUCCESS, completedAt: new Date() },
