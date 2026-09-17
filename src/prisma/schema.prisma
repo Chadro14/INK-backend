@@ -144,6 +144,9 @@ enum Role {
 enum PremiumPlan {
   MONTHLY
   YEARLY
+  STANDARD
+  PRO
+  PREMIUM
 }
 
 enum Gender {
@@ -784,14 +787,14 @@ model TicketUse {
   mangaId     String
   manga       Manga    @relation(fields: [mangaId], references: [id], onDelete: Cascade)
   
-  expiresAt   DateTime?  // ✅ AJOUTÉ — null = permanent, sinon date d'expiration
+  expiresAt   DateTime?
   createdAt   DateTime @default(now())
 
   @@unique([userId, chapterId])
   @@index([userId])
   @@index([chapterId])
   @@index([mangaId])
-  @@index([expiresAt])  // ✅ AJOUTÉ — pour le cron / clean
+  @@index([expiresAt])
 }
 
 model TicketEvent {
